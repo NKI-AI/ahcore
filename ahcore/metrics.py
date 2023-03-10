@@ -256,10 +256,15 @@ class WSIMetricFactory:
 def _get_intersection_and_cardinality(
     predictions: torch.Tensor, target: torch.Tensor, roi: torch.Tensor | None, num_classes: int
 ) -> List[Tuple[torch.Tensor, torch.Tensor]]:
+
     soft_predictions = F.softmax(predictions, dim=1)
-    # if roi is not None:
-    #     soft_predictions = soft_predictions * roi
-    #     target = target * roi
+    corrected_roi = None
+    if roi is not None:
+        # Correct the ROI to remove any unannotated regions (see github issue #11)
+        background = (target[:, 0, :, :] == 1).int()
+        corrected_roi = roi.squeeze(1) - background
+        # Clip the values below 0 after the subtraction.
+        corrected_roi[corrected_roi < 0] = 0
 
     predictions = soft_predictions.argmax(dim=1)
     _target = target.argmax(dim=1)
@@ -269,10 +274,10 @@ def _get_intersection_and_cardinality(
         curr_predictions = (predictions == class_idx).int()
         curr_target = (_target == class_idx).int()
         # Compute the dice score
-        if roi is not None:
-            intersection = torch.sum((curr_predictions * curr_target) * roi.squeeze(1), dim=(0, 1, 2))
-            cardinality = torch.sum(curr_predictions * roi.squeeze(1), dim=(0, 1, 2)) + torch.sum(
-                curr_target * roi.squeeze(1), dim=(0, 1, 2)
+        if corrected_roi is not None:
+            intersection = torch.sum((curr_predictions * curr_target) * corrected_roi, dim=(0, 1, 2))
+            cardinality = torch.sum(curr_predictions * corrected_roi, dim=(0, 1, 2)) + torch.sum(
+                curr_target * corrected_roi, dim=(0, 1, 2)
             )
         else:
             intersection = torch.sum((curr_predictions * curr_target), dim=(0, 1, 2))

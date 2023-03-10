@@ -101,6 +101,7 @@ def cross_entropy(
     torch.Tensor
         Output as a torch.Tensor float
     """
+    corrected_roi = None
     if limit is not None:
         if limit >= 0:
             raise ValueError(f"Limit has to be a negative value. Got {limit}")
@@ -110,7 +111,12 @@ def cross_entropy(
             raise ValueError(f"topk value needs to be between 0 and 1. Got {topk}.")
 
     if roi is not None:
-        roi_sum = roi.sum() / input.shape[0]
+        # Correct the ROI to remove any unannotated regions (see github issue #11)
+        background = (target[:, 0, :, :] == 1).int()
+        corrected_roi = roi.squeeze(1) - background
+        # Clip the values below 0 after the subtraction.
+        corrected_roi[corrected_roi < 0] = 0
+        roi_sum = corrected_roi.sum() / input.shape[0]
         if roi_sum == 0:
             return torch.Tensor([0.0]).to(input.device)
     else:
@@ -131,8 +137,8 @@ def cross_entropy(
     if limit is not None:
         _cross_entropy = torch.clip(_cross_entropy, limit, None)
 
-    if roi is not None:
-        _cross_entropy = roi[:, 0, ...] * _cross_entropy
+    if corrected_roi is not None:
+        _cross_entropy = corrected_roi * _cross_entropy
 
     if topk is None:
         return _cross_entropy.sum(dim=(1, 2)) / roi_sum
@@ -211,8 +217,13 @@ def soft_dice(
 
     # Apply the ROI if it is there
     if roi is not None:
-        input = roi * input
-        target = roi * target
+        # Correct the ROI to remove any unannotated regions (see github issue #11)
+        background = (target[:, 0, :, :] == 1).int()
+        corrected_roi = (roi.squeeze(1) - background).unsqueeze(1)
+        # Clip the values below 0 after the subtraction.
+        corrected_roi[corrected_roi < 0] = 0
+        input = corrected_roi * input
+        target = corrected_roi * target
 
     # Softmax still needs to be taken (logits are outputted by the network)
     input_soft = F.softmax(input, dim=1)
