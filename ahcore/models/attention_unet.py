@@ -1,73 +1,75 @@
-# encoding: utf-8
-"""Attention U-net model [1] for segmentation
-
-References
-----------
-[1] https://arxiv.org/abs/1804.03999
-"""
-from __future__ import annotations
+from typing import List
 
 import torch
-from torch import nn
+from torch import nn as nn
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, num_input_ch: int, num_output_ch: int, dropout_prob: float):
-        super().__init__()
+    """ConvBlock"""
+
+    def __init__(self, ch_in: int, ch_out: int, dropout_rate: float):
+        super(ConvBlock, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(num_input_ch, num_output_ch, kernel_size=(3, 3), padding=1),
-            nn.Dropout2d(dropout_prob),
-            nn.BatchNorm2d(num_output_ch),
+            nn.Conv2d(ch_in, ch_out, kernel_size=(3, 3), padding=1),
+            nn.Dropout2d(dropout_rate),
+            nn.BatchNorm2d(ch_out),
             nn.ReLU(),
-            nn.Conv2d(num_output_ch, num_output_ch, kernel_size=(3, 3), padding=1),
-            nn.Dropout2d(dropout_prob),
-            nn.BatchNorm2d(num_output_ch),
+            nn.Conv2d(ch_out, ch_out, kernel_size=(3, 3), padding=1),
+            nn.Dropout2d(dropout_rate),
+            nn.BatchNorm2d(ch_out),
             nn.ReLU(),
         )
 
     def forward(self, x) -> torch.Tensor:
+        """forward"""
         x = self.conv(x)
         return x
 
 
 class DeconvBlock(nn.Module):
-    def __init__(self, num_input_ch: int, num_output_ch: int, dropout_prob: float):
-        super().__init__()
+    """DeconvBlock"""
+
+    def __init__(self, ch_in: int, ch_out: int, dropout_rate: float):
+        super(DeconvBlock, self).__init__()
         self.deconv = nn.Sequential(
-            (nn.ConvTranspose2d(num_input_ch, num_output_ch, kernel_size=(2, 2), stride=(2, 2))),
-            nn.Dropout2d(dropout_prob),
+            (nn.ConvTranspose2d(ch_in, ch_out, kernel_size=(2, 2), stride=(2, 2))),
+            nn.Dropout2d(dropout_rate),
         )
 
     def forward(self, x) -> torch.Tensor:
+        """forward"""
         x = self.deconv(x)
         return x
 
 
 class AttentionBlock(nn.Module):
-    def __init__(self, num_input_ch: int, ch_skip: int, num_output_ch: int, dropout_prob: float):
-        super().__init__()
+    """AttentionBlock"""
+
+    def __init__(self, ch_in: int, ch_skip: int, ch_out: int, dropout_rate: float):
+        super(AttentionBlock, self).__init__()
         self.W_skip = nn.Sequential(
-            nn.Conv2d(ch_skip, num_output_ch, kernel_size=(1, 1), padding=0),
-            nn.Dropout2d(dropout_prob),
-            nn.BatchNorm2d(num_output_ch),
+            nn.Conv2d(ch_skip, ch_out, kernel_size=(1, 1), padding=0),
+            nn.Dropout2d(dropout_rate),
+            nn.BatchNorm2d(ch_out),
         )
 
         self.W_in = nn.Sequential(
-            nn.Conv2d(num_input_ch, num_output_ch, kernel_size=(1, 1), padding=0),
-            nn.Dropout2d(dropout_prob),
-            nn.BatchNorm2d(num_output_ch),
+            nn.Conv2d(ch_in, ch_out, kernel_size=(1, 1), padding=0),
+            nn.Dropout2d(dropout_rate),
+            nn.BatchNorm2d(ch_out),
         )
 
         self.relu = nn.ReLU()
 
         self.psi = nn.Sequential(
-            nn.Conv2d(num_output_ch, 1, kernel_size=(1, 1), padding=0),
-            nn.Dropout2d(dropout_prob),
+            nn.Conv2d(ch_out, 1, kernel_size=(1, 1), padding=0),
+            nn.Dropout2d(dropout_rate),
             nn.BatchNorm2d(1),
             nn.Sigmoid(),
         )
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
+        """forward"""
         g = self.W_skip(skip)
         x = self.W_in(x)
         psi = self.relu(g + x)
@@ -76,142 +78,102 @@ class AttentionBlock(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_input_ch: int, num_initial_filters: int, dropout_prob: float, depth: int = 4):
+    """Encoder"""
+
+    def __init__(self, inp_channel: int, kernel_multiplier: int, dropout_rate: float, depth: int):
         super().__init__()
-        self._num_input_ch = num_input_ch
-        self._num_initial_filters = num_initial_filters
-        self._dropout_rate = dropout_prob
-        self._depth = depth
+        self.depth = depth
+        for i in range(self.depth + 1):
+            ch_in = inp_channel if i == 0 else ch_out
+            ch_out = kernel_multiplier * (2 ** (i + 3))
+            setattr(self, f"conv_{i}", ConvBlock(ch_in, ch_out, dropout_rate))
+            if i < self.depth:
+                setattr(self, f"pool_{i}", nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)))
 
-        first_block = ConvBlock(
-            num_input_ch=self._num_input_ch, num_output_ch=self._num_initial_filters, dropout_prob=self._dropout_rate
-        )
-
-        self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv_blocks = nn.ModuleList([first_block])
-
-        for idx in range(0, self._depth):
-            num_channels = self._num_initial_filters * 2**idx
-            self.conv_blocks.append(
-                ConvBlock(num_input_ch=num_channels, num_output_ch=num_channels * 2, dropout_prob=self._dropout_rate)
-            )
-
-    def forward(self, x) -> list[torch.Tensor]:
-        output = []
-        x_in = self.conv_blocks[0](x)
-        output.append(x_in)
-        for idx in range(0, self._depth):
-            x_out = self.max_pool(x_in)
-            x_in = self.conv_blocks[idx + 1](x_out)
-            output.append(x_in)
-
-        return output
+    def forward(self, x) -> List:
+        """forward"""
+        enc_features = []
+        for i in range(self.depth):
+            x = getattr(self, f"conv_{i}")(x)
+            enc_features.append(x)
+            x = getattr(self, f"pool_{i}")(x)
+        x = getattr(self, f"conv_{self.depth}")(x)
+        enc_features.append(x)
+        return enc_features
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_initial_filters: int, dropout_prob: float, depth: int = 4):
+    """Decoder"""
+
+    def __init__(
+        self,
+        kernel_multiplier: int,
+        dropout_rate: float,
+        num_classes: int,
+        depth: int,
+    ):
         super().__init__()
-
         self.depth = depth
-
-        self.conv_layers = nn.ModuleList()
-        self.deconv_layers = nn.ModuleList()
-        self.attention_layers = nn.ModuleList()
-
-        for divisor in range(0, depth):
-            convolution_channels = num_initial_filters * 16 // 2**divisor
-            self.conv_layers.append(
-                ConvBlock(
-                    num_input_ch=convolution_channels,
-                    num_output_ch=convolution_channels // 2,
-                    dropout_prob=dropout_prob,
-                )
+        for i in range(self.depth):
+            ch_in = kernel_multiplier * (2 ** (self.depth - (i + 1) + 4))
+            ch_out = kernel_multiplier * (2 ** (self.depth - (i + 1) + 3))
+            next_lvl_ch = kernel_multiplier * (2 ** (self.depth - (i + 1) + 2))
+            setattr(self, f"up_sample_{i}", DeconvBlock(ch_in, ch_out, dropout_rate))
+            setattr(
+                self,
+                f"attention_{i}",
+                AttentionBlock(ch_in=ch_out, ch_skip=ch_out, ch_out=next_lvl_ch, dropout_rate=dropout_rate),
             )
-            self.deconv_layers.append(
-                DeconvBlock(
-                    num_input_ch=convolution_channels,
-                    num_output_ch=convolution_channels // 2,
-                    dropout_prob=dropout_prob,
-                )
-            )
+            setattr(self, f"dec_conv_{i}", ConvBlock(ch_in=ch_in, ch_out=ch_out, dropout_rate=dropout_rate))
 
-            attention_channels = num_initial_filters * 8 // 2**divisor
-            self.attention_layers.append(
-                AttentionBlock(
-                    num_input_ch=attention_channels,
-                    ch_skip=attention_channels,
-                    num_output_ch=attention_channels // 2,
-                    dropout_prob=dropout_prob,
-                )
-            )
+        self.output_layer = OutputLayer(kernel_multiplier * 8, num_classes)
 
-    def forward(self, skip_output) -> torch.Tensor:
-        d5 = self.deconv_layers[0](skip_output[-1])
-        s4 = self.attention_layers[0](x=d5, skip=skip_output[-2])
-        d5 = torch.cat((s4, d5), dim=1)
-        d5 = self.conv_layers[0](d5)
-
-        d4 = self.deconv_layers[1](d5)
-        s3 = self.attention_layers[1](x=d4, skip=skip_output[-3])
-        d4 = torch.cat((s3, d4), dim=1)
-        d4 = self.conv_layers[1](d4)
-
-        d3 = self.deconv_layers[2](d4)
-        s2 = self.attention_layers[2](x=d3, skip=skip_output[-4])
-        d3 = torch.cat((s2, d3), dim=1)
-        d3 = self.conv_layers[2](d3)
-
-        d2 = self.deconv_layers[3](d3)
-        s1 = self.attention_layers[3](x=d2, skip=skip_output[-5])
-        d2 = torch.cat((s1, d2), dim=1)
-        d2 = self.conv_layers[3](d2)
-
-        return d2
+    def forward(self, encoder_features: List) -> torch.Tensor:
+        """forward"""
+        dec_features = []
+        for i in range(self.depth):
+            dec_feature = getattr(self, f"up_sample_{i}")(encoder_features[-i - 1])
+            attention_maps = getattr(self, f"attention_{i}")(dec_feature, encoder_features[-i - 2])
+            dec_feature = torch.cat([dec_feature, attention_maps], dim=1)
+            dec_feature = getattr(self, f"dec_conv_{i}")(dec_feature)
+            dec_features.append(dec_feature)
+        return self.output_layer(dec_features[-1])
 
 
 class OutputLayer(nn.Module):
-    def __init__(self, num_initial_filters: int, num_output_ch: int):
+    """OutputLayer"""
+
+    def __init__(self, inp_ch: int, num_classes: int):
         super().__init__()
-        self.output = nn.Sequential(
+        layers = [
             nn.Conv2d(
-                in_channels=num_initial_filters,
-                out_channels=num_output_ch,
+                in_channels=inp_ch,
+                out_channels=num_classes,
                 kernel_size=(1, 1),
                 stride=(1, 1),
                 padding=0,
-            ),
-        )
+            )
+        ]
+        self.output_layer = nn.Sequential(*layers)
 
     def __call__(self, x):
-        output_layer = self.output(x)
-        return output_layer
+        return self.output_layer(x)
 
 
 class AttentionUnet(nn.Module):
-    def __init__(
-        self,
-        num_input_ch: int,
-        num_classes: int,
-        num_initial_filters: int,
-        depth: int,
-        dropout_prob: float,
-    ):
-        super().__init__()
-        self.encoder = Encoder(
-            num_input_ch=num_input_ch,
-            num_initial_filters=num_initial_filters,
-            dropout_prob=dropout_prob,
-            depth=depth,
-        )
-        self.decoder = Decoder(num_initial_filters=num_initial_filters, dropout_prob=dropout_prob, depth=depth)
-        self.output_layer = OutputLayer(
-            num_initial_filters=num_initial_filters,
-            num_output_ch=num_classes,
-        )
-        self.num_classes = num_classes
+    """AttentionUnet"""
 
-    def forward(self, x) -> torch.Tensor:
-        skip_features = self.encoder(x)
-        decoder_output = self.decoder(skip_features)
-        output = self.output_layer(decoder_output)
-        return output
+    def __init__(self, inp_channel: int, kernel_multiplier: int, depth: int, dropout_rate: float, num_classes: int):
+        super().__init__()
+        self.encoder = Encoder(inp_channel, kernel_multiplier, dropout_rate, depth=depth)
+        self.decoder = Decoder(kernel_multiplier, dropout_rate, num_classes, depth=depth)
+
+    def forward(self, x):
+        """
+        Args:
+            x: (batch_size, inp_channel, height, width)
+        Returns:
+            output: (batch_size, num_classes, height, width)
+        """
+        encoder_features = self.encoder(x)
+        return self.decoder(encoder_features)
