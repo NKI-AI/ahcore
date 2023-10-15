@@ -1,0 +1,2 @@
+write_tiff_callback:
+  _target_: ahcore.callbacks.WriteTiffCallback

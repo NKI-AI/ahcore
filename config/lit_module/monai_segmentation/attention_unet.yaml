@@ -1,0 +1,26 @@
+_target_: ahcore.lit_module.AhCoreLightningModule
+model:
+  # Do not set out_channels, this is derived from data_description.
+  _target_: monai.networks.nets.attentionunet.AttentionUnet
+  _partial_: true
+  spatial_dims: 2
+  in_channels: 3
+  channels: [32, 64, 128, 256, 512]
+  strides: [2, 2, 2, 2]
+  dropout: 0.1
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 5e-4
+  weight_decay: 1e-4
+  betas:
+    - 0.99
+    - 0.9
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10

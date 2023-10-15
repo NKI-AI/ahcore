@@ -1,0 +1,41 @@
+defaults:
+  - learningrate_monitor.yaml
+  - model_checkpoint.yaml
+  - early_stopping.yaml
+  - model_summary.yaml
+  - rich_progress_bar.yaml
+  - write_h5_callback.yaml
+#  - write_tiff_callback.yaml
+  - compute_wsi_metrics_callback.yaml # This needs to follow write_h5_callback as it requires the outputs
+  - _self_
+
+learningrate_monitor:
+  logging_interval: null
+  log_momentum: false
+
+model_checkpoint:
+  dirpath: ${paths.output_dir}/checkpoints
+  filename: "epoch_{epoch:03d}"
+  monitor: "validate/loss"
+  mode: "min"
+  save_last: True
+  auto_insert_metric_name: False
+
+early_stopping:
+  monitor: "validate/wsi_dice/stroma"
+  patience: 1000
+  mode: "min"
+
+model_summary:
+  max_depth: -1
+
+write_h5_callback:
+  max_queue_size: 100
+  max_concurrent_writers: 4
+
+write_tiff_callback:
+  max_concurrent_writers: 4
+
+compute_wsi_metrics_callback:
+  max_processes: 4
+  save_per_image: true

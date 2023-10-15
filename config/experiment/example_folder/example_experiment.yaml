@@ -1,0 +1,23 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example_folder/example_experiment
+
+
+defaults:
+  - override /datamodule: debug_dataset.yaml
+  - override /lit_module: debug_lit.yaml
+  - override /callbacks: null
+  - override /logger: null
+  - override /trainer: segmentation.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+# Set experiment to true -- allowing any checks to run for experiment
+tags: ["example", "debug"]
+
+# name of the run determines folder name in logs (if the name is 'default' -- it will complain!)
+task_name: "debug_experiment"
+
+seed: 12345

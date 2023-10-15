@@ -1,0 +1,11 @@
+# Below we set up transforms for each stage in pytorch lightning
+# the '@name' behind the renames the config to 'name' -- allows us to re-use the validation config for other stages
+# To override specific values you can use the expected override, e.g., 'transforms.predict.probability=0'
+# We can, however, also override groups, albeit a bit more unfamiliar: 'transforms/stages@transforms.predict=train_seg'
+
+defaults:
+  - _self_
+  - /augmentations/stages@fit: train_seg
+  - /augmentations/stages@validate: val_seg
+  - /augmentations/stages@test: val_seg
+  - /augmentations/stages@predict: val_seg

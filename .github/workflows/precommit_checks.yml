@@ -1,0 +1,50 @@
+# This action is triggered when a pull request review is submitted.
+# It will run precommit checks only when the pull request is approved.
+# Reference: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#running-a-workflow-when-a-pull-request-is-approved
+
+name: Run Precommit Checks on PR Approval
+
+on:
+    workflow_dispatch:
+    push:
+        branches:
+          - main
+    pull_request_review:
+        types: [submitted]
+
+jobs:
+    # This job runs the precommit checks on the changed files.
+    run_precommit_checks:
+
+        # Ensures the job only runs when the PR review state is "approved".
+        if: github.event.review.state == 'approved'
+        runs-on: ubuntu-22.04
+
+        steps:
+            # Checkout the repository to the GitHub Actions runner.
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            # Set up the desired Python environment.
+            - name: Setup Python Environment
+              uses: actions/setup-python@v4
+              with:
+                python-version: '3.10.13'
+                cache: 'pip'
+
+            # Install the required dependencies for local repos in the precommit hooks
+            - name: Install Dependencies
+              run: pip install -r .github/workflows/requirements.txt
+
+            # Determine which python files have changed in the PR.
+            - name: Get Changed Files
+              id: changed-files
+              uses: tj-actions/changed-files@v36
+              with:
+                files: '*.py'
+
+            # Run the precommit hooks only on the changed files.
+            - name: Execute Precommit Hooks on Changed Files in PR
+              uses: pre-commit/action@v3.0.0
+              with:
+                extra_args: --files ${{ steps.changed-files.outputs.all_changed_files }}

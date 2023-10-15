@@ -1,0 +1,64 @@
+# @package _global_
+
+# specify here default training configuration
+defaults:
+  - _self_  # Means that any variables defined here will be overridden by possible subconfigs below
+  - data_description: ???
+  - datamodule: dataset.yaml
+  - pre_transform: ???
+  - augmentations: ???
+  - metrics: ???
+  - losses: ???
+  - task: segmentation.yaml
+  - lit_module: ???
+  - logger: # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
+    - mlflow
+    - tensorboard
+  - callbacks: default.yaml
+  - trainer: default.yaml
+  - hydra: default.yaml  # if we want to setup different hydra logging dirs / color log
+  - paths: default.yaml
+  - machine_settings: example.yaml
+
+  # experiment configs allow for version control of specific configurations
+  # e.g. specific hyperparameter searches or something
+  - experiment: null
+
+  # debugging config (enable through command line, e.g. `python train.py debug=default)
+  - debug: null
+
+  # config for hyperparameter optimization
+  - hparams_search: null
+
+  # optional local config for user specific settings
+  # it's optional since it doesn't need to exist and is excluded from version control
+  - optional local: segmentation.yaml
+
+# checkpoint path
+ckpt_path: null
+
+# task name -- used for output directory path (or name it to a specific experiment if you'd like)
+task_name: "train"
+
+# tags that can be found in mlflow to keep track of experiments
+# note you cannot append in cli currently (perhaps in future)
+tags: ["dev"]
+
+# pretty print config at the start of the run using Rich library
+print_config: True
+
+# disable python warnings if they annoy you
+ignore_warnings: False
+
+# force tags to be entered (e.g. for running experiments):
+enforce_tags: False
+
+# set False to skip model training
+train: True
+
+# evaluate on test set, using best model weights achieved during training
+# lightning chooses best weights based on the metric specified in checkpoint callback
+test_after_training: False
+
+# seed for random number generators in pytorch, numpy and python.random
+seed: 42

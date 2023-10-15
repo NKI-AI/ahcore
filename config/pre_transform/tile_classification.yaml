@@ -1,0 +1,2 @@
+_target_: ahcore.transforms.pre_transforms.PreTransformTaskFactory.for_tile_classification
+_partial_: true

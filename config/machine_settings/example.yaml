@@ -1,0 +1,13 @@
+# @package _global_
+
+# In this file you can override machine / partition specific parameters
+# This allows you to change machine_settings=your_machine to align with the computational availability
+# Note that the @package _global_ on top is important; this allows you to override in the main config
+
+# Note that machine settings are excluded from version control
+
+# Example for datamodule:
+
+datamodule:
+  num_workers: 1
+  batch_size: 16

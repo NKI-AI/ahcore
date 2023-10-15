@@ -1,0 +1,2 @@
+_target_: ahcore.debug_lit_multigpu.Debug
+input_size: [100, 100, 3]

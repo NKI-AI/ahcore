@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - override /pre_transform: segmentation.yaml
+  - override /metrics: segmentation.yaml
+  - override /losses: segmentation_ce.yaml
+  # TODO: we could also consider specifying the lit_module here
+
+task_name: ???

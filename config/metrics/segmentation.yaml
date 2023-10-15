@@ -1,0 +1,6 @@
+tile_level:
+  _target_: ahcore.metrics.MetricFactory.for_segmentation
+
+wsi_level:
+  _target_: ahcore.metrics.WSIMetricFactory.for_segmentation
+  compute_overall_dice: True
