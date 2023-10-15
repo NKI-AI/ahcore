@@ -491,7 +491,7 @@ def _write_tiff(
             mpp=h5_reader.mpp,
             tile_size=tile_size,
             pyramid=True,
-            compression=TiffCompression.JPEG,
+            compression=TiffCompression.CCITTFAX4,
             quality=100,
             interpolator=Resampling.NEAREST,
         )
