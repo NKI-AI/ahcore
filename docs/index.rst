@@ -1,7 +1,7 @@
 .. role:: bash(code)
    :language: bash
 
-AI for Oncology Core for Comptuational Pathology
+AI for Oncology Core for Computational Pathology
 ================================================
 
 
@@ -10,6 +10,7 @@ AI for Oncology Core for Comptuational Pathology
    :caption: Contents:
 
    cli
+   configuration
    contributing
    modules
 

@@ -77,8 +77,8 @@ master_doc = "index"
 
 # General information about the project.
 project = "ahcore"
-copyright = "2022, ahcore contributors"
-author = "Jonas Teuwen"
+copyright = "2023, ahcore contributors"
+author = "AI for Oncology"
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
