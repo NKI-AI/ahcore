@@ -1,0 +1,16 @@
+_target_: pytorch_lightning.Trainer
+
+# When using MPS acceleration set environment variable `PYTORCH_ENABLE_MPS_FALLBACK=1` in .env
+accelerator: mps
+devices: 1
+max_epochs: 1000
+num_nodes: 1
+
+# number of validation steps to execute at the beginning of the training
+num_sanity_val_steps: 0
+#log_every_n_steps: 2
+
+# if a smaller grid is used, the val check interval should be smaller
+#val_check_interval: 2  # Used if you want to check val more than once per epoch
+check_val_every_n_epoch: 1  # Used if you want to check val less than once per epoch
+accumulate_grad_batches: 1
