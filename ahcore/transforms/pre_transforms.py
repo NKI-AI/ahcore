@@ -231,7 +231,8 @@ class ImageToTensor:
         if "roi" in sample["annotation_data"]:
             roi = sample["annotation_data"]["roi"]
             sample["roi"] = torch.from_numpy(roi[np.newaxis, ...]).float()
-
+        if torch.backends.mps.is_available():
+            sample['mpp'] = torch.tensor(sample['mpp'], dtype=torch.float32)
         return sample
 
     def __repr__(self) -> str:
