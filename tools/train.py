@@ -2,11 +2,6 @@ import dotenv
 import hydra
 from omegaconf import DictConfig
 
-from ahcore.hydra_plugins import register_additional_config_search_path
-
-register_additional_config_search_path()
-
-
 # load environment variables from `.env` file if it exists
 # recursively searches for `.env` in all folders starting from work dir
 dotenv.load_dotenv(override=True)
