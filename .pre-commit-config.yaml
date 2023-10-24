@@ -30,7 +30,7 @@ repos:
         entry: mypy
         language: system
         types: [python]
-        args: ["ahcore", "--strict"]
+        args: ["--strict"]
 -   repo: https://github.com/Yelp/detect-secrets
     rev: v1.4.0
     hooks:
