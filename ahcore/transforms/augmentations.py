@@ -78,6 +78,7 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
         scale_sigma: float | list[float] | ListConfig,
         bias_sigma: float | list[float] | ListConfig,
         epsilon: float = 1e-6,
+        clamp_output_range: Optional[tuple[float, float]] = None,
         p: float = 0.5,
         p_batch: float = 1.0,
         same_on_batch: bool = False,
@@ -133,6 +134,7 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
             "epsilon": torch.tensor([epsilon]),
             "M": self.HED_REFERENCE,
             "M_inv": torch.linalg.inv(self.HED_REFERENCE),
+            "clamp_output_range": clamp_output_range,
         }
 
     def apply_transform(
@@ -160,10 +162,13 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
         # Mypy doesn't understand this is a tensor.
         hed_tensor = cast(torch.Tensor, optical_density @ reference_matrix_inv)
 
-        augmented_hed_tensor = torch.where(hed_tensor > epsilon, alpha * hed_tensor + beta, hed_tensor)
+        augmented_hed_tensor = alpha * hed_tensor + beta
         # Same problem that mypy doesn't understand
         augmented_rgb_tensor = cast(torch.Tensor, torch.exp(-augmented_hed_tensor @ reference_matrix) - epsilon)
         augmented_sample = augmented_rgb_tensor.permute(0, 3, 1, 2)
+
+        if flags["clamp_output_range"] is not None:
+            augmented_sample = torch.clamp(augmented_sample, *flags["clamp_output_range"])
         return augmented_sample
 
 
