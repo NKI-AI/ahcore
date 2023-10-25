@@ -27,6 +27,7 @@ class AdditionalSearchPathPlugin(SearchPathPlugin):
                 )
             else:
                 # Add additional search path for configs
+                logger.info(f"Adding additional search path for configs: file://{additional_path}")
                 search_path.prepend(provider="hydra-ahcore", path=f"file://{additional_path}")
 
 

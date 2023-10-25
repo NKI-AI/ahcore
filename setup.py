@@ -61,7 +61,7 @@ setup(
             "pytest",
             "numpydoc",
             "pylint==2.17.7",
-            "black==23.9.1",
+            "black==23.10.1",
             "types-Pillow",
             "sphinx",
             "sphinx_copybutton",
