@@ -78,6 +78,7 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
         scale_sigma: float | list[float] | ListConfig,
         bias_sigma: float | list[float] | ListConfig,
         epsilon: float = 1e-6,
+        clamp_output_range: Optional[tuple[float, float]] = (0, 1),
         p: float = 0.5,
         p_batch: float = 1.0,
         same_on_batch: bool = False,
@@ -96,6 +97,16 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
             For each channel in the HED space a random bias is added drawn from beta_i ~ U(-sigma_i,sigma_i).
         epsilon: float
             Small positive bias to avoid numerical errors
+        clamp_output_range: tuple of floats or None
+            Clamp output in range after augmenting the input. Conventionally a range of [0, 1] is used, but this will
+            discard some color information. `scale_sigma` and `bias_sigma` should be chosen carefully to prevent this.
+
+        NOTE: To reproduce augmentations as shown in [3], a larger positive bias of `epsilon=2` in combination with
+        `clamp_output_range=(0, 1)` should be used. Then, use `scale_sigma=bias_sigma=0.05` for `HED-light` and
+        `scale_sigma=bias_sigma=0.2` for `HED-strong`.
+        When using the default `epsilon=1e-6` and `clamp_output_range=(0, 1)`, this is not equal but comparable to
+        `scale_sigma=bias_sigma=0.15` for `HED-light` and `scale_sigma=bias_sigma=0.8` for `HED-strong`?
+
 
         References
         ----------
@@ -104,6 +115,9 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
             IEEE transactions on medical imaging 37.9 (2018): 2126-2136.
         [2] Ruifrok AC, Johnston DA. Quantification of histochemical staining by color deconvolution.
             Anal Quant Cytol Histol. 2001 Aug;23(4):291-9. PMID: 11531144.
+        [3] Tellez, David, et al. "Quantifying the effects of data augmentation and stain color normalization
+            in convolutional neural networks for computational pathology."
+            Medical image analysis 58 (2019): 101544.
         """
         super().__init__(p=p, p_batch=p_batch, same_on_batch=same_on_batch, keepdim=keepdim)
         if (isinstance(scale_sigma, (list, ListConfig)) and len(scale_sigma) != 3) or (
@@ -133,6 +147,7 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
             "epsilon": torch.tensor([epsilon]),
             "M": self.HED_REFERENCE,
             "M_inv": torch.linalg.inv(self.HED_REFERENCE),
+            "clamp_output_range": clamp_output_range,
         }
 
     def apply_transform(
@@ -160,10 +175,13 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
         # Mypy doesn't understand this is a tensor.
         hed_tensor = cast(torch.Tensor, optical_density @ reference_matrix_inv)
 
-        augmented_hed_tensor = torch.where(hed_tensor > epsilon, alpha * hed_tensor + beta, hed_tensor)
+        augmented_hed_tensor = alpha * hed_tensor + beta
         # Same problem that mypy doesn't understand
         augmented_rgb_tensor = cast(torch.Tensor, torch.exp(-augmented_hed_tensor @ reference_matrix) - epsilon)
         augmented_sample = augmented_rgb_tensor.permute(0, 3, 1, 2)
+
+        if flags["clamp_output_range"] is not None:
+            augmented_sample = torch.clamp(augmented_sample, *flags["clamp_output_range"])
         return augmented_sample
 
 
