@@ -5,6 +5,7 @@ from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.plugins import Plugins
 from hydra.plugins.search_path_plugin import SearchPathPlugin
 
+from ahcore.exceptions import ConfigurationError
 from ahcore.utils.io import get_logger
 
 logger = get_logger(__name__)
@@ -15,7 +16,10 @@ class AdditionalSearchPathPlugin(SearchPathPlugin):
 
     def manipulate_search_path(self, search_path: ConfigSearchPath) -> None:
         additional_path = Path(__file__).parent.parent.parent / "additional_config"
-        if additional_path.is_dir():
+        if additional_path.is_file():
+            raise ConfigurationError("Found additional_config file, but expected a folder.")
+
+        elif additional_path.is_dir():
             if not list(additional_path.glob("*")):
                 warnings.warn(
                     f"Found additional_config folder in {additional_path}, without any configuration files. "
@@ -29,6 +33,13 @@ class AdditionalSearchPathPlugin(SearchPathPlugin):
                 # Add additional search path for configs
                 logger.info(f"Adding additional search path for configs: file://{additional_path}")
                 search_path.prepend(provider="hydra-ahcore", path=f"file://{additional_path}")
+        else:
+            logger.info(
+                "No additional_config folder found. Will use standard ahcore configurations."
+                "If you want to overwrite or extend the default ahcore configs, you can add these to the "
+                "additional_config folder. You could also symlink your additional configuration to this folder."
+                "See the documentation at https://docs.aiforoncology.nl/ahcore/configuration.html."
+            )
 
 
 def register_additional_config_search_path() -> None:
