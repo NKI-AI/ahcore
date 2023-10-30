@@ -1,11 +1,9 @@
-import os
-
 import hydra
 from omegaconf import DictConfig
 
 from ahcore.utils import env
 
-env.load_env(os.getcwd())
+env.load_env(usecwd=True)
 from ahcore.hydra_plugins import register_additional_config_search_path  # noqa: E402
 
 register_additional_config_search_path()
