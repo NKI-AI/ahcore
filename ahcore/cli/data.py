@@ -58,7 +58,7 @@ def copy_data(args: argparse.Namespace) -> None:
 
 
 def register_parser(
-    parser: argparse._SubParsersAction[Any],
+    parser: argparse._SubParsersAction[Any],  # pylint: disable=unsubscriptable-object
 ) -> None:  # pylint: disable=E1136
     """Register inspect commands to a root parser."""
     data_parser = parser.add_parser("data", help="Data utilities")
