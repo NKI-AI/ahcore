@@ -14,7 +14,7 @@ from pytorch_lightning.trainer.states import TrainerFn
 from torch.utils.data import DataLoader, Sampler
 
 import ahcore.data.samplers
-from ahcore.utils.data import DataDescription, basemodel_to_uuid
+from ahcore.utils.data import DataDescription, basemodel_to_uuid, collate_fn_annotations
 from ahcore.utils.io import fullname, get_cache_dir, get_logger
 from ahcore.utils.manifest import DataManager, datasets_from_data_description
 from ahcore.utils.types import DlupDatasetSample, _DlupDataset
@@ -88,6 +88,10 @@ class DlupDataModule(pl.LightningDataModule):
         self._pre_transform = pre_transform
 
         # DataLoader settings
+        collate_fn = (
+            collate_fn_annotations if self.data_description.use_points or self.data_description.use_boxes else None
+        )
+        self._collate_fn = collate_fn
         self._num_workers = num_workers
         self._persistent_workers = persistent_workers
         self._pin_memory = pin_memory
@@ -111,7 +115,7 @@ class DlupDataModule(pl.LightningDataModule):
         return self._data_manager
 
     def setup(self, stage: str) -> None:
-        if stage not in (e.value for e in TrainerFn):  # type: ignore
+        if stage not in (e.value for e in TrainerFn):
             raise ValueError(f"Stage should be one of {TrainerFn}")
 
         if stage and self._already_called[stage]:
@@ -181,6 +185,7 @@ class DlupDataModule(pl.LightningDataModule):
         return DataLoader(
             dataset,
             num_workers=self._num_workers,
+            collate_fn=self._collate_fn,
             batch_sampler=batch_sampler,
             persistent_workers=self._persistent_workers,
             pin_memory=self._pin_memory,

@@ -5,11 +5,14 @@ import hashlib
 import pickle
 import uuid
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
+import torch
 from pydantic import BaseModel
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data.dataloader import default_collate
 
-from ahcore.utils.types import NonNegativeInt, PositiveFloat, PositiveInt
+from ahcore.utils.types import DlupDatasetSample, NonNegativeInt, PositiveFloat, PositiveInt
 
 
 def basemodel_to_uuid(base_model: BaseModel) -> uuid.UUID:
@@ -41,6 +44,26 @@ def basemodel_to_uuid(base_model: BaseModel) -> uuid.UUID:
     return unique_id
 
 
+def collate_fn_annotations(batch: list[DlupDatasetSample]) -> Any:
+    def _collate_fn_ann_type(
+        batch: list[DlupDatasetSample], ann_type: Literal["points", "boxes"]
+    ) -> torch.Tensor | None:
+        # any function short circuits at first True evaluation and pre_transform places at least empty tensor
+        if any(sample.get(ann_type) is not None for sample in batch):
+            field_data = [sample.pop(ann_type) for sample in batch]
+            return pad_sequence(field_data, batch_first=True, padding_value=torch.nan).float()
+        return None
+
+    _padded_points = _collate_fn_ann_type(batch, "points")
+    _padded_boxes = _collate_fn_ann_type(batch, "boxes")
+    collated_batch = default_collate(batch)
+    if _padded_points is not None:
+        collated_batch["points"] = _padded_points
+    if _padded_boxes is not None:
+        collated_batch["boxes"] = _padded_boxes
+    return collated_batch
+
+
 class GridDescription(BaseModel):
     mpp: Optional[PositiveFloat]
     tile_size: Tuple[PositiveInt, PositiveInt]
@@ -66,3 +89,7 @@ class DataDescription(BaseModel):
     convert_mask_to_rois: bool = True
     use_roi: bool = True
     apply_color_profile: bool = True
+
+    use_points: bool = False
+    use_boxes: bool = False
+    point_radius_microns: Optional[float] = None

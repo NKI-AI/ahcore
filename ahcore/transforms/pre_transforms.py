@@ -4,7 +4,8 @@ dataset.
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+import itertools
+from typing import Any, Callable, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -236,6 +237,56 @@ class ImageToTensor:
             sample["mpp"], dtype=torch.float32 if torch.backends.mps.is_available() else torch.float64
         )
 
+        return sample
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}()"
+
+
+class AnnotationsToTensor:
+    def __init__(self, index_map: dict[str, int], ann_type: Literal["points", "boxes"] = "points") -> None:
+        """Transform detection annotations to Tensor object.
+        If we have `K` classes, the output Tensor will have shape (N, 3) or (N, 5), where `N = \\sum_{k=0}^K N_k`
+        with `N_k` as the number of annotations of class `C_k`. When `ann_type` is 'points' each sample will have
+        (x, y, label_index). When `ann_type` is 'boxes' each sample will have (x, y, width, heigth label_index).
+
+        Parameters
+        ----------
+        index_map: dict[str, int]
+            Index map mapping the label name to the integer value it has in the mask.
+        ann_type: str
+            Annotation type to convert to tensor. Can be either 'points' or 'boxes'
+        """
+        if ann_type not in ["points", "boxes"]:
+            raise ConfigurationError(f"`ann_type` must be 'points' or 'boxes' but got {ann_type=}")
+        self._index_map = index_map
+        self._ann_type = ann_type
+        self._output_size = 3 if self._ann_type == "points" else 5
+
+    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
+        if "annotation_data" not in sample:
+            return sample
+
+        if self._ann_type not in sample["annotation_data"]:
+            sample[self._ann_type] = torch.empty((0, self._output_size))
+            return sample
+
+        annotations: dict[str, Any] = sample["annotation_data"][self._ann_type]
+        _annotations = []
+        for label, index in self._index_map.items():
+            if label not in annotations:
+                continue
+
+            label_annotations = [
+                [*ann, index] if self._ann_type == "points" else [*itertools.chain.from_iterable(ann), index]
+                for ann in annotations[label]
+            ]
+
+            _annotations.extend(label_annotations)
+
+        sample[self._ann_type] = (
+            torch.from_numpy(np.asarray(_annotations)) if _annotations else torch.empty((0, self._output_size))
+        )
         return sample
 
     def __repr__(self) -> str:
