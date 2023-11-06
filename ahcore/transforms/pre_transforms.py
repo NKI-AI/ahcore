@@ -15,6 +15,7 @@ from dlup.data.transforms import ContainsPolygonToLabel, ConvertAnnotationsToMas
 from torchvision.transforms import functional as F
 
 from ahcore.exceptions import ConfigurationError
+from ahcore.transforms.dlup_transforms import ConvertPointAnnotationsToMask
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
@@ -45,6 +46,55 @@ class PreTransformTaskFactory:
             AllowCollate(),
         ]
         self._transforms = transforms
+
+    @classmethod
+    def for_detection(cls, data_description: DataDescription, requires_target: bool = True) -> PreTransformTaskFactory:
+        """
+        Pretransforms for detection tasks. If the target is required these transforms are applied as follows:
+        - Labels are renamed (for instance if you wish to map several labels to on specific class)
+        - `Polygon` and `Point` annotations are converted to a mask
+        - The mask is one-hot encoded.
+        Parameters
+        ----------
+        data_description : DataDescription
+        requires_target : bool
+        Returns
+        -------
+        PreTransformTaskFactory
+            The `PreTransformTaskFactory` initialized for detection tasks.
+        """
+        transforms: list[PreTransformCallable] = []
+        if not requires_target:
+            return cls(transforms)
+
+        if data_description.index_map is None:
+            raise ConfigurationError("`index_map` is required for segmentation models when the target is required.")
+
+        if data_description.remap_labels is not None:
+            transforms.append(RenameLabels(remap_labels=data_description.remap_labels))
+
+        if data_description.point_radius_microns is None or data_description.training_grid.mpp is None:
+            raise ConfigurationError(
+                "`points_radius_micro_m` and `training_grid.mpp` need to be defined for calculation of radius."
+            )
+        else:
+            _radius_pixels = int(round(data_description.point_radius_microns / data_description.training_grid.mpp))
+            if _radius_pixels <= 0:
+                raise ConfigurationError(
+                    f"Point conversion radius in pixels must be postive but got {_radius_pixels=}."
+                )
+
+        transforms.extend(
+            [
+                ConvertPointAnnotationsToMask(
+                    roi_name=data_description.roi_name, index_map=data_description.index_map, radius=_radius_pixels
+                ),
+                OneHotEncodeMask(index_map=data_description.index_map),
+                AnnotationsToTensor(index_map=data_description.index_map, ann_type="points"),
+            ]
+        )
+
+        return cls(transforms)
 
     @classmethod
     def for_segmentation(
