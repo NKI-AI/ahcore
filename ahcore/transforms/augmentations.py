@@ -3,13 +3,14 @@ Augmentations factory
 """
 from __future__ import annotations
 
-from typing import Any, Optional, Union, cast
+from typing import Any, Literal, Optional, Union, cast
 
 import kornia.augmentation as K
 import pytorch_lightning as pl
 import torch
 from kornia.augmentation import random_generator as rg
 from kornia.constants import DataKey, Resample
+from kornia.geometry import transform_bbox, transform_points
 from omegaconf import ListConfig
 from torch import nn
 
@@ -17,6 +18,54 @@ from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 
 logger = get_logger(__name__)
+
+
+def validate_sample_annotations(
+    sample: dict[str, torch.Tensor], ann_type: Literal["points", "boxes"] = "points"
+) -> dict[str, torch.Tensor]:
+    """Validate annotations after augmentations based on image size and roi (if it exists).
+
+    Parameters
+    ----------
+    sample : dict[str, torch.Tensor]
+        Sample after augmentations. Image size is determined by "image" tensor. Optionally, validity of annotations is
+        checked if "roi" tensor is found.
+    ann_type : Literal[&quot;points&quot;, &quot;boxes&quot;], optional
+        Annotation type used to validate, by default "points"
+
+    Returns
+    -------
+    dict[str, torch.Tensor]
+        Sample with invalid annotation and labels set to torch.nan and -1 respectively.
+
+    Raises
+    ------
+    NotImplementedError
+        Validation of ann_type `boxes` has not been implemented yet.
+    """
+    if ann_type == "boxes":
+        raise NotImplementedError
+
+    # Validate if annotations are within bounds
+    _size = sample["image"].shape[-2:]
+    _annotations = sample[ann_type]
+    valid_idx = ((_annotations >= 0) & (_annotations < _size[0])).all(dim=2)
+    _annotations[~valid_idx] = torch.nan
+
+    # Validate annotations are within ROI
+    _roi = sample.get("roi")
+    if _roi is not None:
+        _roi = _roi.squeeze()
+        # TODO: Only taking valid_idx and not padded values
+        _first_idx = torch.arange(_annotations.shape[0]).repeat_interleave(_annotations.shape[1])
+        _annotations_idx = _annotations.round().long()
+        roi_valid = _roi[_first_idx, _annotations_idx[:, :, 0].flatten(), _annotations_idx[:, :, 1].flatten()]
+        valid_idx = valid_idx & roi_valid.reshape(-1, _annotations.shape[1]).bool()
+        _annotations[~valid_idx] = torch.nan
+
+    _labels = sample[f"{ann_type}_labels"]
+    _labels[~valid_idx] = -1
+    return sample
 
 
 class MeanStdNormalizer(nn.Module):
@@ -205,7 +254,19 @@ class CenterCrop(nn.Module):
         data_keys: Optional[list[str | int | DataKey]] = None,
         **kwargs: Any,
     ) -> Union[list[torch.Tensor], torch.Tensor]:
-        output = [cast(torch.Tensor, self._cropper(item)) for item in sample]
+        if data_keys is None:
+            output = [cast(torch.Tensor, self._cropper(item)) for item in sample]
+        else:
+            output = []
+            for item, data_key in zip(sample, data_keys):
+                if data_key in [DataKey.INPUT, 0, "INPUT", DataKey.MASK, 1, "MASK"]:
+                    output.append(cast(torch.Tensor, self._cropper(item)))
+                else:
+                    trans_mat = self._cropper.get_transformation_matrix(item)
+                    if data_key in [DataKey.KEYPOINTS, 5, "KEYPOINTS"]:
+                        output.append(transform_points(trans_mat, item))
+                    else:
+                        output.append(transform_bbox(trans_mat, item, mode="xywh"))
 
         if len(output) == 1:
             return output[0]
@@ -239,7 +300,13 @@ class AugmentationFactory(nn.Module):
     - `geometric_augmentations`: Transforms which affect the geometry. They are applied to both the image, ROI and mask.
     """
 
-    DATA_KEYS = {"image": DataKey.INPUT, "target": DataKey.MASK, "roi": DataKey.MASK}
+    DATA_KEYS = {
+        "image": DataKey.INPUT,
+        "target": DataKey.MASK,
+        "roi": DataKey.MASK,
+        "points": DataKey.KEYPOINTS,
+        "boxes": DataKey.BBOX_XYWH,
+    }
 
     def __init__(
         self,
@@ -257,8 +324,25 @@ class AugmentationFactory(nn.Module):
         super().__init__()
 
         self._transformable_keys = ["image", "target"]
+        self._annotation_keys: list[Literal["points", "boxes"]] = []
         if data_description.use_roi:
             self._transformable_keys.append("roi")
+        if data_description.use_points:
+            self._transformable_keys.append("points")
+            self._annotation_keys.append("points")
+        if data_description.use_boxes:
+            self._transformable_keys.append("boxes")
+            self._annotation_keys.append("boxes")
+
+        if (
+            any(ann_type in self._annotation_keys for ann_type in ["points", "boxes"])
+            and "roi" not in self._transformable_keys
+            and geometric_augmentations is not None
+        ):
+            logger.warn(
+                "Using keypoints and boxes as annotations without ROIs might result in invalid annotations because of \
+                geometric augmentations."
+            )
         self._data_keys = [self.DATA_KEYS[key] for key in self._transformable_keys]
 
         # Initial transforms will be applied sequentially
@@ -337,4 +421,8 @@ class AugmentationFactory(nn.Module):
         for key, curr_output in zip(self._transformable_keys, output_data):
             sample[key] = curr_output
 
+        # Verify annotation output (using ROI if it exists in sample)
+        if self._annotation_keys:
+            for ann_type in self._annotation_keys:
+                sample = validate_sample_annotations(sample, ann_type=ann_type)
         return sample
