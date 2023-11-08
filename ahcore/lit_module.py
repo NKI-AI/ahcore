@@ -5,11 +5,14 @@ This module contains the core Lightning module for ahcore. This module is respon
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
+import kornia as K
+import numpy as np
 import pytorch_lightning as pl
 import torch.optim.optimizer
 from pytorch_lightning.trainer.states import TrainerFn
+from skimage import measure
 from torch import nn
 
 from ahcore.exceptions import ConfigurationError
@@ -214,3 +217,83 @@ class AhCoreLightningModule(pl.LightningModule):
                 },
             }
         return {"optimizer": optimizer}
+
+
+def _process_point_predictions(
+    predictions: torch.Tensor,
+    roi: Optional[torch.Tensor] = None,
+    kernel_size: Optional[tuple[int, int] | int] = (5, 5),
+    sigma: Optional[tuple[float, float]] = (1.0, 1.0),
+    min_threshold: Optional[float] = 0.5,
+) -> dict[str, torch.Tensor]:
+    """Post-process segementation maps into point annotations.
+
+    Model output is converted into point annotations with labels and confidences of the extracted region. This is done
+    by applying a softmax/sigmoid on the predictions and optionally Gaussian blur and thresholding. For each pixel in
+    the max and argmax will be viewed as the confidence and prediction respectively. Using `label` and `region_props`
+    from `skimage.measure` regions will be extracted. The centroid of each region is considered a point prediction with
+    confidence taken as the mean intensity of the region and label as the corresponding label in the argmax.
+
+    Arguments
+    ---------
+    predictions: torch.Tensor
+        Model output of shape `(N, C, H, W)`.
+    roi: torch.Tensor
+        ROI of shape `(N, 1, H, W)`
+    kernel_size: tuple[int, int], optional
+        Kernel size for 2D Gaussian blur. If `kernel_size=None` no blur will be applied.
+        Default: (5, 5)
+    sigma: tuple[float, float], optional
+        Standard deviation for 2D Gaussian blur. If `sigma=None` no blur will be applied.
+        Default: (1.0, 1.0)
+    min_threshold: float, optional
+        Minimum threshold for predictions. Values lower than threshold after the activation function will be set to 0.
+        Default: 0.5
+
+    Returns
+    -------
+    dict[str, torch.Tensor]
+        Dictionary mapping `points`, `point_labels` and `point_confidences` to output as padded tensors of shape
+        `(N, K, 2)`, `(N, K, 1)` and `(N, K, 1)` respectively. `K` is the largest number of points.
+    """
+    _predictions = torch.softmax(predictions, dim=1) if predictions.shape[1] > 1 else torch.sigmoid(predictions)
+    if roi is not None:
+        _predictions *= roi
+    if sigma is not None and kernel_size is not None:
+        _predictions = K.filters.gaussian_blur2d(_predictions, kernel_size=kernel_size, sigma=sigma)
+    if min_threshold is not None:
+        _predictions[_predictions < min_threshold] = 0
+
+    _predictions_max, _predictions_argmax = torch.max(_predictions, dim=1)
+    _predictions_max = _predictions_max.detach().cpu().numpy()
+    _predictions_argmax = _predictions_argmax.detach().cpu().numpy()
+
+    # Is kornia.contrib.connected_components a good alternative? It does not do the same thing
+    _point_predictions = []
+    for _sample_max, _sample_argmax in zip(_predictions_max, _predictions_argmax):
+        _labels = measure.label(_sample_argmax, background=0)  # type: ignore
+        _regions = measure.regionprops(_labels, intensity_image=_sample_max)  # type: ignore
+
+        _sample_points = []
+        for region in _regions:
+            y, x = np.round(region.centroid).astype(int)
+            # Centroid is not always in region (think horse shoe) and label is instance label
+            region_label = np.unique(_sample_argmax[_labels == region.label])[0]
+            region_confidence = region.intensity_mean
+            _sample_points.append([x, y, region_label, region_confidence])
+
+        # Sort predictions by confidences
+        if _sample_points:
+            _point_predictions.append(torch.tensor(sorted(_sample_points, key=lambda x: x[3], reverse=True)))
+        else:
+            _point_predictions.append(torch.empty((0, 4)))
+
+    _padded_point_predictions = torch.nn.utils.rnn.pad_sequence(
+        _point_predictions, batch_first=True, padding_value=torch.nan
+    ).float()
+    output = {
+        "points": _padded_point_predictions[:, :, :2],
+        "points_labels": _padded_point_predictions[:, :, 2],
+        "points_confidences": _padded_point_predictions[:, :, 3],
+    }
+    return output
