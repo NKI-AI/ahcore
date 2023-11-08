@@ -4,7 +4,6 @@ dataset.
 """
 from __future__ import annotations
 
-import itertools
 from typing import Any, Callable, Literal
 
 import numpy as np
@@ -311,7 +310,7 @@ class AnnotationsToTensor:
             raise ConfigurationError(f"`ann_type` must be 'points' or 'boxes' but got {ann_type=}")
         self._index_map = index_map
         self._ann_type = ann_type
-        self._output_size = 3 if self._ann_type == "points" else 5
+        self._output_size = 2 if self._ann_type == "points" else 4
 
     def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
         if "annotation_data" not in sample:
@@ -319,24 +318,23 @@ class AnnotationsToTensor:
 
         if self._ann_type not in sample["annotation_data"]:
             sample[self._ann_type] = torch.empty((0, self._output_size))
+            sample[f"{self._ann_type}_labels"] = torch.empty((0))
             return sample
 
         annotations: dict[str, Any] = sample["annotation_data"][self._ann_type]
         _annotations = []
+        _labels = []
         for label, index in self._index_map.items():
             if label not in annotations:
                 continue
 
-            label_annotations = [
-                [*ann, index] if self._ann_type == "points" else [*itertools.chain.from_iterable(ann), index]
-                for ann in annotations[label]
-            ]
-
-            _annotations.extend(label_annotations)
+            _annotations.append(np.asarray(annotations[label]).reshape(-1, self._output_size))
+            _labels.extend([index] * len(annotations[label]))
 
         sample[self._ann_type] = (
-            torch.from_numpy(np.asarray(_annotations)) if _annotations else torch.empty((0, self._output_size))
+            torch.from_numpy(np.concatenate(_annotations)) if _annotations else torch.empty((0, self._output_size))
         )
+        sample[f"{self._ann_type}_labels"] = torch.from_numpy(np.asarray(_labels)) if _labels else torch.empty((0))
         return sample
 
     def __repr__(self) -> str:

@@ -117,7 +117,7 @@ def convert_point_annotations(
     if not has_roi and roi_name is not None:
         raise AnnotationError(f"ROI mask {roi_name} not found, please add a ROI mask to the annotations.")
 
-    return dict(points), dict(boxes), mask, roi_mask if roi_name else None
+    return dict(points), dict(boxes), mask, roi_mask if roi_name else None  # type: ignore
 
 
 class ConvertPointAnnotationsToMask:
