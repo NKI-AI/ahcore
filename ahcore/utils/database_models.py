@@ -6,8 +6,8 @@ from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, Integer, Strin
 from sqlalchemy.orm import DeclarativeBase, Mapped, relationship
 
 
-class CategoryEnum(PyEnum):
-    TRAIN = "fit"
+class CategoryEnum(str, PyEnum):
+    FIT = "fit"
     VALIDATE = "validate"
     TEST = "test"
     PREDICT = "predict"
@@ -44,7 +44,7 @@ class Patient(Base):
     manifest: Mapped["Manifest"] = relationship("Manifest", back_populates="patients")
     images: Mapped[List["Image"]] = relationship("Image", back_populates="patient")
     labels: Mapped[List["PatientLabels"]] = relationship("PatientLabels", back_populates="patient")
-    split: Mapped[List["Split"]] = relationship("Split", uselist=False, back_populates="patient")
+    splits: Mapped[List["Split"]] = relationship("Split", back_populates="patient")
 
 
 class Image(Base):
@@ -55,9 +55,9 @@ class Image(Base):
     # pylint: disable=E1102
     created = Column(DateTime(timezone=True), default=func.now())
     last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
-    filename = Column(String, unique=True)
+    filename = Column(String, unique=True, nullable=False)
     reader = Column(String)
-    patient_id = Column(Integer, ForeignKey("patient.id"))
+    patient_id = Column(Integer, ForeignKey("patient.id"), nullable=False)
 
     height = Column(Integer)
     width = Column(Integer)
@@ -66,8 +66,8 @@ class Image(Base):
     patient: Mapped["Patient"] = relationship("Patient", back_populates="images")
     masks: Mapped[List["Mask"]] = relationship("Mask", back_populates="image")
     annotations: Mapped[List["ImageAnnotations"]] = relationship("ImageAnnotations", back_populates="image")
-    labels: Mapped["ImageLabels"] = relationship("ImageLabels", back_populates="image")
-    cache: Mapped["ImageCache"] = relationship("ImageCache", uselist=False, back_populates="image")
+    labels: Mapped[List["ImageLabels"]] = relationship("ImageLabels", back_populates="image")
+    caches: Mapped[List["ImageCache"]] = relationship("ImageCache", back_populates="image")
 
 
 class ImageCache(Base):
@@ -79,14 +79,14 @@ class ImageCache(Base):
     # pylint: disable=E1102
     created = Column(DateTime(timezone=True), default=func.now())
     last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
-    filename = Column(String, unique=True)
+    filename = Column(String, unique=True, nullable=False)
     reader = Column(String)
     num_tiles = Column(Integer)
-    image_id = Column(Integer, ForeignKey("image.id"))
-
-    image: Mapped["Image"] = relationship("Image", back_populates="cache")
+    image_id = Column(Integer, ForeignKey("image.id"), nullable=False)
     description_id = Column(Integer, ForeignKey("cache_description.id"))
-    description: Mapped["CacheDescription"] = relationship("CacheDescription", back_populates="caches")
+
+    image: Mapped["Image"] = relationship("Image", back_populates="caches")
+    description: Mapped["CacheDescription"] = relationship("CacheDescription", back_populates="cache")
 
 
 class CacheDescription(Base):
@@ -108,7 +108,7 @@ class CacheDescription(Base):
     mask_threshold = Column(Float)
     grid_order = Column(String)
 
-    caches: Mapped["ImageCache"] = relationship("ImageCache", back_populates="description")
+    cache: Mapped["ImageCache"] = relationship("ImageCache", back_populates="description")
 
 
 class Mask(Base):
@@ -121,7 +121,7 @@ class Mask(Base):
     last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     filename = Column(String, unique=True)
     reader = Column(String)
-    image_id = Column(Integer, ForeignKey("image.id"))
+    image_id = Column(Integer, ForeignKey("image.id"), nullable=False)
 
     image: Mapped["Image"] = relationship("Image", back_populates="masks")
 
@@ -136,7 +136,7 @@ class ImageAnnotations(Base):
     last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     filename = Column(String, unique=True)
     reader = Column(String)
-    image_id = Column(Integer, ForeignKey("image.id"))
+    image_id = Column(Integer, ForeignKey("image.id"), nullable=False)
 
     image: Mapped["Image"] = relationship("Image", back_populates="annotations")
 
@@ -149,10 +149,13 @@ class ImageLabels(Base):
     # pylint: disable=E1102
     created = Column(DateTime(timezone=True), default=func.now())
     last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
-    label_data = Column(String)  # e.g. "cancer" or "benign"
-    image_id = Column(Integer, ForeignKey("image.id"))
+    key = Column(String, nullable=False)
+    value = Column(String, nullable=False)
+    image_id = Column(Integer, ForeignKey("image.id"), nullable=False)
 
     image: Mapped["Image"] = relationship("Image", back_populates="labels")
+
+    __table_args__ = (UniqueConstraint("key", "image_id", name="uq_image_label_key"),)
 
 
 class PatientLabels(Base):
@@ -163,14 +166,13 @@ class PatientLabels(Base):
     # pylint: disable=E1102
     created = Column(DateTime(timezone=True), default=func.now())
     last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
-    key = Column(String)
-    value = Column(String)
-    patient_id = Column(Integer, ForeignKey("patient.id"))
-
-    # Add a unique constraint
-    __table_args__ = (UniqueConstraint("key", "patient_id", name="uq_patient_label_key"),)
+    key = Column(String, nullable=False)
+    value = Column(String, nullable=False)
+    patient_id = Column(Integer, ForeignKey("patient.id"), nullable=False)
 
     patient: Mapped["Patient"] = relationship("Patient", back_populates="labels")
+
+    __table_args__ = (UniqueConstraint("key", "patient_id", name="uq_patient_label_key"),)
 
 
 class SplitDefinitions(Base):
@@ -181,8 +183,9 @@ class SplitDefinitions(Base):
     # pylint: disable=E1102
     created = Column(DateTime(timezone=True), default=func.now())
     last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
-    version = Column(String, nullable=False)
+    version = Column(String, nullable=False, unique=True)
     description = Column(String)
+
     splits: Mapped[List["Split"]] = relationship("Split", back_populates="split_definition")
 
 
@@ -196,9 +199,10 @@ class Split(Base):
     created = Column(DateTime(timezone=True), default=func.now())
     last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     category: Column[CategoryEnum] = Column(Enum(CategoryEnum), nullable=False)
-
-    patient_id = Column(Integer, ForeignKey("patient.id"))
-    patient: Mapped["Patient"] = relationship("Patient", back_populates="split")
-
+    patient_id = Column(Integer, ForeignKey("patient.id"), nullable=False)
     split_definition_id = Column(Integer, ForeignKey("split_definitions.id"), nullable=False)
+
+    patient: Mapped["Patient"] = relationship("Patient", back_populates="splits")
     split_definition: Mapped["SplitDefinitions"] = relationship("SplitDefinitions", back_populates="splits")
+
+    __table_args__ = (UniqueConstraint("split_definition_id", "patient_id", name="uq_patient_split_key"),)
