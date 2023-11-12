@@ -66,7 +66,7 @@ def populate_from_annotated_tcga(
                 split_category = CategoryEnum.PREDICT
             else:
                 split_category = random.choices(
-                    [CategoryEnum.TRAIN, CategoryEnum.VALIDATE, CategoryEnum.TEST],
+                    [CategoryEnum.FIT, CategoryEnum.VALIDATE, CategoryEnum.TEST],
                     [67, 33, 0],
                 )[0]
 
@@ -118,8 +118,10 @@ def populate_from_annotated_tcga(
             image_annotation = ImageAnnotations(filename=str(annotation_path), reader="GEOJSON", image=image)
             session.add(image_annotation)
 
-        label_data = "cancer" if random.choice([True, False]) else "benign"  # Randomly decide if it's cancer or benign
-        image_label = ImageLabels(label_data=label_data, image=image)
+        # Randomly decide if it's cancer or benign
+        image_label = ImageLabels(
+            key="tumor_type", value="cancer" if random.choice([True, False]) else "benign", image=image
+        )
         session.add(image_label)
 
         session.commit()
@@ -129,5 +131,5 @@ if __name__ == "__main__":
     annotation_folder = Path("tissue_subtypes/v20230228_debug/")
     image_folder = Path("/data/groups/aiforoncology/archive/pathology/TCGA/images/")
     path_to_mapping = Path("/data/groups/aiforoncology/archive/pathology/TCGA/identifier_mapping.json")
-    with open_db("manifest.db") as session:
+    with open_db("sqlite:///manifest.db") as session:
         populate_from_annotated_tcga(session, image_folder, annotation_folder, path_to_mapping, predict=True)
