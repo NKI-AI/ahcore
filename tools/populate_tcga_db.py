@@ -119,9 +119,9 @@ def populate_from_annotated_tcga(
             session.add(image_annotation)
 
         # Randomly decide if it's cancer or benign
-        image_label = ImageLabels(key="tumor_type",
-                                  value="cancer" if random.choice([True, False]) else "benign",
-                                  image=image)
+        image_label = ImageLabels(
+            key="tumor_type", value="cancer" if random.choice([True, False]) else "benign", image=image
+        )
         session.add(image_label)
 
         session.commit()

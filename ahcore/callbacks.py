@@ -378,7 +378,7 @@ class WriteH5Callback(Callback):
             tile_overlap = inference_grid.tile_overlap
 
             # TODO: We are really putting strange things in the Queue if we may believe mypy
-            new_queue: Queue[Any] = Queue()   # pylint: disable=unsubscriptable-object
+            new_queue: Queue[Any] = Queue()  # pylint: disable=unsubscriptable-object
             parent_conn, child_conn = Pipe()
             new_writer = H5FileImageWriter(
                 output_filename,
