@@ -263,7 +263,7 @@ def _get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, s
 
 
 class WriteH5Callback(Callback):
-    def __init__(self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path, limit_bounds: Optional[bool]=False):
+    def __init__(self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path, limit_bounds: Optional[bool]=True):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
         files in a separate thread.
@@ -279,6 +279,9 @@ class WriteH5Callback(Callback):
             The maximum number of concurrent writers.
         dump_dir : pathlib.Path
             The directory to dump the H5 files to.
+        limit_bounds: bool
+            If true, the H5 writer will use the `slide_bounds` property to create the grid.
+            Disable this only if you have "rois" in your data.
         """
         super().__init__()
         self._writers: dict[str, _WriterMessage] = {}
