@@ -263,7 +263,7 @@ def _get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, s
 
 
 class WriteH5Callback(Callback):
-    def __init__(self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path):
+    def __init__(self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path, limit_bounds: Optional[bool]=False):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
         files in a separate thread.
@@ -287,6 +287,7 @@ class WriteH5Callback(Callback):
         self._max_queue_size = max_queue_size
         self._semaphore = Semaphore(max_concurrent_writers)
         self._dataset_index = 0
+        self._limit_bounds = limit_bounds
 
         self._logger = get_logger(type(self).__name__)
 
@@ -370,7 +371,15 @@ class WriteH5Callback(Callback):
             if mpp is None:
                 mpp = slide_image.mpp
 
-            size = slide_image.get_scaled_size(slide_image.get_scaling(mpp))
+            scaling = slide_image.get_scaling(mpp)
+
+            if self._limit_bounds:
+                offset, bounds = slide_image.slide_bounds
+                offset = (int(scaling * offset[0]), int(scaling * offset[1]))
+                size = int(bounds[0] * scaling), int(bounds[1] * scaling)
+            else:
+                size = slide_image.get_scaled_size(scaling)
+                offset = (0, 0)
             num_samples = len(current_dataset)
 
             # Let's get the data_description, so we can figure out the tile size and things like that
@@ -388,6 +397,7 @@ class WriteH5Callback(Callback):
                 tile_overlap=tile_overlap,
                 num_samples=num_samples,
                 progress=None,
+                offset=offset,
             )
             new_process = Process(target=new_writer.consume, args=(self.generator(new_queue), child_conn))
             new_process.start()
@@ -491,7 +501,7 @@ def _write_tiff(
             mpp=h5_reader.mpp,
             tile_size=tile_size,
             pyramid=True,
-            compression=TiffCompression.CCITTFAX4,
+            compression=TiffCompression.ZSTD,
             quality=100,
             interpolator=Resampling.NEAREST,
         )

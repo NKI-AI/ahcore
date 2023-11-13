@@ -5,7 +5,7 @@ defaults:
   - model_summary.yaml
   - rich_progress_bar.yaml
   - write_h5_callback.yaml
-#  - write_tiff_callback.yaml
+  - write_tiff_callback.yaml
   - compute_wsi_metrics_callback.yaml # This needs to follow write_h5_callback as it requires the outputs
   - _self_
 
@@ -32,6 +32,7 @@ model_summary:
 write_h5_callback:
   max_queue_size: 100
   max_concurrent_writers: 4
+  limit_bounds: True
 
 write_tiff_callback:
   max_concurrent_writers: 4

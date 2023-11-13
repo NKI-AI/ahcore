@@ -35,9 +35,11 @@ class H5FileImageWriter:
         num_samples: int,
         is_binary: bool = False,
         progress: Optional[Any] = None,
+        offset: Optional[tuple] = (0, 0),
     ) -> None:
         self._grid: Optional[Grid] = None
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
+        self._grid_offset = offset
         self._filename: Path = filename
         self._size: tuple[int, int] = size
         self._mpp: float = mpp
@@ -70,7 +72,7 @@ class H5FileImageWriter:
 
         # TODO: We only support a single Grid
         grid = Grid.from_tiling(
-            (0, 0),
+            self._grid_offset,
             size=self._size,
             tile_size=self._tile_size,
             tile_overlap=self._tile_overlap,
