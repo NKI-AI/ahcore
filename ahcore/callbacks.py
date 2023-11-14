@@ -377,12 +377,10 @@ class WriteH5Callback(Callback):
             scaling = slide_image.get_scaling(mpp)
 
             if self._limit_bounds:
-                offset, bounds = slide_image.slide_bounds
-                offset = (int(scaling * offset[0]), int(scaling * offset[1]))
+                _, bounds = slide_image.slide_bounds
                 size = int(bounds[0] * scaling), int(bounds[1] * scaling)
             else:
                 size = slide_image.get_scaled_size(scaling)
-                offset = (0, 0)
             num_samples = len(current_dataset)
 
             # Let's get the data_description, so we can figure out the tile size and things like that
@@ -400,7 +398,6 @@ class WriteH5Callback(Callback):
                 tile_overlap=tile_overlap,
                 num_samples=num_samples,
                 progress=None,
-                offset=offset,
             )
             new_process = Process(target=new_writer.consume, args=(self.generator(new_queue), child_conn))
             new_process.start()

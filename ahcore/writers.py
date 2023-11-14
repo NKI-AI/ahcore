@@ -35,11 +35,10 @@ class H5FileImageWriter:
         num_samples: int,
         is_binary: bool = False,
         progress: Optional[Any] = None,
-        offset: Optional[tuple] = (0, 0),
     ) -> None:
+        self._grid_offset = None
         self._grid: Optional[Grid] = None
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
-        self._grid_offset = offset
         self._filename: Path = filename
         self._size: tuple[int, int] = size
         self._mpp: float = mpp
@@ -56,11 +55,12 @@ class H5FileImageWriter:
         self._logger = logger  # maybe not the best way, think about it
         self._logger.debug("Writing h5 to %s", self._filename)
 
-    def init_writer(self, first_batch: GenericArray, h5file: h5py.File) -> None:
+    def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
         """Initializes the image_dataset based on the first tile."""
         batch_shape = np.asarray(first_batch).shape
         batch_dtype = np.asarray(first_batch).dtype
 
+        self._grid_offset = list(first_coordinates[0])
         self._current_index = 0
 
         self._coordinates_dataset = h5file.create_dataset(
@@ -152,7 +152,7 @@ class H5FileImageWriter:
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
                 first_coordinates, first_batch = next(batch_generator)
-                self.init_writer(first_batch, h5file)
+                self.init_writer(first_coordinates, first_batch, h5file)
 
                 # Mostly for mypy
                 assert self._grid, "Grid is not initialized"
