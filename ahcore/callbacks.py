@@ -376,12 +376,7 @@ class WriteH5Callback(Callback):
                 mpp = slide_image.mpp
 
             scaling = slide_image.get_scaling(mpp)
-
-            if self._limit_bounds:
-                _, bounds = slide_image.slide_bounds
-                size = int(bounds[0] * scaling), int(bounds[1] * scaling)
-            else:
-                size = slide_image.get_scaled_size(scaling)
+            size = slide_image.get_scaled_size(scaling, use_limit_bounds=self._limit_bounds)
             num_samples = len(current_dataset)
 
             # Let's get the data_description, so we can figure out the tile size and things like that
@@ -515,7 +510,7 @@ def tile_process_function(x: GenericArray) -> GenericArray:
 
 class WriteTiffCallback(Callback):
     def __init__(self, max_concurrent_writers: int, tile_size: tuple[int, int] = (1024, 1024),
-                 delete_original_h5: bool = True):
+                 delete_original_h5: bool = False):
         self._pool = multiprocessing.Pool(max_concurrent_writers)
         self._logger = get_logger(type(self).__name__)
         self._dump_dir: Optional[Path] = None
@@ -612,13 +607,16 @@ class WriteTiffCallback(Callback):
                 ),
             )
             results.append(result)
-            if self.__delete_original_h5:
-                h5_filename.unlink()  # Delete the h5 file to avoid filling up the disk.
-                Path(h5_filename.parent / "image_h5_link.txt").unlink()
 
         for result in results:
             result.get()  # Wait for the process to complete.
         self._filenames = {}  # Reset the filenames
+        if self.__delete_original_h5:
+            output_path = self.dump_dir / "outputs" / f"{pl_module.name}" / f"step_{pl_module.global_step}"
+            h5_files = output_path.glob("*.h5")
+            for h5_file in h5_files:
+                h5_file.unlink()  # Delete the h5 file to avoid filling up the disk.
+            Path(output_path / "image_h5_link.txt").unlink()
 
     def on_validation_batch_end(
             self,
@@ -674,7 +672,7 @@ def prepare_task_data(
 
 
 class ComputeWsiMetricsCallback(Callback):
-    def __init__(self, max_processes: int = 10, save_per_image: bool = True, delete_original_h5: bool = True) -> None:
+    def __init__(self, max_processes: int = 10, save_per_image: bool = True) -> None:
         """
         Callback to compute metrics on whole-slide images. This callback is used to compute metrics on whole-slide
         images in separate processes.
@@ -690,7 +688,6 @@ class ComputeWsiMetricsCallback(Callback):
         self._dump_dir: Optional[Path] = None
         self._save_per_image = save_per_image
         self._filenames: dict[Path, Path] = {}
-        self.__delete_original_h5 = delete_original_h5
 
         self._wsi_metrics: WSIMetricFactory | None = None
         self._class_names: dict[int, str] = {}
@@ -841,9 +838,6 @@ class ComputeWsiMetricsCallback(Callback):
                     for class_idx in range(data_description.num_classes)
                 }
             dump_list.append(wsi_metrics_dictionary)
-            if self.__delete_original_h5:
-                h5_filename.unlink()
-                Path(h5_filename.parent / "image_h5_link.txt").unlink()
 
         return dump_list
 
