@@ -673,6 +673,78 @@ def prepare_task_data(
     return TaskData(filename, h5_filename, metadata, mask, annotations)
 
 
+def compute_metrics_for_case(
+    task_data: TaskData,
+    class_names: dict[int, str],
+    data_description: DataDescription,
+    wsi_metrics: WSIMetricFactory,
+    save_per_image: bool,
+) -> list[dict[str, Any]]:
+    # Extract the data from the namedtuple
+    filename, h5_filename, metadata, mask, annotations = task_data
+
+    dump_list = []
+
+    logger.info("Computing metrics for %s", filename)
+
+    with H5FileImageReader(h5_filename, stitching_mode=StitchingMode.CROP) as h5reader:
+        dataset_of_validation_image = _ValidationDataset(
+            data_description=data_description,
+            native_mpp=metadata.mpp,
+            mask=mask,
+            annotations=annotations,
+            reader=h5reader,
+        )
+        for sample in dataset_of_validation_image:
+            prediction = torch.from_numpy(sample["prediction"]).unsqueeze(0).float()
+            target = torch.from_numpy(sample["target"]).unsqueeze(0)
+            roi = torch.from_numpy(sample["roi"]).unsqueeze(0)
+
+            wsi_metrics.process_batch(
+                predictions=prediction,
+                target=target,
+                roi=roi,
+                wsi_name=str(filename),
+            )
+    if save_per_image:
+        wsi_metrics_dictionary = {
+            "image_fn": str(data_description.data_dir / metadata.filename),
+            "uuid": filename.stem,
+        }
+
+        # TODO: These need to be removed, this is really weird.
+        if filename.with_suffix(".tiff").is_file():
+            wsi_metrics_dictionary["tiff_fn"] = str(filename.with_suffix(".tiff"))
+        if filename.is_file():
+            wsi_metrics_dictionary["h5_fn"] = str(filename)
+        for metric in wsi_metrics._metrics:
+            metric.get_wsi_score(str(filename))
+            wsi_metrics_dictionary[metric.name] = {
+                class_names[class_idx]: metric.wsis[str(filename)][class_idx][metric.name].item()
+                for class_idx in range(data_description.num_classes)
+            }
+        dump_list.append(wsi_metrics_dictionary)
+
+    return dump_list
+
+
+# Adjusted stand-alone function.
+def schedule_task(
+    task_data: TaskData,
+    pool: Pool,
+    results_dict: dict[Any, str],  # Any because it will be a multiprocessing.pool.AsyncResult
+    class_names: dict[int, str],
+    data_description: DataDescription,
+    wsi_metrics: WSIMetricFactory,
+    save_per_image: bool,
+) -> None:
+    result = pool.apply_async(
+        compute_metrics_for_case,
+        args=(task_data, class_names, data_description, wsi_metrics, save_per_image),
+    )
+    results_dict[result] = task_data.filename
+
+
 class ComputeWsiMetricsCallback(Callback):
     def __init__(self, max_processes: int = 10, save_per_image: bool = True) -> None:
         """
@@ -788,77 +860,6 @@ class ComputeWsiMetricsCallback(Callback):
                 "Either use batch_size=1 or ahcore.data.samplers.WsiBatchSampler."
             )
 
-    def __compute_metrics_for_case(
-        self,
-        task_data: TaskData,
-        class_names: dict[int, str],
-        data_description: DataDescription,
-        wsi_metrics: WSIMetricFactory,
-        save_per_image: bool,
-    ) -> list[dict[str, Any]]:
-        # Extract the data from the namedtuple
-        filename, h5_filename, metadata, mask, annotations = task_data
-
-        dump_list = []
-
-        logger.info("Computing metrics for %s", filename)
-
-        with H5FileImageReader(h5_filename, stitching_mode=StitchingMode.CROP) as h5reader:
-            dataset_of_validation_image = _ValidationDataset(
-                data_description=data_description,
-                native_mpp=metadata.mpp,
-                mask=mask,
-                annotations=annotations,
-                reader=h5reader,
-            )
-            for sample in dataset_of_validation_image:
-                prediction = torch.from_numpy(sample["prediction"]).unsqueeze(0).float()
-                target = torch.from_numpy(sample["target"]).unsqueeze(0)
-                roi = torch.from_numpy(sample["roi"]).unsqueeze(0)
-
-                wsi_metrics.process_batch(
-                    predictions=prediction,
-                    target=target,
-                    roi=roi,
-                    wsi_name=str(filename),
-                )
-        if save_per_image:
-            wsi_metrics_dictionary = {
-                "image_fn": str(data_description.data_dir / metadata.filename),
-                "uuid": filename.stem,
-            }
-
-            # TODO: These need to be removed, this is really weird.
-            if filename.with_suffix(".tiff").is_file():
-                wsi_metrics_dictionary["tiff_fn"] = str(filename.with_suffix(".tiff"))
-            if filename.is_file():
-                wsi_metrics_dictionary["h5_fn"] = str(filename)
-            for metric in wsi_metrics._metrics:
-                metric.get_wsi_score(str(filename))
-                wsi_metrics_dictionary[metric.name] = {
-                    class_names[class_idx]: metric.wsis[str(filename)][class_idx][metric.name].item()
-                    for class_idx in range(data_description.num_classes)
-                }
-            dump_list.append(wsi_metrics_dictionary)
-
-        return dump_list
-
-    def __schedule_task(
-        self,
-        task_data: TaskData,
-        pool: Pool,
-        results_dict: dict[Any, str],  # Any because it will be a multiprocessing.pool.AsyncResult
-        class_names: dict[int, str],
-        data_description: DataDescription,
-        wsi_metrics: WSIMetricFactory,
-        save_per_image: bool,
-    ) -> None:
-        result = pool.apply_async(
-            self.__compute_metrics_for_case,
-            args=(task_data, class_names, data_description, wsi_metrics, save_per_image),
-        )
-        results_dict[result] = task_data.filename
-
     def compute_metrics(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule
     ) -> list[list[dict[str, dict[str, float]]]]:
@@ -886,7 +887,7 @@ class ComputeWsiMetricsCallback(Callback):
                 )
 
                 # Schedule task
-                self.__schedule_task(
+                __schedule_task(
                     task_data,
                     pool,
                     results_to_filename,
@@ -924,7 +925,7 @@ class ComputeWsiMetricsCallback(Callback):
                             )
 
                             # Schedule task
-                            self.__schedule_task(
+                            __schedule_task(
                                 task_data,
                                 pool,
                                 results_to_filename,

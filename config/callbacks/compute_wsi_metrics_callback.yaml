@@ -1,4 +1,3 @@
 compute_wsi_metrics_callback:
   _target_: ahcore.callbacks.ComputeWsiMetricsCallback
   save_per_image: True
-  delete_original_h5: False # Make sure delete_original_h5 is enabled only for the last callback which uses h5 files.
