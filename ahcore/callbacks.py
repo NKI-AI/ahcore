@@ -490,6 +490,7 @@ def _write_tiff(
         [H5FileImageReader, tuple[int, int], Callable[[GenericArray], GenericArray]],
         Iterator[npt.NDArray[np.int_]],
     ],
+    delete_original_h5: Optional[bool] = False
 ) -> None:
     logger.debug("Writing TIFF %s", filename.with_suffix(".tiff"))
     with H5FileImageReader(filename, stitching_mode=StitchingMode.CROP) as h5_reader:
@@ -504,6 +505,9 @@ def _write_tiff(
             interpolator=Resampling.NEAREST,
         )
         writer.from_tiles_iterator(generator_from_reader(h5_reader, tile_size, tile_process_function))
+        if delete_original_h5:
+            filename.unlink()
+            Path(filename.parent / "image_h5_link.txt").unlink()
 
 
 def tile_process_function(x: GenericArray) -> GenericArray:
@@ -607,6 +611,7 @@ class WriteTiffCallback(Callback):
                     self._tile_size,
                     self._tile_process_function,
                     _generator_from_reader,
+                    self.__delete_original_h5,
                 ),
             )
             results.append(result)
@@ -614,12 +619,6 @@ class WriteTiffCallback(Callback):
         for result in results:
             result.get()  # Wait for the process to complete.
         self._filenames = {}  # Reset the filenames
-        if self.__delete_original_h5:
-            output_path = self.dump_dir / "outputs" / f"{pl_module.name}" / f"step_{pl_module.global_step}"
-            h5_files = output_path.glob("*.h5")
-            for h5_file in h5_files:
-                h5_file.unlink()  # Delete the h5 file to avoid filling up the disk.
-            Path(output_path / "image_h5_link.txt").unlink()
 
     def on_validation_batch_end(
         self,
