@@ -888,7 +888,7 @@ class ComputeWsiMetricsCallback(Callback):
                 )
 
                 # Schedule task
-                __schedule_task(
+                schedule_task(
                     task_data,
                     pool,
                     results_to_filename,
@@ -926,7 +926,7 @@ class ComputeWsiMetricsCallback(Callback):
                             )
 
                             # Schedule task
-                            __schedule_task(
+                            schedule_task(
                                 task_data,
                                 pool,
                                 results_to_filename,
