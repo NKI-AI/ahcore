@@ -377,6 +377,7 @@ class WriteH5Callback(Callback):
                 mpp = slide_image.mpp
 
             scaling = slide_image.get_scaling(mpp)
+            # Below, we set the flag use_limit_bounds to account for the slide bounds used during dataset creation.
             size = slide_image.get_scaled_size(scaling, use_limit_bounds=self._limit_bounds)
             num_samples = len(current_dataset)
 
