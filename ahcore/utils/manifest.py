@@ -334,6 +334,7 @@ def datasets_from_data_description(
                 crop=False,
                 mask=mask,
                 mask_threshold=mask_threshold,
+                output_tile_size=getattr(grid_description, "output_tile_size", None),
                 rois=rois if rois is not None else None,
                 annotations=annotations if stage != "predict" else None,
                 labels=labels,  # type: ignore
