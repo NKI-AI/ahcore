@@ -7,6 +7,7 @@ import abc
 from collections import defaultdict
 from typing import Any, List, Tuple
 
+import kornia as K
 import torch
 import torch.nn.functional as F  # noqa
 
@@ -25,6 +26,98 @@ class TileMetric:
         self, predictions: torch.Tensor, target: torch.Tensor, roi: torch.Tensor | None
     ) -> dict[str, torch.Tensor]:
         """Call metric computation"""
+
+
+class DetectionMetric(TileMetric):
+    def __init__(self, data_description: DataDescription) -> None:
+        """
+        Metric computing Recall, Precision and F1 over classes. The classes are derived from the index_map that's
+        defined in the data_description.
+
+        The `__call__` returns the recall, precision and f1 score for each class separate and averaged, with the class
+        name (prefixed with fn_name/) as key
+        in a dictionary.
+
+        Parameters
+        ----------
+        data_description : DataDescription
+        """
+        super().__init__(data_description=data_description)
+        self._num_classes = self._data_description.num_classes
+
+        # Invert the index map
+        _index_map = {}
+        if self._data_description.index_map is None:
+            raise ConfigurationError("`index_map` is required for to setup the classification metric.")
+        else:
+            _index_map = self._data_description.index_map
+        self._index_map = _index_map
+
+        if self._data_description.point_radius_microns is None or self._data_description.training_grid.mpp is None:
+            raise ConfigurationError("`point_radius_microns` required for to setup the classification metric.")
+        self._hit_criterion_radius = (
+            self._data_description.point_radius_microns / self._data_description.training_grid.mpp
+        )
+
+        _label_to_class = {v: k for k, v in _index_map.items()}
+        self._label_to_class = _label_to_class
+
+    def __call__(
+        self, predictions: torch.Tensor, target: torch.Tensor, roi: torch.Tensor | None
+    ) -> dict[str, torch.Tensor]:
+        # Distance for padding, different classes and out of range is inf
+        l2_dist = torch.cdist(predictions[:, :, :2], target[:, :, :2])
+        diff_idx = predictions[:, :, 2:3] != target[:, :, 2:3].permute((0, 2, 1))
+        oor_idx = (l2_dist > self._hit_criterion_radius).bool()
+        l2_dist[diff_idx | oor_idx | torch.isnan(l2_dist)] = torch.inf
+
+        # Create block diagonal with only valid distances
+        l2_dist_block = torch.block_diag(*l2_dist)  # type: ignore
+        l2_dist_block[~torch.block_diag(*torch.ones_like(l2_dist)).bool()] = torch.inf  # type: ignore
+
+        # Find mutual nearest neighbors for valid predictions
+        prediction_labels = predictions[:, :, 2].reshape(-1, 1)
+        target_labels = target[:, :, 2].reshape(-1, 1)
+        _, match_idxs = K.feature.match_mnn(prediction_labels, target_labels, l2_dist_block)
+        match_labels_predictions = prediction_labels[match_idxs[:, 0]]
+        match_labels_target = target_labels[match_idxs[:, 1]]
+        assert all(match_labels_predictions == match_labels_target)
+
+        # Calculate scores (assume background is always class 0 for now)
+        confusion_matrix = torch.zeros((self._num_classes - 1, 3))
+        for label_idx, label in self._label_to_class.items():
+            if label == "background":
+                continue
+            tp = (match_labels_predictions == label_idx).sum()
+            fp = (prediction_labels == label_idx).sum() - tp
+            fn = (target_labels == label_idx).sum() - tp
+
+            # Assume background is always class 0 for now
+            confusion_matrix[label_idx - 1] += torch.Tensor([tp, fp, fn])
+
+        # Caculate metrics per class and average
+        metrics_dict = self._calculate_metrics_from_confusion_matrix(confusion_matrix)
+        output = {
+            f"{metric_name}/{self._label_to_class[idx]}": metric_values[idx - 1]
+            for metric_name, metric_values in metrics_dict.items()
+            for idx in range(1, self._num_classes)
+        }
+        output.update(
+            {f"{metric_name}/all": torch.mean(metric_values) for metric_name, metric_values in metrics_dict.items()}
+        )
+        return output
+
+    def _calculate_metrics_from_confusion_matrix(
+        self, confusion_matrix: torch.Tensor, epsilon: float = 1e-12
+    ) -> dict[str, torch.Tensor]:
+        tp, fp, fn = confusion_matrix[:, 0], confusion_matrix[:, 1], confusion_matrix[:, 2]
+        precision = tp / torch.clamp((tp + fp), min=epsilon)
+        recall = tp / torch.clamp((tp + fn), min=epsilon)
+        f1 = 2 * (precision * recall) / torch.clamp((precision + recall), min=epsilon)
+        return {"precision": precision, "recall": recall, "f1": f1}
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(num_classes={self._num_classes})"
 
 
 class DiceMetric(TileMetric):
@@ -102,6 +195,11 @@ class MetricFactory:
             raise RuntimeError("Each individual metric must have a different name.")
 
         self._metrics = metrics
+
+    @classmethod
+    def for_detection(cls, *args: Any, **kwargs: Any) -> MetricFactory:
+        detections = DetectionMetric(*args, **kwargs)
+        return cls([detections])
 
     @classmethod
     def for_segmentation(cls, *args: Any, **kwargs: Any) -> MetricFactory:
@@ -397,3 +495,40 @@ def _compute_dice(intersection: torch.Tensor, cardinality: torch.Tensor) -> torc
     dice_score = 2.0 * intersection / cardinality
     dice_score[dice_score.isnan()] = 1.0
     return dice_score
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+
+    from ahcore.utils.data import GridDescription
+
+    _grid = GridDescription(tile_size=(1, 1), tile_overlap=(0, 0), mpp=1)
+    _index_map = {"background": 0, "lymphocyte": 1, "tumor": 2}
+
+    description = DataDescription(
+        num_classes=3,
+        data_dir=Path(""),
+        manifest_database_uri="",
+        manifest_name="",
+        split_version="v0",
+        annotations_dir=Path(""),
+        training_grid=_grid,
+        inference_grid=_grid,
+        index_map=_index_map,
+    )
+
+    pred = torch.Tensor(
+        [
+            [[10, 15, 1], [10, 10, 2]],
+            [[1, 1, 2], [torch.nan, torch.nan, -1]],
+        ]
+    )
+    targ = torch.Tensor(
+        [
+            [[10, 11, 1]],  # [10, 19, 1], [10, 12, 2]],
+            [[100, 100, 2]],  # , [torch.nan, torch.nan, -1], [torch.nan, torch.nan, -1]],
+        ]
+    )
+
+    det_metric = DetectionMetric(data_description=description)
+    result = det_metric(pred, targ, roi=None)

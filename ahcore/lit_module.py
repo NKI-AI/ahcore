@@ -65,13 +65,17 @@ class AhCoreLightningModule(pl.LightningModule):
 
         self._loss = loss
         if metrics is not None:
+            detection_metric = metrics.get("detection_level")
             tile_metric = metrics.get("tile_level")
             wsi_metric = metrics.get("wsi_level", None)
+            if detection_metric is not None and not isinstance(detection_metric, MetricFactory):
+                raise ConfigurationError("Tile metrics must be of type MetricFactory")
             if tile_metric is not None and not isinstance(tile_metric, MetricFactory):
                 raise ConfigurationError("Tile metrics must be of type MetricFactory")
             if wsi_metric is not None and not isinstance(wsi_metric, WSIMetricFactory):
                 raise ConfigurationError("WSI metrics must be of type WSIMetricFactory")
 
+            self._detection_metric = detection_metric
             self._tile_metric = tile_metric
             self._wsi_metrics = wsi_metric
 
@@ -100,12 +104,13 @@ class AhCoreLightningModule(pl.LightningModule):
         target: torch.Tensor,
         roi: torch.Tensor | None,
         stage: TrainerFn | str,
+        metric_fn: MetricFactory | None,
     ) -> dict[str, torch.Tensor]:
-        if not self._tile_metric:
+        if not metric_fn:
             return {}
 
         _stage = stage.value if isinstance(stage, TrainerFn) else stage
-        metrics = {f"{_stage}/{k}": v for k, v in self._tile_metric(prediction, target, roi).items()}
+        metrics = {f"{_stage}/{k}": v for k, v in metric_fn(prediction, target, roi).items()}
         return metrics
 
     def do_step(self, batch: DlupDatasetSample, batch_idx: int, stage: TrainerFn | str) -> LitModuleSample:
@@ -135,7 +140,23 @@ class AhCoreLightningModule(pl.LightningModule):
 
         # The relevant_dict contains values to know where the tiles originate.
         _relevant_dict = {k: v for k, v in batch.items() if k in self.RELEVANT_KEYS}
-        _metrics = self._compute_metrics(_prediction, _target, roi, stage=stage)
+        _metrics = self._compute_metrics(_prediction, _target, roi, stage=stage, metric_fn=self._tile_metric)
+        if batch.get("points") is not None and batch.get("points_labels") is not None:
+            point_predictions = _process_point_predictions(_prediction, roi=roi)
+            _detection_prediction = torch.cat(
+                (point_predictions["points"], point_predictions["points_labels"][:, :, None]), dim=-1
+            )
+            _detection_target = torch.cat((batch["points"], batch["points_labels"][:, :, None]), dim=-1)
+
+            _detection_metrics = self._compute_metrics(
+                prediction=_detection_prediction.to(batch["image"]),
+                target=_detection_target,
+                roi=roi,
+                stage=stage,
+                metric_fn=self._detection_metric,
+            )
+            _metrics.update(_detection_metrics)
+
         _loss = loss.mean()
         # TODO: This can be a TypedDict
         output = {
@@ -253,7 +274,7 @@ def _process_point_predictions(
     Returns
     -------
     dict[str, torch.Tensor]
-        Dictionary mapping `points`, `point_labels` and `point_confidences` to output as padded tensors of shape
+        Dictionary mapping `points`, `points_labels` and `point_confidences` to output as padded tensors of shape
         `(N, K, 2)`, `(N, K, 1)` and `(N, K, 1)` respectively. `K` is the largest number of points.
     """
     _predictions = torch.softmax(predictions, dim=1) if predictions.shape[1] > 1 else torch.sigmoid(predictions)
