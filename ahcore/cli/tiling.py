@@ -184,13 +184,7 @@ def create_slide_image_dataset(
 def _generator(
     dataset: TiledWsiDataset, quality: int | None = 80, compression: str = "JPEG"
 ) -> Generator[Any, Any, Any]:
-    for idx in range(len(dataset)):
-        # TODO: To use:
-        # for idx, sample in enumerate(dataset):
-        # The following needs to be added to TiledWsiDataset:
-        # def __iter__(self) -> Iterator[RegionFromWsiDatasetSample]:
-        #     for i in range(len(self)):
-        #         yield self[i]
+    for idx, sample in enumerate(dataset):
         sample = dataset[idx]
         buffered = io.BytesIO()
         if quality is not None:
@@ -279,7 +273,7 @@ def _tiling_pipeline(
                 h5_writer.add_associated_images(images=(("thumbnail", thumbnail),), description="thumbnail")
 
     except Exception as e:
-        logger.error(f"Failed: {image_path} with exception {e}")
+        logger.error("Failed: %s with exception %s", image_path, e)
         return
 
     logger.debug("Working on %s. Writing to %s", image_path, output_file)
@@ -432,5 +426,4 @@ def register_parser(parser: argparse._SubParsersAction[Any]) -> None:
         default=80,
         help="Quality of the saved tiles in jpg, otherwise png (default: 80)",
     )
-
     _parser.set_defaults(subcommand=_do_tiling)

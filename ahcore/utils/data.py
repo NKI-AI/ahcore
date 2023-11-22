@@ -65,3 +65,4 @@ class DataDescription(BaseModel):
     use_class_weights: Optional[bool] = False
     convert_mask_to_rois: bool = True
     use_roi: bool = True
+    apply_color_profile: bool = True

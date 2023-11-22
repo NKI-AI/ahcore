@@ -342,6 +342,7 @@ def datasets_from_data_description(
                 backend=ImageBackend[str(image.reader)],
                 overwrite_mpp=(image.mpp, image.mpp),
                 limit_bounds=False if rois is not None else True,
+                apply_color_profile=data_description.apply_color_profile,
             )
 
             yield dataset
