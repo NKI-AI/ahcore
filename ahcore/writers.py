@@ -170,7 +170,6 @@ class H5FileImageWriter:
                     if grid_indices[0].size > 0:
                         # Update tile indices using vectorized operations
                         self._tile_indices[grid_indices[0]] = self._current_index + np.arange(len(grid_indices[0]))
-                        self._tile_indices.flush()
 
                     batch_size = len(coordinates)
                     # Update data and coordinates datasets in batches
@@ -178,13 +177,6 @@ class H5FileImageWriter:
                     self._coordinates_dataset[self._current_index: self._current_index + batch_size] = coordinates
                     self._current_index += batch_size
 
-                    self._data.flush()
-                    self._coordinates_dataset.flush()
-
-            del self._grid
-            del self._tile_indices
-            del self._data
-            del self._coordinates_dataset
 
         except Exception as e:
             self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
