@@ -26,15 +26,15 @@ class H5FileImageWriter:
     """Image writer that writes tile-by-tile to h5."""
 
     def __init__(
-            self,
-            filename: Path,
-            size: tuple[int, int],
-            mpp: float,
-            tile_size: tuple[int, int],
-            tile_overlap: tuple[int, int],
-            num_samples: int,
-            is_binary: bool = False,
-            progress: Optional[Any] = None,
+        self,
+        filename: Path,
+        size: tuple[int, int],
+        mpp: float,
+        tile_size: tuple[int, int],
+        tile_overlap: tuple[int, int],
+        num_samples: int,
+        is_binary: bool = False,
+        progress: Optional[Any] = None,
     ) -> None:
         self._grid_offset = None
         self._grid: Optional[Grid] = None
@@ -126,9 +126,9 @@ class H5FileImageWriter:
         h5file.attrs["metadata"] = metadata_json
 
     def add_associated_images(
-            self,
-            images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
-            description: Optional[str] = None,
+        self,
+        images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
+        description: Optional[str] = None,
     ) -> None:
         """Adds associated images to the h5 file."""
 
@@ -142,9 +142,9 @@ class H5FileImageWriter:
                 associated_images.attrs["description"] = description
 
     def consume(
-            self,
-            batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
-            connection_to_parent: Optional[Connection] = None,
+        self,
+        batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        connection_to_parent: Optional[Connection] = None,
     ) -> None:
         """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
         try:
@@ -173,10 +173,9 @@ class H5FileImageWriter:
 
                     batch_size = len(coordinates)
                     # Update data and coordinates datasets in batches
-                    self._data[self._current_index: self._current_index + batch_size] = batch
-                    self._coordinates_dataset[self._current_index: self._current_index + batch_size] = coordinates
+                    self._data[self._current_index : self._current_index + batch_size] = batch
+                    self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
                     self._current_index += batch_size
-
 
         except Exception as e:
             self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
@@ -192,7 +191,7 @@ class H5FileImageWriter:
 
     @staticmethod
     def _batch_generator(
-            first_coordinates_batch: Any, batch_generator: Generator[Any, None, None]
+        first_coordinates_batch: Any, batch_generator: Generator[Any, None, None]
     ) -> Generator[Any, None, None]:
         # We yield the first batch too so the progress bar takes the first batch also into account
         yield first_coordinates_batch

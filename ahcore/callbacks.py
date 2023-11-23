@@ -490,7 +490,7 @@ def _write_tiff(
         [H5FileImageReader, tuple[int, int], Callable[[GenericArray], GenericArray]],
         Iterator[npt.NDArray[np.int_]],
     ],
-    delete_original_h5: bool = False
+    delete_original_h5: bool = False,
 ) -> None:
     logger.debug("Writing TIFF %s", filename.with_suffix(".tiff"))
     with H5FileImageReader(filename, stitching_mode=StitchingMode.CROP) as h5_reader:
