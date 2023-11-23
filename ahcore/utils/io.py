@@ -83,6 +83,7 @@ def print_config(
         "transforms",
         "datamodule",
         "callbacks",
+        "inference_writers",
         "logger",
         "test_after_training",
         "seed",
