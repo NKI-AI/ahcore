@@ -59,7 +59,7 @@ def validate_sample_annotations(
         # TODO: Only taking valid_idx and not padded values
         _first_idx = torch.arange(_annotations.shape[0]).repeat_interleave(_annotations.shape[1])
         _annotations_idx = _annotations.round().long()
-        roi_valid = _roi[_first_idx, _annotations_idx[:, :, 0].flatten(), _annotations_idx[:, :, 1].flatten()]
+        roi_valid = _roi[_first_idx, _annotations_idx[:, :, 1].flatten(), _annotations_idx[:, :, 0].flatten()]
         valid_idx = valid_idx & roi_valid.reshape(-1, _annotations.shape[1]).bool()
         _annotations[~valid_idx] = torch.nan
 
