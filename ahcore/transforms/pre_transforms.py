@@ -228,7 +228,7 @@ class ImageToTensor:
                 mask = mask[np.newaxis, ...]
             sample["target"] = torch.from_numpy(mask).float()
 
-        if "roi" in sample["annotation_data"]:
+        if "roi" in sample["annotation_data"] and sample["annotation_data"]["roi"] is not None:
             roi = sample["annotation_data"]["roi"]
             sample["roi"] = torch.from_numpy(roi[np.newaxis, ...]).float()
 
