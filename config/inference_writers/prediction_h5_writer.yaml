@@ -1,5 +1,0 @@
-prediction_h5_writer:
-  _target_: ahcore.inference_writers.PredictionH5Writer
-  dump_dir: ${oc.env:SCRATCH}/${task_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
-  write_interval: "batch"
-  limit_bounds: True # set to True only if you don't have rois in your data.

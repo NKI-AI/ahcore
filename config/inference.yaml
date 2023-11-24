@@ -8,7 +8,6 @@ defaults:
   - pre_transform: ???
   - augmentations: ???
   - task: segmentation_inference.yaml
-  - inference_writers: default.yaml
   - logger: null
   - lit_module: ???
   - callbacks: inference.yaml

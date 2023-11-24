@@ -15,7 +15,6 @@ defaults:
     - mlflow
     - tensorboard
   - callbacks: default.yaml
-  - inference_writers: null
   - trainer: default.yaml
   - hydra: default.yaml  # if we want to setup different hydra logging dirs / color log
   - paths: default.yaml

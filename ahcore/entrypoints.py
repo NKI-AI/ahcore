@@ -238,13 +238,13 @@ def inference(config: DictConfig) -> None:
     lit_ckpt = torch.load(config.ckpt_path)
     model.load_state_dict(lit_ckpt["state_dict"], strict=True)
 
-    # Init lightning prediction writers
-    inference_writers = []
-    if "inference_writers" in config:
-        for _, iw_conf in config.inference_writers.items():
-            if "_target_" in iw_conf:
-                logger.info("Instantiating callback <%s>", iw_conf._target_)  # noqa
-                inference_writers.append(hydra.utils.instantiate(iw_conf))
+    # Init lightning callbacks
+    callbacks: list[Callback] = []
+    if "callbacks" in config:
+        for _, cb_conf in config.callbacks.items():
+            if "_target_" in cb_conf:
+                logger.info("Instantiating callback <%s>", cb_conf._target_)  # noqa
+                callbacks.append(hydra.utils.instantiate(cb_conf))
 
     # Init lightning loggers
     lightning_loggers: list[Logger] = []
@@ -259,7 +259,7 @@ def inference(config: DictConfig) -> None:
         logger.info("Instantiating trainer <%s>", str(config.trainer._target_))
         trainer: Trainer = hydra.utils.instantiate(
             config.trainer,
-            callbacks=inference_writers,
+            callbacks=callbacks,
             logger=lightning_loggers,
             _convert_="partial",
         )

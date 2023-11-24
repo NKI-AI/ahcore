@@ -1,4 +1,0 @@
-prediction_tiff_writer:
-  _target_: ahcore.inference_writers.PredictionTiffWriter
-  write_interval: "batch"
-  delete_original_h5: True # Make sure delete_original_h5 is enabled only for the last callback which uses h5 files.
