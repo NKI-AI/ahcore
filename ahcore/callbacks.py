@@ -195,14 +195,13 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         if not self._data_description:
             raise ValueError("No data description is provided.")
 
-        if not self._data_description.remap_labels:
-            raise ValueError("Remap labels are not provided.")
-
         if not self._data_description.index_map:
             raise ValueError("Index map is not provided.")
 
         _annotations = self._annotations.read_region(coordinates, self._scaling, self._region_size)
-        _annotations = rename_labels(_annotations, remap_labels=self._data_description.remap_labels)
+        
+        if self._data_description.remap_labels:
+            _annotations = rename_labels(_annotations, remap_labels=self._data_description.remap_labels)
 
         points, boxes, region, roi = convert_annotations(
             _annotations,
