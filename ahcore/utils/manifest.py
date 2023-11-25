@@ -341,7 +341,7 @@ def datasets_from_data_description(
                 transform=transform,
                 backend=ImageBackend[str(image.reader)],
                 overwrite_mpp=(image.mpp, image.mpp),
-                limit_bounds=False if rois is not None else True,
+                limit_bounds=True,
             )
 
             yield dataset
