@@ -74,6 +74,7 @@ class WsiBatchSamplerPredict(Sampler[List[int]]):
             self._dataset: ConcatDataset[TiledROIsSlideImageDataset] = dataset  # type: ignore
         super().__init__(data_source=self._dataset)
         self.batch_size = batch_size
+        self.drop_last = drop_last
 
         self._slices: List[slice] = []
         self._populate_slices()
