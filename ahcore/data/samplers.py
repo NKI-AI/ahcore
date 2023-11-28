@@ -65,7 +65,7 @@ class WsiBatchSamplerPredict(Sampler[List[int]]):
         self,
         sampler: SequentialSampler | None = None,
         batch_size: int | None = None,
-        drop_last: bool | None = None,
+        drop_last: bool = False,
         dataset: ConcatDataset[TiledROIsSlideImageDataset] | None = None,
     ) -> None:
         if sampler is not None:  # During the predict phase, the sampler is passed as a parameter
@@ -74,7 +74,7 @@ class WsiBatchSamplerPredict(Sampler[List[int]]):
             self._dataset: ConcatDataset[TiledROIsSlideImageDataset] = dataset  # type: ignore
         super().__init__(data_source=self._dataset)
         self.batch_size = batch_size
-        self.drop_last = drop_last
+        self.drop_last = False  # This is needed for compatibility with Lightning, it serves no functional purpose
 
         self._slices: List[slice] = []
         self._populate_slices()
