@@ -44,6 +44,7 @@ _AnnotationReturnTypes = WsiAnnotations | SlideImage
 
 class _AnnotationReadersDict(TypedDict):
     ASAP_XML: Callable[[Path], WsiAnnotations]
+    DARWIN_JSON: Callable[[Path], WsiAnnotations]
     GEOJSON: Callable[[Path], WsiAnnotations]
     PYVIPS: Callable[[Path], SlideImage]
     TIFFFILE: Callable[[Path], SlideImage]
@@ -52,6 +53,7 @@ class _AnnotationReadersDict(TypedDict):
 
 _AnnotationReaders: _AnnotationReadersDict = {
     "ASAP_XML": WsiAnnotations.from_asap_xml,
+    "DARWIN_JSON": WsiAnnotations.from_darwin_json,
     "GEOJSON": WsiAnnotations.from_geojson,
     "PYVIPS": functools.partial(SlideImage.from_file_path, backend=ImageBackend.PYVIPS),
     "TIFFFILE": functools.partial(SlideImage.from_file_path, backend=ImageBackend.TIFFFILE),
