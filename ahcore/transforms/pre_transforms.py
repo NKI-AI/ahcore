@@ -4,7 +4,7 @@ dataset.
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -74,6 +74,13 @@ class PreTransformTaskFactory:
 
         if data_description.remap_labels is not None:
             transforms.append(RenameLabels(remap_labels=data_description.remap_labels))
+
+        if data_description.index_sorting is not None:
+            transforms.append(
+                SortAnnotationsByIndex(
+                    index_map=data_description.index_map, index_sorting=data_description.index_sorting
+                )
+            )
 
         transforms.append(
             ConvertAnnotationsToMask(roi_name=data_description.roi_name, index_map=data_description.index_map)
@@ -204,6 +211,38 @@ class AllowCollate:
                 del output[key]
 
         return output
+
+
+class SortAnnotationsByIndex:
+    def __init__(self, index_map: dict[str, int], index_sorting: Optional[dict[int, int]] = None):
+        """Sort annotations according to annotation_classes in the index_map in a custom order.
+        Parameters
+        ----------
+        index_map : dict[str, int]
+            Index map mapping the label name to the integer value it has in the mask.
+        index_sorting : Optional[dict[int, int]]
+            Index sort mapping the label integer value to order in the mask. Indexes that map to the same value will
+            only be sorted by area. If none is provided, index_map will be used as order.
+            Default: None
+        Raises
+        ------
+        ValueError
+            If not every index in the index map has a (non-unique) value to map to.
+        """
+        self._index_map = index_map
+        if index_sorting is not None:
+            if len(index_sorting.keys()) != len(index_map.values()):
+                raise ValueError("Every value in index_map must map to new index in index_sorting")
+            self._index_sorting = {idx: index_sorting[idx] for idx in range(max(self._index_map.values()) + 1)}
+        else:
+            self._index_sorting = {i: i for i in self._index_map.values()}
+
+    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
+        _annotations = sample["annotations"]
+        sample["annotations"] = sorted(
+            _annotations, key=lambda x: self._index_sorting[self._index_map[x.annotation_class.label]]
+        )
+        return sample
 
 
 class ImageToTensor:
