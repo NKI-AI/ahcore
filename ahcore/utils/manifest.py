@@ -329,19 +329,19 @@ def datasets_from_data_description(
     else:
         grid_description = data_description.inference_grid
 
-    records = db_manager.get_records_by_split(
+    patients = db_manager.get_records_by_split(
         manifest_name=data_description.manifest_name,
         split_version=data_description.split_version,
         split_category=stage,
     )
-    for record in records:
-        record_labels = get_labels_from_record(record)
+    for patient in patients:
+        patient_labels = get_labels_from_record(patient)
 
-        for image in record.images:
+        for image in patient.images:
             mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
             assert isinstance(mask, WsiAnnotations) or (mask is None)
             image_labels = get_labels_from_record(image)
-            labels = None if record_labels is image_labels is None else (record_labels or []) + (image_labels or [])
+            labels = None if patient_labels is image_labels is None else (patient_labels or []) + (image_labels or [])
             rois = _get_rois(mask, data_description, stage)
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
 
