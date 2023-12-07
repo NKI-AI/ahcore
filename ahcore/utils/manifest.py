@@ -126,6 +126,23 @@ def get_mask_and_annotations_from_record(
     return _masks, _annotations
 
 
+def get_labels_from_record(record: Image | Patient) -> list[tuple[str, str]] | None:
+    """Get the labels from a record of type Image or Patient.
+
+    Parameters
+    ----------
+    record : Image | Patient
+        The record containing the labels.
+
+    Returns
+    -------
+    list[tuple[str, str]] | None
+        The labels if they exists, else None.
+    """
+    _labels = [(str(label.key), str(label.value)) for label in record.labels] if record.labels else None
+    return _labels
+
+
 def _get_rois(mask: WsiAnnotations | None, data_description: DataDescription, stage: str) -> Optional[Rois]:
     if (mask is None) or (stage != "fit") or (not data_description.convert_mask_to_rois):
         return None
@@ -318,11 +335,13 @@ def datasets_from_data_description(
         split_category=stage,
     )
     for record in records:
-        labels = [(str(label.key), str(label.value)) for label in record.labels] if record.labels else None
+        record_labels = get_labels_from_record(record)
 
         for image in record.images:
             mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
             assert isinstance(mask, WsiAnnotations) or (mask is None)
+            image_labels = get_labels_from_record(image)
+            labels = None if record_labels is image_labels is None else (record_labels or []) + (image_labels or [])
             rois = _get_rois(mask, data_description, stage)
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
 
