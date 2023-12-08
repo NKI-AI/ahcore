@@ -38,7 +38,7 @@ class H5FileImageWriter:
     ) -> None:
         self._grid: Optional[Grid] = None
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
-        self._grid_offset = None
+        self._grid_offset: Optional[tuple[Any]] = None
         self._filename: Path = filename
         self._size: tuple[int, int] = size
         self._mpp: float = mpp
@@ -61,7 +61,7 @@ class H5FileImageWriter:
         batch_dtype = np.asarray(first_batch).dtype
 
         self._current_index = 0
-        self._grid_offset = list(first_coordinates[0])
+        self._grid_offset = tuple(first_coordinates[0])
 
         self._coordinates_dataset = h5file.create_dataset(
             "coordinates",
