@@ -38,7 +38,7 @@ class H5FileImageWriter:
     ) -> None:
         self._grid: Optional[Grid] = None
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
-        self._grid_offset: Optional[list[Any]] = None
+        self._grid_offset: Optional[GenericArray] = None
         self._filename: Path = filename
         self._size: tuple[int, int] = size
         self._mpp: float = mpp
