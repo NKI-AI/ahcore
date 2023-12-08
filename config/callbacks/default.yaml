@@ -6,7 +6,7 @@ defaults:
   - rich_progress_bar.yaml
   - write_h5_callback.yaml
   # Include compute_wsi_metrics only if you are doing training and/or validation.
-#  - compute_wsi_metrics_callback.yaml # This needs to follow write_h5_callback as it requires the outputs
+  - compute_wsi_metrics_callback.yaml # This needs to follow write_h5_callback as it requires the outputs
   - write_tiff_callback.yaml
   - _self_
 
@@ -39,4 +39,4 @@ write_tiff_callback:
 
 compute_wsi_metrics_callback:
   max_processes: 4
-  save_per_image: True
+  save_per_image: true

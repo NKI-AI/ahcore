@@ -49,13 +49,13 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
     """Helper dataset to compute the validation metrics."""
 
     def __init__(
-        self,
-        data_description: Optional[DataDescription],
-        native_mpp: float,
-        reader: H5FileImageReader,
-        annotations: Optional[WsiAnnotations] = None,
-        mask: Optional[WsiAnnotations] = None,
-        region_size: tuple[int, int] = (1024, 1024),
+            self,
+            data_description: Optional[DataDescription],
+            native_mpp: float,
+            reader: H5FileImageReader,
+            annotations: Optional[WsiAnnotations] = None,
+            mask: Optional[WsiAnnotations] = None,
+            region_size: tuple[int, int] = (1024, 1024),
     ):
         """
         Parameters
@@ -187,7 +187,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         return prediction
 
     def _get_annotation_data(
-        self, coordinates: tuple[int, int]
+            self, coordinates: tuple[int, int]
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.int_] | None]:
         if not self._annotations:
             raise ValueError("No annotations are provided.")
@@ -199,7 +199,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
             raise ValueError("Index map is not provided.")
 
         _annotations = self._annotations.read_region(coordinates, self._scaling, self._region_size)
-        
+
         if self._data_description.remap_labels:
             _annotations = rename_labels(_annotations, remap_labels=self._data_description.remap_labels)
 
@@ -262,9 +262,7 @@ def _get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, s
 
 
 class WriteH5Callback(Callback):
-    def __init__(
-        self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path, limit_bounds: Optional[bool] = True
-    ):
+    def __init__(self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
         files in a separate thread.
@@ -316,14 +314,14 @@ class WriteH5Callback(Callback):
         return self._writers
 
     def _batch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-        outputs: Any,
-        batch: Any,
-        batch_idx: int,
-        stage: str,
-        dataloader_idx: int = 0,
+            self,
+            trainer: pl.Trainer,
+            pl_module: pl.LightningModule,
+            outputs: Any,
+            batch: Any,
+            batch_idx: int,
+            stage: str,
+            dataloader_idx: int = 0,
     ) -> None:
         filename = batch["path"][0]  # Filenames are constant across the batch.
         if any([filename != path for path in batch["path"]]):
@@ -341,7 +339,7 @@ class WriteH5Callback(Callback):
             )
             output_filename.parent.mkdir(parents=True, exist_ok=True)
             link_fn = (
-                self.dump_dir / "outputs" / f"{pl_module.name}" / f"step_{pl_module.global_step}" / "image_h5_link.txt"
+                    self.dump_dir / "outputs" / f"{pl_module.name}" / f"step_{pl_module.global_step}" / "image_h5_link.txt"
             )
             with open(link_fn, "a" if link_fn.is_file() else "w") as file:
                 file.write(f"{filename},{output_filename}\n")
@@ -372,7 +370,6 @@ class WriteH5Callback(Callback):
                 mpp = slide_image.mpp
 
             scaling = slide_image.get_scaling(mpp)
-            # Below, we set the flag use_limit_bounds to account for the slide bounds used during dataset creation.
             _, size = slide_image.get_scaled_slide_bounds(scaling=scaling)
             num_samples = len(current_dataset)
 
@@ -419,24 +416,24 @@ class WriteH5Callback(Callback):
         self._writers = {}
 
     def on_validation_batch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-        outputs: Any,
-        batch: Any,
-        batch_idx: int,
-        dataloader_idx: int = 0,
+            self,
+            trainer: pl.Trainer,
+            pl_module: pl.LightningModule,
+            outputs: Any,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int = 0,
     ) -> None:
         self._batch_end(trainer, pl_module, outputs, batch, batch_idx, "validate", dataloader_idx)
 
     def on_predict_batch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-        outputs: Any,
-        batch: Any,
-        batch_idx: int,
-        dataloader_idx: int = 0,
+            self,
+            trainer: pl.Trainer,
+            pl_module: pl.LightningModule,
+            outputs: Any,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int = 0,
     ) -> None:
         self._batch_end(trainer, pl_module, outputs, batch, batch_idx, "predict", dataloader_idx)
 
@@ -448,7 +445,7 @@ class WriteH5Callback(Callback):
 
     @staticmethod
     def generator(
-        queue: Queue[Optional[GenericArray]],  # pylint: disable=unsubscriptable-object
+            queue: Queue[Optional[GenericArray]],  # pylint: disable=unsubscriptable-object
     ) -> Generator[GenericArray, None, None]:
         while True:
             batch = queue.get()
@@ -459,9 +456,9 @@ class WriteH5Callback(Callback):
 
 # Separate because this cannot be pickled.
 def _generator_from_reader(
-    h5_reader: H5FileImageReader,
-    tile_size: tuple[int, int],
-    tile_process_function: Callable[[GenericArray], GenericArray],
+        h5_reader: H5FileImageReader,
+        tile_size: tuple[int, int],
+        tile_process_function: Callable[[GenericArray], GenericArray],
 ) -> Generator[GenericArray, None, None]:
     validation_dataset = _ValidationDataset(
         data_description=None,
@@ -478,14 +475,13 @@ def _generator_from_reader(
 
 
 def _write_tiff(
-    filename: Path,
-    tile_size: tuple[int, int],
-    tile_process_function: Callable[[GenericArray], GenericArray],
-    generator_from_reader: Callable[
-        [H5FileImageReader, tuple[int, int], Callable[[GenericArray], GenericArray]],
-        Iterator[npt.NDArray[np.int_]],
-    ],
-    delete_original_h5: bool = False,
+        filename: Path,
+        tile_size: tuple[int, int],
+        tile_process_function: Callable[[GenericArray], GenericArray],
+        generator_from_reader: Callable[
+            [H5FileImageReader, tuple[int, int], Callable[[GenericArray], GenericArray]],
+            Iterator[npt.NDArray[np.int_]],
+        ],
 ) -> None:
     logger.debug("Writing TIFF %s", filename.with_suffix(".tiff"))
     with H5FileImageReader(filename, stitching_mode=StitchingMode.CROP) as h5_reader:
@@ -495,14 +491,11 @@ def _write_tiff(
             mpp=h5_reader.mpp,
             tile_size=tile_size,
             pyramid=True,
-            compression=TiffCompression.ZSTD,
+            compression=TiffCompression.CCITTFAX4,
             quality=100,
             interpolator=Resampling.NEAREST,
         )
         writer.from_tiles_iterator(generator_from_reader(h5_reader, tile_size, tile_process_function))
-        if delete_original_h5:
-            filename.unlink()
-            Path(filename.parent / "image_h5_link.txt").unlink()
 
 
 def tile_process_function(x: GenericArray) -> GenericArray:
@@ -510,13 +503,10 @@ def tile_process_function(x: GenericArray) -> GenericArray:
 
 
 class WriteTiffCallback(Callback):
-    def __init__(
-        self, max_concurrent_writers: int, tile_size: tuple[int, int] = (1024, 1024), delete_original_h5: bool = False
-    ):
+    def __init__(self, max_concurrent_writers: int, tile_size: tuple[int, int] = (1024, 1024)):
         self._pool = multiprocessing.Pool(max_concurrent_writers)
         self._logger = get_logger(type(self).__name__)
         self._dump_dir: Optional[Path] = None
-        self.__delete_original_h5 = delete_original_h5
         self.__write_h5_callback_index = -1
 
         self._model_name: str | None = None
@@ -537,10 +527,10 @@ class WriteTiffCallback(Callback):
             raise ValueError("Dump directory is not set.")
 
     def setup(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-        stage: Optional[str] = None,
+            self,
+            trainer: pl.Trainer,
+            pl_module: pl.LightningModule,
+            stage: Optional[str] = None,
     ) -> None:
         if not isinstance(pl_module, AhCoreLightningModule):
             # TODO: Make a AhCoreCallback with these features
@@ -562,13 +552,13 @@ class WriteTiffCallback(Callback):
         self._dump_dir = _callback.dump_dir
 
     def _batch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-        outputs: Any,
-        batch: Any,
-        batch_idx: int,
-        dataloader_idx: int = 0,
+            self,
+            trainer: pl.Trainer,
+            pl_module: pl.LightningModule,
+            outputs: Any,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int = 0,
     ) -> None:
         assert self.dump_dir, "dump_dir should never be None here."
 
@@ -606,7 +596,6 @@ class WriteTiffCallback(Callback):
                     self._tile_size,
                     self._tile_process_function,
                     _generator_from_reader,
-                    self.__delete_original_h5,
                 ),
             )
             results.append(result)
@@ -616,24 +605,24 @@ class WriteTiffCallback(Callback):
         self._filenames = {}  # Reset the filenames
 
     def on_validation_batch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-        outputs: Any,
-        batch: Any,
-        batch_idx: int,
-        dataloader_idx: int = 0,
+            self,
+            trainer: pl.Trainer,
+            pl_module: pl.LightningModule,
+            outputs: Any,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int = 0,
     ) -> None:
         self._batch_end(trainer, pl_module, outputs, batch, batch_idx, dataloader_idx)
 
     def on_predict_batch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-        outputs: Any,
-        batch: Any,
-        batch_idx: int,
-        dataloader_idx: int = 0,
+            self,
+            trainer: pl.Trainer,
+            pl_module: pl.LightningModule,
+            outputs: Any,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int = 0,
     ) -> None:
         self._batch_end(trainer, pl_module, outputs, batch, batch_idx, dataloader_idx)
 
@@ -649,11 +638,11 @@ TaskData = namedtuple("TaskData", ["filename", "h5_filename", "metadata", "mask"
 
 
 def prepare_task_data(
-    filename: Path,
-    dump_dir: Path,
-    pl_module: pl.LightningModule,
-    data_description: DataDescription,
-    data_manager: DataManager,
+        filename: Path,
+        dump_dir: Path,
+        pl_module: pl.LightningModule,
+        data_description: DataDescription,
+        data_manager: DataManager,
 ) -> TaskData:
     h5_filename = _get_h5_output_filename(
         dump_dir=dump_dir,
@@ -669,11 +658,11 @@ def prepare_task_data(
 
 
 def compute_metrics_for_case(
-    task_data: TaskData,
-    class_names: dict[int, str],
-    data_description: DataDescription,
-    wsi_metrics: WSIMetricFactory,
-    save_per_image: bool,
+        task_data: TaskData,
+        class_names: dict[int, str],
+        data_description: DataDescription,
+        wsi_metrics: WSIMetricFactory,
+        save_per_image: bool,
 ) -> list[dict[str, Any]]:
     # Extract the data from the namedtuple
     filename, h5_filename, metadata, mask, annotations = task_data
@@ -725,13 +714,13 @@ def compute_metrics_for_case(
 
 # Adjusted stand-alone function.
 def schedule_task(
-    task_data: TaskData,
-    pool: Pool,
-    results_dict: dict[Any, str],  # Any because it will be a multiprocessing.pool.AsyncResult
-    class_names: dict[int, str],
-    data_description: DataDescription,
-    wsi_metrics: WSIMetricFactory,
-    save_per_image: bool,
+        task_data: TaskData,
+        pool: Pool,
+        results_dict: dict[Any, str],  # Any because it will be a multiprocessing.pool.AsyncResult
+        class_names: dict[int, str],
+        data_description: DataDescription,
+        wsi_metrics: WSIMetricFactory,
+        save_per_image: bool,
 ) -> None:
     result = pool.apply_async(
         compute_metrics_for_case,
@@ -771,10 +760,10 @@ class ComputeWsiMetricsCallback(Callback):
         self._logger = get_logger(type(self).__name__)
 
     def setup(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-        stage: Optional[str] = None,
+            self,
+            trainer: pl.Trainer,
+            pl_module: pl.LightningModule,
+            stage: Optional[str] = None,
     ) -> None:
         if not isinstance(pl_module, AhCoreLightningModule):
             # TODO: Make a AhCoreCallback with these features
@@ -817,7 +806,7 @@ class ComputeWsiMetricsCallback(Callback):
         self._data_manager: DataManager = trainer.datamodule.data_manager  # type: ignore
 
     def _create_validate_image_metadata_gen(
-        self,
+            self,
     ) -> Generator[ImageMetadata, None, None]:
         assert self._data_description
         assert self._data_manager
@@ -837,13 +826,13 @@ class ComputeWsiMetricsCallback(Callback):
         self._validate_metadata_gen = self._create_validate_image_metadata_gen()
 
     def on_validation_batch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-        outputs: Any,
-        batch: Any,
-        batch_idx: int,
-        dataloader_idx: int = 0,
+            self,
+            trainer: pl.Trainer,
+            pl_module: pl.LightningModule,
+            outputs: Any,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int = 0,
     ) -> None:
         if not self._dump_dir:
             raise ValueError("Dump directory is not set.")
@@ -856,7 +845,7 @@ class ComputeWsiMetricsCallback(Callback):
             )
 
     def compute_metrics(
-        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+            self, trainer: pl.Trainer, pl_module: pl.LightningModule
     ) -> list[list[dict[str, dict[str, float]]]]:
         assert self._dump_dir
         assert self._data_description
@@ -945,7 +934,7 @@ class ComputeWsiMetricsCallback(Callback):
         computed_metrics = self.compute_metrics(trainer, pl_module)
         metrics = self._wsi_metrics.get_average_score(computed_metrics)
         results_json_fn = (
-            self._dump_dir / "outputs" / self._model_name / f"step_{pl_module.global_step}" / "results.json"
+                self._dump_dir / "outputs" / self._model_name / f"step_{pl_module.global_step}" / "results.json"
         )
         with open(results_json_fn, "w", encoding="utf-8") as json_file:
             json.dump(self._dump_list, json_file, indent=2)
