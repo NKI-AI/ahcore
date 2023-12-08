@@ -36,9 +36,9 @@ class H5FileImageWriter:
         is_binary: bool = False,
         progress: Optional[Any] = None,
     ) -> None:
-        self._grid_offset = None
         self._grid: Optional[Grid] = None
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
+        self._grid_offset = None
         self._filename: Path = filename
         self._size: tuple[int, int] = size
         self._mpp: float = mpp
@@ -60,8 +60,8 @@ class H5FileImageWriter:
         batch_shape = np.asarray(first_batch).shape
         batch_dtype = np.asarray(first_batch).dtype
 
-        self._grid_offset = list(first_coordinates[0])
         self._current_index = 0
+        self._grid_offset = list(first_coordinates[0])
 
         self._coordinates_dataset = h5file.create_dataset(
             "coordinates",
@@ -147,6 +147,8 @@ class H5FileImageWriter:
         connection_to_parent: Optional[Connection] = None,
     ) -> None:
         """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
+        grid_counter = 0
+
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
                 first_coordinates, first_batch = next(batch_generator)
@@ -164,15 +166,19 @@ class H5FileImageWriter:
                     batch_generator = self._progress(batch_generator, total=self._num_samples)
 
                 for coordinates, batch in batch_generator:
-                    # Vectorized indexing to find matching grid indices
-                    grid_indices = np.where(np.all(coordinates[:, np.newaxis, :] == self._grid, axis=-1))
+                    # We take a coordinate, and step through the grid until we find it.
+                    # Note that this assumes that the coordinates come in C-order, so we will always hit it
+                    for idx, curr_coordinates in enumerate(coordinates):
+                        # As long as our current coordinates are not equal to the grid coordinates, we make a step
+                        while not np.all(curr_coordinates == self._grid[grid_counter]):
+                            grid_counter += 1
+                        # If we find it, we set it to the index, so we can find it later on
+                        # This can be tested by comparing the grid evaluated at a grid index with the tile index
+                        # mapped to its coordinates
+                        self._tile_indices[grid_counter] = self._current_index + idx
+                        grid_counter += 1
 
-                    if grid_indices[0].size > 0:
-                        # Update tile indices using vectorized operations
-                        self._tile_indices[grid_indices[0]] = self._current_index + np.arange(len(grid_indices[0]))
-
-                    batch_size = len(coordinates)
-                    # Update data and coordinates datasets in batches
+                    batch_size = batch.shape[0]
                     self._data[self._current_index : self._current_index + batch_size] = batch
                     self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
                     self._current_index += batch_size
