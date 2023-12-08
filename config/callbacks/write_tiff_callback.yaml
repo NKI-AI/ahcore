@@ -1,2 +1,3 @@
 write_tiff_callback:
   _target_: ahcore.callbacks.WriteTiffCallback
+  delete_original_h5: true # Make sure delete_original_h5 is enabled only for the last callback which uses h5 files.

@@ -199,7 +199,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
             raise ValueError("Index map is not provided.")
 
         _annotations = self._annotations.read_region(coordinates, self._scaling, self._region_size)
-        
+
         if self._data_description.remap_labels:
             _annotations = rename_labels(_annotations, remap_labels=self._data_description.remap_labels)
 
@@ -481,6 +481,7 @@ def _write_tiff(
         [H5FileImageReader, tuple[int, int], Callable[[GenericArray], GenericArray]],
         Iterator[npt.NDArray[np.int_]],
     ],
+    delete_original_h5: Optional[bool] = False,
 ) -> None:
     logger.debug("Writing TIFF %s", filename.with_suffix(".tiff"))
     with H5FileImageReader(filename, stitching_mode=StitchingMode.CROP) as h5_reader:
@@ -495,6 +496,9 @@ def _write_tiff(
             interpolator=Resampling.NEAREST,
         )
         writer.from_tiles_iterator(generator_from_reader(h5_reader, tile_size, tile_process_function))
+        if delete_original_h5:
+            filename.unlink()
+            Path(filename.parent / "image_h5_link.txt").unlink()
 
 
 def tile_process_function(x: GenericArray) -> GenericArray:
@@ -502,10 +506,13 @@ def tile_process_function(x: GenericArray) -> GenericArray:
 
 
 class WriteTiffCallback(Callback):
-    def __init__(self, max_concurrent_writers: int, tile_size: tuple[int, int] = (1024, 1024)):
+    def __init__(
+        self, max_concurrent_writers: int, tile_size: tuple[int, int] = (1024, 1024), delete_original_h5: bool = False
+    ):
         self._pool = multiprocessing.Pool(max_concurrent_writers)
         self._logger = get_logger(type(self).__name__)
         self._dump_dir: Optional[Path] = None
+        self.__delete_original_h5 = delete_original_h5
         self.__write_h5_callback_index = -1
 
         self._model_name: str | None = None
@@ -595,6 +602,7 @@ class WriteTiffCallback(Callback):
                     self._tile_size,
                     self._tile_process_function,
                     _generator_from_reader,
+                    self.__delete_original_h5,
                 ),
             )
             results.append(result)
