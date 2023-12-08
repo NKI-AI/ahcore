@@ -11,12 +11,13 @@ from logging import getLogger
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pformat
-from typing import Any, Generator
+from typing import Any, Generator, NamedTuple
 
 import imageio.v3 as iio
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
+import PIL.ImageCms
 from dlup import SlideImage
 from dlup.data.dataset import TiledWsiDataset
 from dlup.tiling import GridOrder, TilingMode
@@ -80,13 +81,43 @@ class DatasetConfigs(BaseModel):
     crop: bool
     mask_threshold: float
     grid_order: str
+    color_profile_applied: bool = False
+
+
+class Thumbnail(NamedTuple):
+    """Thumbnail of a slide image."""
+
+    thumbnail: npt.NDArray[np.uint8]
+    mask: npt.NDArray[np.uint8] | None
+    overlay: npt.NDArray[np.uint8]
 
 
 def _save_thumbnail(
     image_fn: Path,
     dataset_cfg: DatasetConfigs,
     mask: npt.NDArray[np.int_] | None,
-) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8] | None, npt.NDArray[np.uint8]]:
+) -> Thumbnail:
+    """
+    Saves a thumbnail of the slide, including the filtered tiles and the mask itself.
+
+    In case apply_color_profile is set, the color profile will be applied to the output, otherwise
+    it will be in the 'icc_profile' attribute of the thumbnail and overlay.
+
+    Parameters
+    ----------
+    image_fn : Path
+        Path to the whole slide image file.
+    dataset_cfg : DatasetConfigs
+        Dataset configurations.
+    mask : np.ndarray | None
+        Binary mask used to filter each tile.
+
+    Returns
+    -------
+    Thumbnail
+        All relevant information
+
+    """
     target_mpp = max(dataset_cfg.mpp * 30, 30)
     tile_size = (
         min(30, dataset_cfg.tile_size[0] // 30),
@@ -100,6 +131,7 @@ def _save_thumbnail(
         (0, 0),
         mask=mask,
         mask_threshold=dataset_cfg.mask_threshold,
+        apply_color_profile=dataset_cfg.color_profile_applied,
     )
     scaled_region_view = dataset.slide_image.get_scaled_view(dataset.slide_image.get_scaling(target_mpp))
 
@@ -119,25 +151,38 @@ def _save_thumbnail(
     tile_size = (_tile_size[0], _tile_size[1])
 
     thumbnail = dataset.slide_image.get_thumbnail(tile_size)
+    # If the color_profile is not applied, we need to add it to the metadata of the thumbnail
+    if dataset.slide_image.color_profile:
+        if not dataset_cfg.color_profile_applied:
+            thumbnail.info["icc_profile"] = dataset.slide_image.color_profile.tobytes()  # type: ignore
+        else:
+            PIL.ImageCms.applyTransform(thumbnail, dataset.slide_image.color_profile, True)
+
     thumbnail.convert("RGB").save(thumbnail_io, quality=75)
-    thumbnail_arr = np.frombuffer(thumbnail_io.getvalue(), dtype="uint8")
 
     region_size = tuple(scaled_region_view.size)
-    background = Image.new("RGBA", (region_size[0], region_size[1]), (255, 255, 255, 255))
+    overlay = Image.new("RGBA", (region_size[0], region_size[1]), (255, 255, 255, 255))
 
     overlay_io = io.BytesIO()
     for d in dataset:
         tile = d["image"]
         coords = np.array(d["coordinates"])
         box = tuple(np.array((*coords, *(coords + tile_size))).astype(int))
-        background.paste(tile, (box[0], box[1]))
+        overlay.paste(tile, (box[0], box[1]))
         # You could uncomment this to plot the boxes of the grid as well, but this can quickly become crowded.
         # draw = ImageDraw.Draw(background)
         # draw.rectangle(box, outline="red")
-    background.convert("RGB").save(overlay_io, quality=75)
-    overlay_arr = np.frombuffer(overlay_io.getvalue(), dtype="uint8")
 
-    return thumbnail_arr, mask_arr, overlay_arr
+    # If the below were true, it would already be embedded into the tile.
+    if not dataset_cfg.color_profile_applied:
+        overlay.info["icc_profile"] = dataset.slide_image.color_profile.tobytes()  # type: ignore
+
+    overlay.convert("RGB").save(overlay_io, quality=75)
+
+    _thumbnail = np.frombuffer(thumbnail_io.getvalue(), dtype="uint8")
+    _overlay = np.frombuffer(overlay_io.getvalue(), dtype="uint8")
+
+    return Thumbnail(thumbnail=_thumbnail, mask=mask_arr, overlay=_overlay)
 
 
 def create_slide_image_dataset(
@@ -178,14 +223,17 @@ def create_slide_image_dataset(
         mask=mask,
         mask_threshold=cfg.mask_threshold,
         overwrite_mpp=overwrite_mpp,
+        apply_color_profile=cfg.color_profile_applied,
     )
 
 
 def _generator(
     dataset: TiledWsiDataset, quality: int | None = 80, compression: str = "JPEG"
 ) -> Generator[Any, Any, Any]:
-    for idx, sample in enumerate(dataset):
+    for idx in range(len(dataset)):
+        # TODO: This should be working iterating over the dataset
         sample = dataset[idx]
+
         buffered = io.BytesIO()
         if quality is not None:
             # If we just cast the PIL.Image to RGB, the alpha channel is set to black
@@ -247,33 +295,46 @@ def _tiling_pipeline(
         )
         _scaling = dataset.slide_image.get_scaling(dataset_cfg.mpp)
 
+        color_profile = None
+        if not dataset_cfg.color_profile_applied and dataset.slide_image.color_profile:
+            color_profile = dataset.slide_image.color_profile.tobytes()  # type: ignore
+
+        extra_metadata = {
+            "color_profile_applied": dataset_cfg.color_profile_applied,
+            "color_profile_present": dataset.slide_image.color_profile is not None,
+        }
+
         h5_writer = H5FileImageWriter(
             filename=output_file,
-            size=dataset.slide_image.get_scaled_size(_scaling),
+            size=dataset.slide_image.get_scaled_slide_bounds(_scaling)[1],
             mpp=dataset_cfg.mpp,
             tile_size=dataset_cfg.tile_size,
             tile_overlap=dataset_cfg.tile_overlap,
             num_samples=len(dataset),
             is_binary=True,
+            color_profile=color_profile,
+            extra_metadata=extra_metadata,
         )
         save_tiles(dataset, h5_writer, quality)
         if save_thumbnail:
-            thumbnail, thumbnail_mask, overlay = _save_thumbnail(image_path, dataset_cfg, mask)
+            thumbnail_obj = _save_thumbnail(image_path, dataset_cfg, mask)
 
-            if thumbnail_mask is not None:
+            if thumbnail_obj.mask is not None:
                 h5_writer.add_associated_images(
                     images=(
-                        ("thumbnail", thumbnail),
-                        ("mask", thumbnail_mask),
-                        ("overlay", overlay),
+                        ("thumbnail", thumbnail_obj.thumbnail),
+                        ("mask", thumbnail_obj.mask),
+                        ("overlay", thumbnail_obj.overlay),
                     ),
                     description="thumbnail, mask and overlay",
                 )
             else:
-                h5_writer.add_associated_images(images=(("thumbnail", thumbnail),), description="thumbnail")
+                h5_writer.add_associated_images(
+                    images=(("thumbnail", thumbnail_obj.thumbnail),), description="thumbnail"
+                )
 
     except Exception as e:
-        logger.error("Failed: %s with exception %s", image_path, e)
+        logger.error(f"Failed: {image_path} with exception {e}")
         return
 
     logger.debug("Working on %s. Writing to %s", image_path, output_file)
@@ -331,6 +392,7 @@ def _do_tiling(args: argparse.Namespace) -> None:
         crop=crop,
         mask_threshold=mask_threshold,
         grid_order="C",
+        color_profile_applied=args.apply_color_profile,
     )
 
     logger.info(f"Dataset configurations: {pformat(dataset_cfg)}")
@@ -426,4 +488,11 @@ def register_parser(parser: argparse._SubParsersAction[Any]) -> None:
         default=80,
         help="Quality of the saved tiles in jpg, otherwise png (default: 80)",
     )
+    _parser.add_argument(
+        "--apply-color-profile",
+        action="store_true",
+        help="Apply the color profile of the slide in the tiles. "
+        "This will also remove the color profile from the attributes.",
+    )
+
     _parser.set_defaults(subcommand=_do_tiling)
