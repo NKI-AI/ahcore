@@ -280,9 +280,6 @@ class WriteH5Callback(Callback):
             The maximum number of concurrent writers.
         dump_dir : pathlib.Path
             The directory to dump the H5 files to.
-        limit_bounds: bool
-            If true, the H5 writer will use the `slide_bounds` property to create the grid.
-            Disable this only if you have "rois" in your data.
         """
         super().__init__()
         self._writers: dict[str, _WriterMessage] = {}
@@ -291,7 +288,6 @@ class WriteH5Callback(Callback):
         self._max_queue_size = max_queue_size
         self._semaphore = Semaphore(max_concurrent_writers)
         self._dataset_index = 0
-        self._limit_bounds = limit_bounds
 
         self._logger = get_logger(type(self).__name__)
 
