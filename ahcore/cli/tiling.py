@@ -20,6 +20,7 @@ import PIL.Image
 import PIL.ImageCms
 from dlup import SlideImage
 from dlup.data.dataset import TiledWsiDataset
+from dlup.experimental_backends import ImageBackend
 from dlup.tiling import GridOrder, TilingMode
 from PIL import Image
 from pydantic import BaseModel
@@ -72,7 +73,7 @@ class TileMetaData(BaseModel):
 
 
 class DatasetConfigs(BaseModel):
-    """Configurations of the TiledROIsSlideImageDataset dataset"""
+    """Configurations of the TiledWsiDataset dataset"""
 
     mpp: float
     tile_size: tuple[int, int]
@@ -89,19 +90,22 @@ class Thumbnail(NamedTuple):
 
     thumbnail: npt.NDArray[np.uint8]
     mask: npt.NDArray[np.uint8] | None
-    overlay: npt.NDArray[np.uint8]
+    overlay: npt.NDArray[np.uint8] | None
 
 
 def _save_thumbnail(
     image_fn: Path,
     dataset_cfg: DatasetConfigs,
     mask: npt.NDArray[np.int_] | None,
+    store_overlay: bool = False,
 ) -> Thumbnail:
     """
     Saves a thumbnail of the slide, including the filtered tiles and the mask itself.
 
     In case apply_color_profile is set, the color profile will be applied to the output, otherwise
     it will be in the 'icc_profile' attribute of the thumbnail and overlay.
+
+    Computing the overlay is a slow process.
 
     Parameters
     ----------
@@ -111,6 +115,8 @@ def _save_thumbnail(
         Dataset configurations.
     mask : np.ndarray | None
         Binary mask used to filter each tile.
+    store_overlay : bool
+        Store the overlay and mask as well.
 
     Returns
     -------
@@ -118,48 +124,49 @@ def _save_thumbnail(
         All relevant information
 
     """
-    target_mpp = max(dataset_cfg.mpp * 30, 30)
-    tile_size = (
-        min(30, dataset_cfg.tile_size[0] // 30),
-        min(30, dataset_cfg.tile_size[1] // 30),
-    )
+    # Let's figure out an appropriate target_mpp, our thumbnail has to be at least 512px in size
+    _scaling = 1.0
+    with SlideImage.from_file_path(image_fn, backend=ImageBackend.OPENSLIDE) as slide_image:
+        scaled_size = max(slide_image.size)
+        while scaled_size >= 1024:
+            scaled_size = max(slide_image.get_scaled_size(_scaling))
+            _scaling /= 2
+        _scaling *= 2
+        target_mpp = slide_image.get_mpp(_scaling)
+        target_size = slide_image.get_scaled_size(_scaling)
 
+        thumbnail_io = io.BytesIO()
+        thumbnail = slide_image.get_thumbnail(target_size)
+        # If the color_profile is not applied, we need to add it to the metadata of the thumbnail
+        if slide_image.color_profile:
+            to_profile = PIL.ImageCms.createProfile("sRGB")
+            intent = PIL.ImageCms.getDefaultIntent(slide_image.color_profile)  # type: ignore
+            rgb_color_transform = PIL.ImageCms.buildTransform(
+                slide_image.color_profile, to_profile, "RGB", "RGB", intent, 0
+            )
+            PIL.ImageCms.applyTransform(thumbnail, rgb_color_transform, True)
+
+        thumbnail.convert("RGB").save(thumbnail_io, format="JPEG", quality=75)
+        _thumbnail = np.frombuffer(thumbnail_io.getvalue(), dtype="uint8")
+
+    if not store_overlay:
+        return Thumbnail(thumbnail=_thumbnail, mask=mask.astype(np.uint8) if mask is not None else None, overlay=None)
+
+    tile_size = (32, 32)
     dataset = TiledWsiDataset.from_standard_tiling(
         image_fn,
         target_mpp,
         tile_size,
         (0, 0),
         mask=mask,
+        crop=False,
+        tile_mode=TilingMode.overflow,
         mask_threshold=dataset_cfg.mask_threshold,
         apply_color_profile=dataset_cfg.color_profile_applied,
+        backend=ImageBackend.OPENSLIDE,
     )
+
     scaled_region_view = dataset.slide_image.get_scaled_view(dataset.slide_image.get_scaling(target_mpp))
-
-    if mask is not None:
-        # Let us write the mask too.
-        mask_io = io.BytesIO()
-        pil_mask = PIL.Image.fromarray(mask * 255, mode="L")
-        pil_mask.save(mask_io, quality=75)
-        mask_arr = np.frombuffer(mask_io.getvalue(), dtype="uint8")
-    else:
-        mask_arr = None
-
-    thumbnail_io = io.BytesIO()
-
-    # TODO: This needs to change in dlup, the scaled_region_view needs to return size in int, int.
-    _tile_size = tuple(scaled_region_view.size)
-    tile_size = (_tile_size[0], _tile_size[1])
-
-    thumbnail = dataset.slide_image.get_thumbnail(tile_size)
-    # If the color_profile is not applied, we need to add it to the metadata of the thumbnail
-    if dataset.slide_image.color_profile:
-        if not dataset_cfg.color_profile_applied:
-            thumbnail.info["icc_profile"] = dataset.slide_image.color_profile.tobytes()  # type: ignore
-        else:
-            PIL.ImageCms.applyTransform(thumbnail, dataset.slide_image.color_profile, True)
-
-    thumbnail.convert("RGB").save(thumbnail_io, quality=75)
-
     region_size = tuple(scaled_region_view.size)
     overlay = Image.new("RGBA", (region_size[0], region_size[1]), (255, 255, 255, 255))
 
@@ -177,12 +184,12 @@ def _save_thumbnail(
     if not dataset_cfg.color_profile_applied:
         overlay.info["icc_profile"] = dataset.slide_image.color_profile.tobytes()  # type: ignore
 
-    overlay.convert("RGB").save(overlay_io, quality=75)
+    overlay.convert("RGB").save(overlay_io, format="JPEG", quality=75)
 
     _thumbnail = np.frombuffer(thumbnail_io.getvalue(), dtype="uint8")
     _overlay = np.frombuffer(overlay_io.getvalue(), dtype="uint8")
 
-    return Thumbnail(thumbnail=_thumbnail, mask=mask_arr, overlay=_overlay)
+    return Thumbnail(thumbnail=_thumbnail, mask=mask.astype(np.uint8) if mask is not None else None, overlay=_overlay)
 
 
 def create_slide_image_dataset(
@@ -224,6 +231,7 @@ def create_slide_image_dataset(
         mask_threshold=cfg.mask_threshold,
         overwrite_mpp=overwrite_mpp,
         apply_color_profile=cfg.color_profile_applied,
+        backend=ImageBackend.OPENSLIDE,
     )
 
 
@@ -301,7 +309,6 @@ def _tiling_pipeline(
 
         extra_metadata = {
             "color_profile_applied": dataset_cfg.color_profile_applied,
-            "color_profile_present": dataset.slide_image.color_profile is not None,
         }
 
         h5_writer = H5FileImageWriter(
@@ -319,19 +326,22 @@ def _tiling_pipeline(
         if save_thumbnail:
             thumbnail_obj = _save_thumbnail(image_path, dataset_cfg, mask)
 
+            description = "thumbnail"
+            images = [
+                ("thumbnail", thumbnail_obj.thumbnail),
+            ]
             if thumbnail_obj.mask is not None:
-                h5_writer.add_associated_images(
-                    images=(
-                        ("thumbnail", thumbnail_obj.thumbnail),
-                        ("mask", thumbnail_obj.mask),
-                        ("overlay", thumbnail_obj.overlay),
-                    ),
-                    description="thumbnail, mask and overlay",
-                )
-            else:
-                h5_writer.add_associated_images(
-                    images=(("thumbnail", thumbnail_obj.thumbnail),), description="thumbnail"
-                )
+                description += ", mask"
+                images.append(("mask", thumbnail_obj.mask))
+
+            if thumbnail_obj.overlay:
+                description += ", overlay"
+                images.append(("overlay", thumbnail_obj.overlay))
+
+            h5_writer.add_associated_images(
+                images=tuple(images),
+                description=description,
+            )
 
     except Exception as e:
         logger.error(f"Failed: {image_path} with exception {e}")
@@ -439,7 +449,7 @@ def register_parser(parser: argparse._SubParsersAction[Any]) -> None:
         type=file_path,
         required=True,
         help="Path to the file list. Each comma-separated line is of the form `<image_fn>,<mask_fn>,<output_directory>`"
-        " where the output directory is with request to --output-dir. mask_fn can be empty.",
+        " where the output directory is with respect to --output-directory. mask_fn can be empty.",
     )
     _parser.add_argument(
         "--output-directory",

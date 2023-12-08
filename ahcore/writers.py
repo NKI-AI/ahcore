@@ -111,6 +111,11 @@ class H5FileImageWriter:
                 chunks=(1,),
             )
 
+        if self._color_profile:
+            h5file.create_dataset(
+                "color_profile", data=np.frombuffer(self._color_profile, dtype=np.uint8), dtype="uint8"
+            )
+
         # This only works when the mode is 'overflow' and in 'C' order.
         metadata = {
             "mpp": self._mpp,
@@ -125,13 +130,12 @@ class H5FileImageWriter:
             "grid_order": "C",
             "mode": "overflow",
             "is_binary": self._is_binary,
+            "has_color_profile": self._color_profile is not None,
         }
         if self._extra_metadata:
             metadata.update(self._extra_metadata)
         metadata_json = json.dumps(metadata)
         h5file.attrs["metadata"] = metadata_json
-        if self._color_profile:
-            h5file.attrs["color_profile"] = self._color_profile
 
     def add_associated_images(
         self,
@@ -141,7 +145,7 @@ class H5FileImageWriter:
         """Adds associated images to the h5 file."""
 
         # Create a compound dataset "associated_images"
-        with h5py.File(self._filename, "r+") as h5file:
+        with h5py.File(self._filename, "a") as h5file:
             associated_images = h5file.create_group("associated_images")
             for name, image in images:
                 associated_images.create_dataset(name, data=image)
