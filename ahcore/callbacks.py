@@ -199,7 +199,6 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
             raise ValueError("Index map is not provided.")
 
         _annotations = self._annotations.read_region(coordinates, self._scaling, self._region_size)
-
         if self._data_description.remap_labels:
             _annotations = rename_labels(_annotations, remap_labels=self._data_description.remap_labels)
 
