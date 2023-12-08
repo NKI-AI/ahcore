@@ -34,10 +34,13 @@ class H5FileImageWriter:
         tile_overlap: tuple[int, int],
         num_samples: int,
         is_binary: bool = False,
+        color_profile: bytes | None = None,
         progress: Optional[Any] = None,
+        extra_metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         self._grid: Optional[Grid] = None
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
+        self._grid_offset: tuple[int, int] | None = None
         self._filename: Path = filename
         self._size: tuple[int, int] = size
         self._mpp: float = mpp
@@ -45,6 +48,8 @@ class H5FileImageWriter:
         self._tile_overlap: tuple[int, int] = tile_overlap
         self._num_samples: int = num_samples
         self._is_binary: bool = is_binary
+        self._color_profile: bytes | None = color_profile
+        self._extra_metadata = extra_metadata
         self._progress = progress
         self._data: Optional[h5py.Dataset] = None
         self._coordinates_dataset: Optional[h5py.Dataset] = None
@@ -54,12 +59,13 @@ class H5FileImageWriter:
         self._logger = logger  # maybe not the best way, think about it
         self._logger.debug("Writing h5 to %s", self._filename)
 
-    def init_writer(self, first_batch: GenericArray, h5file: h5py.File) -> None:
+    def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
         """Initializes the image_dataset based on the first tile."""
         batch_shape = np.asarray(first_batch).shape
         batch_dtype = np.asarray(first_batch).dtype
 
         self._current_index = 0
+        self._grid_offset = (0, 0)
 
         self._coordinates_dataset = h5file.create_dataset(
             "coordinates",
@@ -70,7 +76,7 @@ class H5FileImageWriter:
 
         # TODO: We only support a single Grid
         grid = Grid.from_tiling(
-            (0, 0),
+            self._grid_offset,
             size=self._size,
             tile_size=self._tile_size,
             tile_overlap=self._tile_overlap,
@@ -120,8 +126,12 @@ class H5FileImageWriter:
             "mode": "overflow",
             "is_binary": self._is_binary,
         }
+        if self._extra_metadata:
+            metadata.update(self._extra_metadata)
         metadata_json = json.dumps(metadata)
         h5file.attrs["metadata"] = metadata_json
+        if self._color_profile:
+            h5file.attrs["color_profile"] = self._color_profile
 
     def add_associated_images(
         self,
@@ -150,7 +160,7 @@ class H5FileImageWriter:
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
                 first_coordinates, first_batch = next(batch_generator)
-                self.init_writer(first_batch, h5file)
+                self.init_writer(first_coordinates, first_batch, h5file)
 
                 # Mostly for mypy
                 assert self._grid, "Grid is not initialized"
