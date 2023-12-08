@@ -44,6 +44,7 @@ _AnnotationReturnTypes = WsiAnnotations | SlideImage
 
 class _AnnotationReadersDict(TypedDict):
     ASAP_XML: Callable[[Path], WsiAnnotations]
+    DARWIN_JSON: Callable[[Path], WsiAnnotations]
     GEOJSON: Callable[[Path], WsiAnnotations]
     PYVIPS: Callable[[Path], SlideImage]
     TIFFFILE: Callable[[Path], SlideImage]
@@ -52,6 +53,7 @@ class _AnnotationReadersDict(TypedDict):
 
 _AnnotationReaders: _AnnotationReadersDict = {
     "ASAP_XML": WsiAnnotations.from_asap_xml,
+    "DARWIN_JSON": WsiAnnotations.from_darwin_json,
     "GEOJSON": WsiAnnotations.from_geojson,
     "PYVIPS": functools.partial(SlideImage.from_file_path, backend=ImageBackend.PYVIPS),
     "TIFFFILE": functools.partial(SlideImage.from_file_path, backend=ImageBackend.TIFFFILE),
@@ -122,6 +124,23 @@ def get_mask_and_annotations_from_record(
     _masks = parse_annotations_from_record(annotations_root, record.masks)
     _annotations = parse_annotations_from_record(annotations_root, record.annotations)
     return _masks, _annotations
+
+
+def get_labels_from_record(record: Image | Patient) -> list[tuple[str, str]] | None:
+    """Get the labels from a record of type Image or Patient.
+
+    Parameters
+    ----------
+    record : Image | Patient
+        The record containing the labels.
+
+    Returns
+    -------
+    list[tuple[str, str]] | None
+        The labels if they exists, else None.
+    """
+    _labels = [(str(label.key), str(label.value)) for label in record.labels] if record.labels else None
+    return _labels
 
 
 def _get_rois(mask: WsiAnnotations | None, data_description: DataDescription, stage: str) -> Optional[Rois]:
@@ -310,17 +329,19 @@ def datasets_from_data_description(
     else:
         grid_description = data_description.inference_grid
 
-    records = db_manager.get_records_by_split(
+    patients = db_manager.get_records_by_split(
         manifest_name=data_description.manifest_name,
         split_version=data_description.split_version,
         split_category=stage,
     )
-    for record in records:
-        labels = [(str(label.key), str(label.value)) for label in record.labels] if record.labels else None
+    for patient in patients:
+        patient_labels = get_labels_from_record(patient)
 
-        for image in record.images:
+        for image in patient.images:
             mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
             assert isinstance(mask, WsiAnnotations) or (mask is None)
+            image_labels = get_labels_from_record(image)
+            labels = None if patient_labels is image_labels is None else (patient_labels or []) + (image_labels or [])
             rois = _get_rois(mask, data_description, stage)
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
 
@@ -341,7 +362,7 @@ def datasets_from_data_description(
                 transform=transform,
                 backend=ImageBackend[str(image.reader)],
                 overwrite_mpp=(image.mpp, image.mpp),
-                limit_bounds=False if rois is not None else True,
+                limit_bounds=True,
                 apply_color_profile=data_description.apply_color_profile,
             )
 

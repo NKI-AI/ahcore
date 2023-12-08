@@ -268,7 +268,7 @@ def inference(config: DictConfig) -> None:
 
     # Inference
     logger.info("Starting inference...")
-    trainer.predict(model=model, datamodule=datamodule)
+    trainer.predict(model=model, datamodule=datamodule, return_predictions=False)
 
     # Make sure everything closed properly
     logger.info("Finalizing...")

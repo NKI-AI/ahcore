@@ -161,6 +161,8 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
             target, roi = self._get_annotation_data(coordinates)
             if roi is not None:
                 sample["roi"] = roi.astype(np.uint8)
+            else:
+                sample["roi"] = None  # type: ignore
             sample["target"] = target
 
         return sample
@@ -195,20 +197,19 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         if not self._data_description:
             raise ValueError("No data description is provided.")
 
-        if not self._data_description.remap_labels:
-            raise ValueError("Remap labels are not provided.")
-
         if not self._data_description.index_map:
             raise ValueError("Index map is not provided.")
 
         _annotations = self._annotations.read_region(coordinates, self._scaling, self._region_size)
-        _annotations = rename_labels(_annotations, remap_labels=self._data_description.remap_labels)
+
+        if self._data_description.remap_labels:
+            _annotations = rename_labels(_annotations, remap_labels=self._data_description.remap_labels)
 
         points, boxes, region, roi = convert_annotations(
             _annotations,
             self._region_size,
             index_map=self._data_description.index_map,
-            roi_name="roi",
+            roi_name=self._data_description.roi_name,
         )
         encoded_region = one_hot_encoding(index_map=self._data_description.index_map, mask=region)
         if roi is not None:
@@ -682,7 +683,7 @@ def compute_metrics_for_case(
         for sample in dataset_of_validation_image:
             prediction = torch.from_numpy(sample["prediction"]).unsqueeze(0).float()
             target = torch.from_numpy(sample["target"]).unsqueeze(0)
-            roi = torch.from_numpy(sample["roi"]).unsqueeze(0)
+            roi = torch.from_numpy(sample["roi"]).unsqueeze(0) if sample["roi"] is not None else None
 
             wsi_metrics.process_batch(
                 predictions=prediction,
