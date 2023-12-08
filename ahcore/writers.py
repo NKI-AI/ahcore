@@ -164,21 +164,18 @@ class H5FileImageWriter:
                     batch_generator = self._progress(batch_generator, total=self._num_samples)
 
                 for coordinates, batch in batch_generator:
-                    # We take a coordinate, and step through the grid until we find it.
-                    # Note that this assumes that the coordinates come in C-order, so we will always hit it
-                    for idx, curr_coordinates in enumerate(coordinates):
-                        # As long as our current coordinates are not equal to the grid coordinates, we make a step
-                        while not np.all(curr_coordinates == self._grid[grid_counter]):
-                            grid_counter += 1
-                        # If we find it, we set it to the index, so we can find it later on
-                        # This can be tested by comparing the grid evaluated at a grid index with the tile index
-                        # mapped to its coordinates
-                        self._tile_indices[grid_counter] = self._current_index + idx
-                        grid_counter += 1
+                    # Vectorized indexing to find matching grid indices
+                    grid_indices = np.where(np.all(coordinates[:, np.newaxis, :] == self._grid, axis=-1))
 
-                    batch_size = batch.shape[0]
-                    self._data[self._current_index : self._current_index + batch_size] = batch
-                    self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
+                    if grid_indices[0].size > 0:
+                        # Update tile indices using vectorized operations
+                        self._tile_indices[grid_indices[0]] = self._current_index + np.arange(len(grid_indices[0]))
+                        self._tile_indices.flush()
+
+                    batch_size = len(coordinates)
+                    # Update data and coordinates datasets in batches
+                    self._data[self._current_index: self._current_index + batch_size] = batch
+                    self._coordinates_dataset[self._current_index: self._current_index + batch_size] = coordinates
                     self._current_index += batch_size
 
         except Exception as e:
