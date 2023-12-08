@@ -174,8 +174,8 @@ class H5FileImageWriter:
 
                     batch_size = len(coordinates)
                     # Update data and coordinates datasets in batches
-                    self._data[self._current_index: self._current_index + batch_size] = batch
-                    self._coordinates_dataset[self._current_index: self._current_index + batch_size] = coordinates
+                    self._data[self._current_index : self._current_index + batch_size] = batch
+                    self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
                     self._current_index += batch_size
 
         except Exception as e:
