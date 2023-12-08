@@ -33,8 +33,6 @@ model_summary:
 write_h5_callback:
   max_queue_size: 100
   max_concurrent_writers: 4
-  # Disable limit_bounds only if you have rois in your data.
-  limit_bounds: True
 
 write_tiff_callback:
   max_concurrent_writers: 4

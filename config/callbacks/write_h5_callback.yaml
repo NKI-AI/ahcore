@@ -1,4 +1,3 @@
 write_h5_callback:
   _target_: ahcore.callbacks.WriteH5Callback
   dump_dir: ${oc.env:SCRATCH}/${task_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
-  limit_bounds: True # set to True only if you don't have rois in your data.
