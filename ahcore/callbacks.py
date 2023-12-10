@@ -388,6 +388,8 @@ class WriteH5Callback(Callback):
                 tile_size=tile_size,
                 tile_overlap=tile_overlap,
                 num_samples=num_samples,
+                color_profile=None,
+                is_compressed_image=False,
                 progress=None,
             )
             new_process = Process(target=new_writer.consume, args=(self.generator(new_queue), child_conn))
