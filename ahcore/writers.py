@@ -6,6 +6,7 @@ This module contains writer classes. Currently implemented:
   h5 files.
 
 """
+import io
 import json
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -14,12 +15,35 @@ from typing import Any, Generator, Optional
 import h5py
 import numpy as np
 import numpy.typing as npt
+import PIL.Image
 from dlup.tiling import Grid, GridOrder, TilingMode
 
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray
 
 logger = get_logger(__name__)
+
+
+def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
+    """Convert encoded array to PIL image
+
+    Parameters
+    ----------
+    array : npt.NDArray[npt.uint8]
+        The encoded array
+
+    Returns
+    -------
+    PIL.Image.Image
+        The decoded image
+
+    """
+    with io.BytesIO(array.tobytes()) as f:
+        image = PIL.Image.open(f)
+        # If you don't this, the image will be a reference and will be closed when exiting the context manager.
+        # Any explicit copy copies the image into memory as a standard PIL.Image.Image, losing the format information.
+        image.load()
+    return image
 
 
 class H5FileImageWriter:
@@ -33,7 +57,7 @@ class H5FileImageWriter:
         tile_size: tuple[int, int],
         tile_overlap: tuple[int, int],
         num_samples: int,
-        is_binary: bool = False,
+        is_compressed_image: bool = False,
         color_profile: bytes | None = None,
         progress: Optional[Any] = None,
         extra_metadata: Optional[dict[str, Any]] = None,
@@ -47,7 +71,7 @@ class H5FileImageWriter:
         self._tile_size: tuple[int, int] = tile_size
         self._tile_overlap: tuple[int, int] = tile_overlap
         self._num_samples: int = num_samples
-        self._is_binary: bool = is_binary
+        self._is_compressed_image: bool = is_compressed_image
         self._color_profile: bytes | None = color_profile
         self._extra_metadata = extra_metadata
         self._progress = progress
@@ -61,8 +85,17 @@ class H5FileImageWriter:
 
     def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
         """Initializes the image_dataset based on the first tile."""
-        batch_shape = np.asarray(first_batch).shape
-        batch_dtype = np.asarray(first_batch).dtype
+
+        if self._is_compressed_image:
+            # We need to read the first batch as it is a compressed PIL image
+            _first_pil = decode_array_to_pil(first_batch[0])
+            _mode = _first_pil.mode
+            _format = _first_pil.format
+            _num_channels = len(_first_pil.getbands())
+        else:
+            _mode = "ARRAY"
+            _format = "RAW"
+            _num_channels = first_batch.shape[-1]
 
         self._current_index = 0
         self._grid_offset = (0, 0)
@@ -94,13 +127,14 @@ class H5FileImageWriter:
         # Initialize to -1, which is the default value
         self._tile_indices[:] = -1
 
-        if not self._is_binary:
+        if not self._is_compressed_image:
+            shape = first_batch.shape[1:]
             self._data = h5file.create_dataset(
                 "data",
-                shape=(self._num_samples,) + batch_shape[1:],
-                dtype=batch_dtype,
+                shape=(self._num_samples,) + shape,
+                dtype=first_batch.dtype,
                 compression="gzip",
-                chunks=(1,) + batch_shape[1:],
+                chunks=(1,) + shape,
             )
         else:
             dt = h5py.vlen_dtype(np.dtype("uint8"))  # Variable-length uint8 data type
@@ -119,19 +153,20 @@ class H5FileImageWriter:
         # This only works when the mode is 'overflow' and in 'C' order.
         metadata = {
             "mpp": self._mpp,
-            "dtype": str(batch_dtype),
-            "shape": tuple(batch_shape[1:]),
             "size": (int(self._size[0]), int(self._size[1])),
-            "num_channels": batch_shape[1],
+            "num_channels": _num_channels,
             "num_samples": self._num_samples,
             "tile_size": tuple(self._tile_size),
             "tile_overlap": tuple(self._tile_overlap),
             "num_tiles": num_tiles,
             "grid_order": "C",
-            "mode": "overflow",
-            "is_binary": self._is_binary,
+            "tiling_mode": "overflow",
+            "mode": _mode,
+            "format": _format,
+            "is_binary": self._is_compressed_image,
             "has_color_profile": self._color_profile is not None,
         }
+
         if self._extra_metadata:
             metadata.update(self._extra_metadata)
         metadata_json = json.dumps(metadata)

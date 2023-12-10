@@ -11,7 +11,7 @@ from logging import getLogger
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pformat
-from typing import Any, Generator, NamedTuple
+from typing import Any, Generator, Literal, NamedTuple
 
 import imageio.v3 as iio
 import numpy as np
@@ -34,6 +34,20 @@ logger = getLogger(__name__)
 
 def read_mask(path: Path) -> npt.NDArray[np.int_]:
     return iio.imread(path)[..., 0]
+
+
+def _to_pil_compression(compression: Literal["jpg", "png", "none"]) -> Literal["JPEG", "PNG"] | None:
+    _compression: Literal["JPEG", "PNG"] | None = None
+    if compression == "jpg":
+        _compression = "JPEG"
+    elif compression == "png":
+        _compression = "PNG"
+    elif compression == "none":
+        pass
+    else:
+        raise ValueError(f"Invalid compression {compression}")
+
+    return _compression
 
 
 class SlideImageMetaData(BaseModel):
@@ -236,33 +250,35 @@ def create_slide_image_dataset(
 
 
 def _generator(
-    dataset: TiledWsiDataset, quality: int | None = 80, compression: str = "JPEG"
+    dataset: TiledWsiDataset, quality: int | None, compression: Literal["JPEG", "PNG"] | None
 ) -> Generator[Any, Any, Any]:
     for idx in range(len(dataset)):
         # TODO: This should be working iterating over the dataset
         sample = dataset[idx]
-
-        buffered = io.BytesIO()
-        if quality is not None:
-            # If we just cast the PIL.Image to RGB, the alpha channel is set to black
-            # which is a bit unnatural if you look in the image pyramid where it would be white in lower resolutions
-            # this is why we take the following approach.
-            tile: PIL.Image.Image = sample["image"]
-            background = PIL.Image.new("RGB", tile.size, (255, 255, 255))  # Create a white background
-            background.paste(tile, mask=tile.split()[3])  # Paste the image using the alpha channel as mask
-            background.convert("RGB").save(buffered, format=compression, quality=quality)
-        else:
-            sample["image"].save(buffered, format=compression, quality=quality)
+        tile: PIL.Image.Image = sample["image"]
+        # If we just cast the PIL.Image to RGB, the alpha channel is set to black
+        # which is a bit unnatural if you look in the image pyramid where it would be white in lower resolutions
+        # this is why we take the following approach.
+        output = PIL.Image.new("RGB", tile.size, (255, 255, 255))  # Create a white background
+        output.paste(tile, mask=tile.split()[3])  # Paste the image using the alpha channel as mask
+        if compression in ["JPEG", "PNG"]:  # This is JPG
+            buffered = io.BytesIO()
+            _quality = None if compression == "PNG" else quality
+            output.convert("RGB").save(buffered, format=compression, quality=quality)
+            array = np.frombuffer(buffered.getvalue(), dtype="uint8")
+        else:  # No compression
+            array = np.asarray(tile)
 
         # Now we have the image bytes
         coordinates = sample["coordinates"]
-        array = np.frombuffer(buffered.getvalue(), dtype="uint8")
+
         yield [coordinates], array[np.newaxis, :]
 
 
 def save_tiles(
     dataset: TiledWsiDataset,
     h5_writer: H5FileImageWriter,
+    compression: Literal["jpg", "png", "none"],
     quality: int | None = 80,
 ) -> None:
     """
@@ -274,12 +290,16 @@ def save_tiles(
         The image slide dataset containing tiles of a single whole slide image.
     h5_writer : H5FileImageWriter
         The H5 writer to write the tiles to.
+    compression : Literal["jpg", "png", "none"]
+        Either "jpg", "png" or "none".
     quality : int | None
         If not None, the compression quality of the saved tiles in jpg, otherwise png
 
     """
-    compression = "JPEG" if quality is not None else "PNG"
-    generator = _generator(dataset, quality, compression)
+    _compression = _to_pil_compression(compression)
+    _quality = None if _compression != "JPEG" else quality
+
+    generator = _generator(dataset, _quality, _compression)
     h5_writer.consume(generator)
 
 
@@ -288,6 +308,7 @@ def _tiling_pipeline(
     mask_path: Path | None,
     output_file: Path,
     dataset_cfg: DatasetConfigs,
+    compression: Literal["png", "jpg", "none"],
     quality: int,
     save_thumbnail: bool = False,
 ) -> None:
@@ -318,11 +339,11 @@ def _tiling_pipeline(
             tile_size=dataset_cfg.tile_size,
             tile_overlap=dataset_cfg.tile_overlap,
             num_samples=len(dataset),
-            is_binary=True,
+            is_compressed_image=compression != "none",
             color_profile=color_profile,
             extra_metadata=extra_metadata,
         )
-        save_tiles(dataset, h5_writer, quality)
+        save_tiles(dataset, h5_writer, compression=compression, quality=quality)
         if save_thumbnail:
             thumbnail_obj = _save_thumbnail(image_path, dataset_cfg, mask)
 
@@ -352,12 +373,21 @@ def _tiling_pipeline(
 
 def _wrapper(
     dataset_cfg: DatasetConfigs,
+    compression: Literal["jpg", "png", "none"],
     quality: int,
     save_thumbnail: bool,
     args: tuple[Path, Path, Path],
 ) -> None:
     image_path, mask_path, output_file = args
-    return _tiling_pipeline(image_path, mask_path, output_file, dataset_cfg, quality, save_thumbnail)
+    return _tiling_pipeline(
+        image_path=image_path,
+        mask_path=mask_path,
+        output_file=output_file,
+        dataset_cfg=dataset_cfg,
+        compression=compression,
+        quality=quality,
+        save_thumbnail=save_thumbnail,
+    )
 
 
 def _do_tiling(args: argparse.Namespace) -> None:
@@ -406,10 +436,9 @@ def _do_tiling(args: argparse.Namespace) -> None:
     )
 
     logger.info(f"Dataset configurations: {pformat(dataset_cfg)}")
-
     if args.num_workers > 0:
         # Create a partially applied function with dataset_cfg
-        partial_wrapper = partial(_wrapper, dataset_cfg, args.quality, args.save_thumbnail)
+        partial_wrapper = partial(_wrapper, dataset_cfg, args.compression, args.quality, args.save_thumbnail)
 
         with Progress() as progress:
             task = progress.add_task("[cyan]Tiling...", total=len(images_list))
@@ -421,13 +450,15 @@ def _do_tiling(args: argparse.Namespace) -> None:
             task = progress.add_task("[cyan]Tiling...", total=len(images_list))
             for idx, (image_path, mask_path, output_file) in enumerate(images_list):
                 _tiling_pipeline(
-                    image_path,
-                    mask_path,
-                    output_file,
-                    dataset_cfg,
+                    image_path=image_path,
+                    mask_path=mask_path,
+                    output_file=output_file,
+                    dataset_cfg=dataset_cfg,
+                    compression=args.compression,
                     quality=args.quality,
                     save_thumbnail=args.save_thumbnail,
                 )
+
                 progress.update(task, advance=1)
 
 
@@ -496,8 +527,17 @@ def register_parser(parser: argparse._SubParsersAction[Any]) -> None:
         "--quality",
         type=int,
         default=80,
-        help="Quality of the saved tiles in jpg, otherwise png (default: 80)",
+        help="Quality of the saved tiles in jpg (default: 80)",
     )
+
+    _parser.add_argument(
+        "--compression",
+        type=str,
+        choices=["jpg", "png", "none"],
+        default="jpg",
+        help="The compression to use, either jpg, png or none (default=jpg)",
+    )
+
     _parser.add_argument(
         "--apply-color-profile",
         action="store_true",
