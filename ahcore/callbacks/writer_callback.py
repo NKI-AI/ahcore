@@ -3,11 +3,15 @@ from typing import Any
 
 from pytorch_lightning import Callback
 
+from ahcore.utils.io import get_logger
+
+logger = get_logger(__name__)
+
 
 # Mockup
 class TileWriter:
     def __init__(self, filename):
-        pass
+        logger.info(f"Created tilewriter for {filename}")
 
     def consume(self, generator):
         pass
@@ -33,6 +37,8 @@ class WriterCallback(Callback):
         self._processes = {}
         self._semaphore = Semaphore(max_concurrent_queues)
 
+        self._gather_results = True
+
     def on_predict_batch_end(
         self,
         trainer: "pl.Trainer",
@@ -42,23 +48,26 @@ class WriterCallback(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:
-        filename = self._extract_filename_from_batch(batch)
+        identifier = self._extract_identifier_from_batch(batch)
+        logger.info(f"Got {identifier} for batch {batch_idx} on {trainer.global_rank}")
 
         # Check if a new queue and process should be created for this filename
-        if filename not in self._queues:
+        if identifier not in self._queues:
+            logger.info(f"Got new {identifier} for batch {batch_idx} on {trainer.global_rank}")
             self._semaphore.acquire()
-            self._queues[filename] = Queue()
-            process = Process(target=writer_process, args=(self._queues[filename], filename, self._semaphore))
-            self._processes[filename] = process
+            logger.info(f"Acquired semaphore for new {identifier} for batch {batch_idx} on {trainer.global_rank}")
+            self._queues[identifier] = Queue()
+            process = Process(target=writer_process, args=(self._queues[identifier], identifier, self._semaphore))
+            self._processes[identifier] = process
             process.start()
 
         # Add the batch to the queue for this filename
-        self._queues[filename].put(outputs)
+        self._queues[identifier].put(outputs)
 
         # Check if this is the last batch for this filename and signal the end if so
         # This is just in case
-        if self._is_last_batch_for_file(filename, batch_idx):
-            self._queues[filename].put(None)
+        if self._is_last_batch_for_file(identifier, batch_idx):
+            self._queues[identifier].put(None)
 
     def on_inference_end(self, trainer, pl_module):
         # Wait for all processes to finish
@@ -66,7 +75,7 @@ class WriterCallback(Callback):
             process.join()
 
     @staticmethod
-    def _extract_filename_from_batch(batch):
+    def _extract_identifier_from_batch(batch):
         return batch["filename"][0]
 
     def _is_last_batch_for_file(self, filename, batch_idx):
