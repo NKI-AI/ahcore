@@ -125,7 +125,7 @@ class WriteH5Callback(Callback):
             if mpp is None:
                 mpp = slide_image.mpp
 
-            size = slide_image.get_scaled_size(slide_image.get_scaling(mpp))
+            _, size = slide_image.get_scaled_slide_bounds(slide_image.get_scaling(mpp))
             num_samples = len(current_dataset)
 
             # Let's get the data_description, so we can figure out the tile size and things like that
