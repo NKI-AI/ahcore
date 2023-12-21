@@ -22,7 +22,12 @@ logger = get_logger(__name__)
 
 
 class WriteTiffCallback(Callback):
-    def __init__(self, max_concurrent_writers: int, tile_size: tuple[int, int] = (1024, 1024)):
+    def __init__(
+        self,
+        max_concurrent_writers: int,
+        tile_size: tuple[int, int] = (1024, 1024),
+        colormap: dict[int, str] | None = None,
+    ):
         self._pool = multiprocessing.Pool(max_concurrent_writers)
         self._logger = get_logger(type(self).__name__)
         self._dump_dir: Optional[Path] = None
@@ -30,6 +35,7 @@ class WriteTiffCallback(Callback):
 
         self._model_name: str | None = None
         self._tile_size = tile_size
+        self._colormap = colormap
 
         # TODO: Handle tile operation such that we avoid repetitions.
 
@@ -114,6 +120,7 @@ class WriteTiffCallback(Callback):
                     h5_filename,
                     self._tile_size,
                     self._tile_process_function,
+                    self._colormap,
                     _generator_from_reader,
                 ),
             )
@@ -179,6 +186,7 @@ def _write_tiff(
     filename: Path,
     tile_size: tuple[int, int],
     tile_process_function: Callable[[GenericArray], GenericArray],
+    colormap: dict[int, str] | None,
     generator_from_reader: Callable[
         [H5FileImageReader, tuple[int, int], Callable[[GenericArray], GenericArray]],
         Iterator[npt.NDArray[np.int_]],
@@ -195,5 +203,6 @@ def _write_tiff(
             compression=TiffCompression.CCITTFAX4,
             quality=100,
             interpolator=Resampling.NEAREST,
+            colormap=colormap,
         )
         writer.from_tiles_iterator(generator_from_reader(h5_reader, tile_size, tile_process_function))
