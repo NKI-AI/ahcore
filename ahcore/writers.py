@@ -85,7 +85,6 @@ class H5FileImageWriter:
 
     def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
         """Initializes the image_dataset based on the first tile."""
-
         if self._is_compressed_image:
             # We need to read the first batch as it is a compressed PIL image
             _first_pil = decode_array_to_pil(first_batch[0])
@@ -98,7 +97,9 @@ class H5FileImageWriter:
             _num_channels = first_batch.shape[-1]
 
         self._current_index = 0
-        self._grid_offset = (0, 0)
+        # The grid can be smaller than the actual image when slide bounds are given.
+        # As the grid should cover the image, the offset is given by the first tile.
+        self._grid_offset = list(first_coordinates[0])
 
         self._coordinates_dataset = h5file.create_dataset(
             "coordinates",
@@ -108,6 +109,10 @@ class H5FileImageWriter:
         )
 
         # TODO: We only support a single Grid
+        # TODO: Probably you can decipher the grid from the coordinates
+        # TODO: This would also support multiple grids
+        # TODO: One would need to collect the coordinates and based on the first and the last
+        # TODO: of a single grid, one can determine the grid, and the empty indices.
         grid = Grid.from_tiling(
             self._grid_offset,
             size=self._size,
@@ -163,6 +168,7 @@ class H5FileImageWriter:
             "tiling_mode": "overflow",
             "mode": _mode,
             "format": _format,
+            "dtype": str(first_batch.dtype),
             "is_binary": self._is_compressed_image,
             "has_color_profile": self._color_profile is not None,
         }
