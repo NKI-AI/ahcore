@@ -105,6 +105,7 @@ class H5FileImageReader:
 
         if not self._metadata:
             raise ValueError("Metadata of h5 file is empty.")
+
         self._mpp = self._metadata["mpp"]
         self._tile_size = self._metadata["tile_size"]
         self._tile_overlap = self._metadata["tile_overlap"]
@@ -115,6 +116,10 @@ class H5FileImageReader:
             self._tile_size[0] - self._tile_overlap[0],
             self._tile_size[1] - self._tile_overlap[1],
         )
+
+        if self._metadata["has_color_profile"]:
+            _color_profile = self._h5file["color_profile"][()].tobytes()
+            raise NotImplementedError(f"Color profiles are not yet implemented, and are present in {self._filename}.")
 
     def __enter__(self) -> "H5FileImageReader":
         if self._h5file is None:
