@@ -35,6 +35,7 @@ write_h5_callback:
 
 write_tiff_callback:
   max_concurrent_writers: 4
+  colormap: ${data_description.color_map}
 
 compute_wsi_metrics_callback:
   max_processes: 4
