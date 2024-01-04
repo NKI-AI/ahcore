@@ -6,6 +6,7 @@ This module contains writer classes. Currently implemented:
   h5 files.
 
 """
+import io
 import json
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -14,12 +15,35 @@ from typing import Any, Generator, Optional
 import h5py
 import numpy as np
 import numpy.typing as npt
+import PIL.Image
 from dlup.tiling import Grid, GridOrder, TilingMode
 
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray
 
 logger = get_logger(__name__)
+
+
+def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
+    """Convert encoded array to PIL image
+
+    Parameters
+    ----------
+    array : npt.NDArray[npt.uint8]
+        The encoded array
+
+    Returns
+    -------
+    PIL.Image.Image
+        The decoded image
+
+    """
+    with io.BytesIO(array.tobytes()) as f:
+        image = PIL.Image.open(f)
+        # If you don't this, the image will be a reference and will be closed when exiting the context manager.
+        # Any explicit copy copies the image into memory as a standard PIL.Image.Image, losing the format information.
+        image.load()
+    return image
 
 
 class H5FileImageWriter:
@@ -33,18 +57,23 @@ class H5FileImageWriter:
         tile_size: tuple[int, int],
         tile_overlap: tuple[int, int],
         num_samples: int,
-        is_binary: bool = False,
+        is_compressed_image: bool = False,
+        color_profile: bytes | None = None,
         progress: Optional[Any] = None,
+        extra_metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         self._grid: Optional[Grid] = None
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
+        self._grid_offset: tuple[int, int] | None = None
         self._filename: Path = filename
         self._size: tuple[int, int] = size
         self._mpp: float = mpp
         self._tile_size: tuple[int, int] = tile_size
         self._tile_overlap: tuple[int, int] = tile_overlap
         self._num_samples: int = num_samples
-        self._is_binary: bool = is_binary
+        self._is_compressed_image: bool = is_compressed_image
+        self._color_profile: bytes | None = color_profile
+        self._extra_metadata = extra_metadata
         self._progress = progress
         self._data: Optional[h5py.Dataset] = None
         self._coordinates_dataset: Optional[h5py.Dataset] = None
@@ -54,12 +83,23 @@ class H5FileImageWriter:
         self._logger = logger  # maybe not the best way, think about it
         self._logger.debug("Writing h5 to %s", self._filename)
 
-    def init_writer(self, first_batch: GenericArray, h5file: h5py.File) -> None:
+    def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
         """Initializes the image_dataset based on the first tile."""
-        batch_shape = np.asarray(first_batch).shape
-        batch_dtype = np.asarray(first_batch).dtype
+        if self._is_compressed_image:
+            # We need to read the first batch as it is a compressed PIL image
+            _first_pil = decode_array_to_pil(first_batch[0])
+            _mode = _first_pil.mode
+            _format = _first_pil.format
+            _num_channels = len(_first_pil.getbands())
+        else:
+            _mode = "ARRAY"
+            _format = "RAW"
+            _num_channels = first_batch.shape[-1]
 
         self._current_index = 0
+        # The grid can be smaller than the actual image when slide bounds are given.
+        # As the grid should cover the image, the offset is given by the first tile.
+        self._grid_offset = list(first_coordinates[0])
 
         self._coordinates_dataset = h5file.create_dataset(
             "coordinates",
@@ -69,8 +109,12 @@ class H5FileImageWriter:
         )
 
         # TODO: We only support a single Grid
+        # TODO: Probably you can decipher the grid from the coordinates
+        # TODO: This would also support multiple grids
+        # TODO: One would need to collect the coordinates and based on the first and the last
+        # TODO: of a single grid, one can determine the grid, and the empty indices.
         grid = Grid.from_tiling(
-            (0, 0),
+            self._grid_offset,
             size=self._size,
             tile_size=self._tile_size,
             tile_overlap=self._tile_overlap,
@@ -88,13 +132,14 @@ class H5FileImageWriter:
         # Initialize to -1, which is the default value
         self._tile_indices[:] = -1
 
-        if not self._is_binary:
+        if not self._is_compressed_image:
+            shape = first_batch.shape[1:]
             self._data = h5file.create_dataset(
                 "data",
-                shape=(self._num_samples,) + batch_shape[1:],
-                dtype=batch_dtype,
+                shape=(self._num_samples,) + shape,
+                dtype=first_batch.dtype,
                 compression="gzip",
-                chunks=(1,) + batch_shape[1:],
+                chunks=(1,) + shape,
             )
         else:
             dt = h5py.vlen_dtype(np.dtype("uint8"))  # Variable-length uint8 data type
@@ -105,21 +150,31 @@ class H5FileImageWriter:
                 chunks=(1,),
             )
 
+        if self._color_profile:
+            h5file.create_dataset(
+                "color_profile", data=np.frombuffer(self._color_profile, dtype=np.uint8), dtype="uint8"
+            )
+
         # This only works when the mode is 'overflow' and in 'C' order.
         metadata = {
             "mpp": self._mpp,
-            "dtype": str(batch_dtype),
-            "shape": tuple(batch_shape[1:]),
             "size": (int(self._size[0]), int(self._size[1])),
-            "num_channels": batch_shape[1],
+            "num_channels": _num_channels,
             "num_samples": self._num_samples,
             "tile_size": tuple(self._tile_size),
             "tile_overlap": tuple(self._tile_overlap),
             "num_tiles": num_tiles,
             "grid_order": "C",
-            "mode": "overflow",
-            "is_binary": self._is_binary,
+            "tiling_mode": "overflow",
+            "mode": _mode,
+            "format": _format,
+            "dtype": str(first_batch.dtype),
+            "is_binary": self._is_compressed_image,
+            "has_color_profile": self._color_profile is not None,
         }
+
+        if self._extra_metadata:
+            metadata.update(self._extra_metadata)
         metadata_json = json.dumps(metadata)
         h5file.attrs["metadata"] = metadata_json
 
@@ -131,7 +186,7 @@ class H5FileImageWriter:
         """Adds associated images to the h5 file."""
 
         # Create a compound dataset "associated_images"
-        with h5py.File(self._filename, "r+") as h5file:
+        with h5py.File(self._filename, "a") as h5file:
             associated_images = h5file.create_group("associated_images")
             for name, image in images:
                 associated_images.create_dataset(name, data=image)
@@ -150,7 +205,7 @@ class H5FileImageWriter:
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
                 first_coordinates, first_batch = next(batch_generator)
-                self.init_writer(first_batch, h5file)
+                self.init_writer(first_coordinates, first_batch, h5file)
 
                 # Mostly for mypy
                 assert self._grid, "Grid is not initialized"
