@@ -10,7 +10,7 @@ import torch
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
-from ahcore.callbacks.utils import _get_h5_output_filename
+from ahcore.callbacks.utils import _get_h5_output_filename, InferencePrecision
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray
@@ -142,9 +142,8 @@ class WriteH5Callback(Callback):
                 tile_size=tile_size,
                 tile_overlap=tile_overlap,
                 num_samples=num_samples,
-                color_profile=None,
-                is_compressed_image=False,
                 progress=None,
+                precision=InferencePrecision.FP16,
             )
             new_process = Process(target=new_writer.consume, args=(self.generator(new_queue), child_conn))
             new_process.start()
