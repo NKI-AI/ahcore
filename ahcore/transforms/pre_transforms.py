@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 import numpy as np
 import numpy.typing as npt
+import PIL
 import torch
 from dlup.data.dataset import TileSample
 from dlup.data.transforms import ContainsPolygonToLabel, ConvertAnnotationsToMask, RenameLabels
@@ -212,7 +213,11 @@ class ImageToTensor:
     """
 
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
-        sample["image"] = F.pil_to_tensor(sample["image"].convert("RGB")).float()
+        tile = sample["image"]
+        tile_ = PIL.Image.new("RGB", tile.size, (255, 255, 255))  # Create a white background
+        tile_.paste(tile, mask=tile.split()[3])  # Paste the image using the alpha channel as mask
+
+        sample["image"] = F.pil_to_tensor(tile_).float()
 
         if sample["image"].sum() == 0:
             raise RuntimeError(f"Empty tile for {sample['path']} at {sample['coordinates']}")
