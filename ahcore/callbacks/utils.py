@@ -21,10 +21,30 @@ from ahcore.transforms.pre_transforms import one_hot_encoding
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
+from enum import Enum
 
 logger = get_logger(__name__)
 
 logging.getLogger("pyvips").setLevel(logging.ERROR)
+
+
+class InferencePrecision(str, Enum):
+    FP16 = "float16"
+    FP32 = "float32"
+    UINT8 = "uint8"
+
+    def __str__(self) -> str:
+        return self.value
+
+    def get_multiplier(self) -> float:
+        if self == InferencePrecision.FP16:
+            return 1.0
+        elif self == InferencePrecision.FP32:
+            return 1.0
+        elif self == InferencePrecision.UINT8:
+            return 255.0
+        else:
+            raise NotImplementedError(f"Precision {self} is not supported for {self.__class__.__name__}.")
 
 
 class _ValidationDataset(Dataset[DlupDatasetSample]):
