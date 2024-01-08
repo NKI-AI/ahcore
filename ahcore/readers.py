@@ -31,7 +31,7 @@ class StitchingMode(str, Enum):
 
 def crop_to_bbox(array: GenericArray, bbox: BoundingBoxType) -> GenericArray:
     (start_x, start_y), (width, height) = bbox
-    return array[:, start_y : start_y + height, start_x : start_x + width]
+    return array[:, start_y: start_y + height, start_x: start_x + width]
 
 
 class H5FileImageReader:
@@ -112,6 +112,8 @@ class H5FileImageReader:
         self._size = self._metadata["size"]
         self._num_channels = self._metadata["num_channels"]
         self._dtype = self._metadata["dtype"]
+        self._precision = self._metadata["precision"]
+        self._multiplier = self._metadata["multiplier"]
         self._stride = (
             self._tile_size[0] - self._tile_overlap[0],
             self._tile_size[1] - self._tile_overlap[1],
@@ -137,10 +139,10 @@ class H5FileImageReader:
         return self.__empty_tile
 
     def read_region(
-        self,
-        location: tuple[int, int],
-        scaling: float,
-        size: tuple[int, int],
+            self,
+            location: tuple[int, int],
+            scaling: float,
+            size: tuple[int, int],
     ) -> GenericArray:
         """
 
@@ -185,9 +187,9 @@ class H5FileImageReader:
         # Create an array of coordinates for map_coordinates
         # mypy doesn't properly understand yet that the complex type is valid
         coordinates = np.mgrid[
-            fractional_start[0] : fractional_end[0] : complex(size[0]),  # type: ignore
-            fractional_start[1] : fractional_end[1] : complex(size[1]),  # type: ignore
-        ]
+                      fractional_start[0]: fractional_end[0]: complex(size[0]),  # type: ignore
+                      fractional_start[1]: fractional_end[1]: complex(size[1]),  # type: ignore
+                      ]
         coordinates = np.moveaxis(coordinates, 0, -1)
 
         # Interpolate using map_coordinates for all channels
@@ -257,6 +259,10 @@ class H5FileImageReader:
                     if tile_index_in_image_dataset == -1
                     else image_dataset[tile_index_in_image_dataset]
                 )
+                if self._precision != "FP32":
+                    # Always convert back to float32.
+                    tile = tile / self._multiplier
+                    tile = tile.astype(np.float32)
                 start_y = i * self._stride[1] - y
                 end_y = start_y + self._tile_size[1]
                 start_x = j * self._stride[0] - x
@@ -305,10 +311,10 @@ class H5FileImageReader:
         del self._h5file  # Reset the h5file attribute
 
     def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+            self,
+            exc_type: Optional[Type[BaseException]],
+            exc_val: Optional[BaseException],
+            exc_tb: Optional[TracebackType],
     ) -> Literal[False]:
         self.close()
         return False

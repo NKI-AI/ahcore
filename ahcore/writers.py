@@ -20,6 +20,7 @@ from dlup.tiling import Grid, GridOrder, TilingMode
 
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray
+from ahcore.callbacks.utils import InferencePrecision  # TODO: Move callbacks utils to somewhere else.
 
 logger = get_logger(__name__)
 
@@ -50,17 +51,18 @@ class H5FileImageWriter:
     """Image writer that writes tile-by-tile to h5."""
 
     def __init__(
-        self,
-        filename: Path,
-        size: tuple[int, int],
-        mpp: float,
-        tile_size: tuple[int, int],
-        tile_overlap: tuple[int, int],
-        num_samples: int,
-        is_compressed_image: bool = False,
-        color_profile: bytes | None = None,
-        progress: Optional[Any] = None,
-        extra_metadata: Optional[dict[str, Any]] = None,
+            self,
+            filename: Path,
+            size: tuple[int, int],
+            mpp: float,
+            tile_size: tuple[int, int],
+            tile_overlap: tuple[int, int],
+            num_samples: int,
+            is_compressed_image: bool = False,
+            color_profile: bytes | None = None,
+            progress: Optional[Any] = None,
+            extra_metadata: Optional[dict[str, Any]] = None,
+            precision: InferencePrecision | None = None,
     ) -> None:
         self._grid: Optional[Grid] = None
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
@@ -74,6 +76,7 @@ class H5FileImageWriter:
         self._is_compressed_image: bool = is_compressed_image
         self._color_profile: bytes | None = color_profile
         self._extra_metadata = extra_metadata
+        self._precision = precision
         self._progress = progress
         self._data: Optional[h5py.Dataset] = None
         self._coordinates_dataset: Optional[h5py.Dataset] = None
@@ -86,6 +89,8 @@ class H5FileImageWriter:
     def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
         """Initializes the image_dataset based on the first tile."""
         if self._is_compressed_image:
+            if self._precision is not None:
+                raise ValueError("Precision cannot be set when writing compressed images.")
             # We need to read the first batch as it is a compressed PIL image
             _first_pil = decode_array_to_pil(first_batch[0])
             _mode = _first_pil.mode
@@ -94,7 +99,7 @@ class H5FileImageWriter:
         else:
             _mode = "ARRAY"
             _format = "RAW"
-            _num_channels = first_batch.shape[-1]
+            _num_channels = first_batch.shape[1]
 
         self._current_index = 0
         # The grid can be smaller than the actual image when slide bounds are given.
@@ -170,6 +175,8 @@ class H5FileImageWriter:
             "format": _format,
             "dtype": str(first_batch.dtype),
             "is_binary": self._is_compressed_image,
+            "precision": self._precision.value if self._precision else "FP32",
+            "multiplier": self._precision.get_multiplier() if self._precision else 1.0,
             "has_color_profile": self._color_profile is not None,
         }
 
@@ -179,9 +186,9 @@ class H5FileImageWriter:
         h5file.attrs["metadata"] = metadata_json
 
     def add_associated_images(
-        self,
-        images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
-        description: Optional[str] = None,
+            self,
+            images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
+            description: Optional[str] = None,
     ) -> None:
         """Adds associated images to the h5 file."""
 
@@ -195,9 +202,9 @@ class H5FileImageWriter:
                 associated_images.attrs["description"] = description
 
     def consume(
-        self,
-        batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
-        connection_to_parent: Optional[Connection] = None,
+            self,
+            batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+            connection_to_parent: Optional[Connection] = None,
     ) -> None:
         """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
         grid_counter = 0
@@ -205,6 +212,12 @@ class H5FileImageWriter:
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
                 first_coordinates, first_batch = next(batch_generator)
+
+                if self._precision:
+                    multiplier = self._precision.get_multiplier()
+                    first_batch = first_batch * multiplier
+                    first_batch = first_batch.astype(self._precision.value)
+
                 self.init_writer(first_coordinates, first_batch, h5file)
 
                 # Mostly for mypy
@@ -219,6 +232,10 @@ class H5FileImageWriter:
                     batch_generator = self._progress(batch_generator, total=self._num_samples)
 
                 for coordinates, batch in batch_generator:
+                    if self._precision:
+                        multiplier = self._precision.get_multiplier()
+                        batch = batch * multiplier
+                        batch = batch.astype(self._precision.value)
                     # We take a coordinate, and step through the grid until we find it.
                     # Note that this assumes that the coordinates come in C-order, so we will always hit it
                     for idx, curr_coordinates in enumerate(coordinates):
@@ -232,8 +249,8 @@ class H5FileImageWriter:
                         grid_counter += 1
 
                     batch_size = batch.shape[0]
-                    self._data[self._current_index : self._current_index + batch_size] = batch
-                    self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
+                    self._data[self._current_index: self._current_index + batch_size] = batch
+                    self._coordinates_dataset[self._current_index: self._current_index + batch_size] = coordinates
                     self._current_index += batch_size
 
         except Exception as e:
@@ -250,7 +267,7 @@ class H5FileImageWriter:
 
     @staticmethod
     def _batch_generator(
-        first_coordinates_batch: Any, batch_generator: Generator[Any, None, None]
+            first_coordinates_batch: Any, batch_generator: Generator[Any, None, None]
     ) -> Generator[Any, None, None]:
         # We yield the first batch too so the progress bar takes the first batch also into account
         yield first_coordinates_batch
