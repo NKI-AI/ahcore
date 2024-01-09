@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from enum import Enum
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -21,7 +22,6 @@ from ahcore.transforms.pre_transforms import one_hot_encoding
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
-from enum import Enum
 
 logger = get_logger(__name__)
 

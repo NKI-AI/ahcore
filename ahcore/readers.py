@@ -31,7 +31,7 @@ class StitchingMode(str, Enum):
 
 def crop_to_bbox(array: GenericArray, bbox: BoundingBoxType) -> GenericArray:
     (start_x, start_y), (width, height) = bbox
-    return array[:, start_y: start_y + height, start_x: start_x + width]
+    return array[:, start_y : start_y + height, start_x : start_x + width]
 
 
 class H5FileImageReader:
@@ -139,10 +139,10 @@ class H5FileImageReader:
         return self.__empty_tile
 
     def read_region(
-            self,
-            location: tuple[int, int],
-            scaling: float,
-            size: tuple[int, int],
+        self,
+        location: tuple[int, int],
+        scaling: float,
+        size: tuple[int, int],
     ) -> GenericArray:
         """
 
@@ -187,9 +187,9 @@ class H5FileImageReader:
         # Create an array of coordinates for map_coordinates
         # mypy doesn't properly understand yet that the complex type is valid
         coordinates = np.mgrid[
-                      fractional_start[0]: fractional_end[0]: complex(size[0]),  # type: ignore
-                      fractional_start[1]: fractional_end[1]: complex(size[1]),  # type: ignore
-                      ]
+            fractional_start[0] : fractional_end[0] : complex(size[0]),  # type: ignore
+            fractional_start[1] : fractional_end[1] : complex(size[1]),  # type: ignore
+        ]
         coordinates = np.moveaxis(coordinates, 0, -1)
 
         # Interpolate using map_coordinates for all channels
@@ -312,10 +312,10 @@ class H5FileImageReader:
         del self._h5file  # Reset the h5file attribute
 
     def __exit__(
-            self,
-            exc_type: Optional[Type[BaseException]],
-            exc_val: Optional[BaseException],
-            exc_tb: Optional[TracebackType],
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
     ) -> Literal[False]:
         self.close()
         return False
