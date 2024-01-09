@@ -259,10 +259,6 @@ class H5FileImageReader:
                     if tile_index_in_image_dataset == -1
                     else image_dataset[tile_index_in_image_dataset]
                 )
-                if self._precision != "FP32":
-                    # Always convert back to float32.
-                    tile = tile / self._multiplier
-                    tile = tile.astype(np.float32)
                 start_y = i * self._stride[1] - y
                 end_y = start_y + self._tile_size[1]
                 start_x = j * self._stride[0] - x
@@ -302,6 +298,11 @@ class H5FileImageReader:
 
         if self._stitching_mode == StitchingMode.AVERAGE:
             stitched_image = (stitched_image / divisor_array[..., np.newaxis]).astype(float)
+
+        if self._precision != "FP32":
+            # Always convert to float32.
+            stitched_image = stitched_image / self._multiplier
+            stitched_image = stitched_image.astype(np.float32)
 
         return stitched_image
 
