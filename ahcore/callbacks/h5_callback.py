@@ -143,7 +143,7 @@ class WriteH5Callback(Callback):
                 tile_overlap=tile_overlap,
                 num_samples=num_samples,
                 progress=None,
-                precision=InferencePrecision.FP16,
+                precision=InferencePrecision.UINT8,
             )
             new_process = Process(target=new_writer.consume, args=(self.generator(new_queue), child_conn))
             new_process.start()
@@ -155,7 +155,8 @@ class WriteH5Callback(Callback):
             }
             self._current_filename = filename
 
-        prediction = outputs["prediction"].detach().cpu().numpy()
+        prediction = outputs["prediction"]
+        prediction = torch.sigmoid(prediction).detach().cpu().numpy()
         coordinates_x, coordinates_y = batch["coordinates"]
         coordinates = torch.stack([coordinates_x, coordinates_y]).T.detach().cpu().numpy()
         self._writers[filename]["queue"].put((coordinates, prediction))
