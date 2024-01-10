@@ -18,7 +18,7 @@ from ahcore.writers import H5FileImageWriter
 
 
 class WriteH5Callback(Callback):
-    def __init__(self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path):
+    def __init__(self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path, normalization_type: str):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
         files in a separate thread.
@@ -42,7 +42,7 @@ class WriteH5Callback(Callback):
         self._max_queue_size = max_queue_size
         self._semaphore = Semaphore(max_concurrent_writers)
         self._dataset_index = 0
-        self._normalization_type: NormalizationType = NormalizationType.LOGITS
+        self._normalization_type: NormalizationType = NormalizationType(normalization_type)
 
         self._logger = get_logger(type(self).__name__)
 
