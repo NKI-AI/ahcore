@@ -10,7 +10,7 @@ import torch
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
-from ahcore.callbacks.utils import InferencePrecision, _get_h5_output_filename
+from ahcore.callbacks.utils import InferencePrecision, _get_h5_output_filename, NormalizationType
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray
@@ -42,6 +42,7 @@ class WriteH5Callback(Callback):
         self._max_queue_size = max_queue_size
         self._semaphore = Semaphore(max_concurrent_writers)
         self._dataset_index = 0
+        self._normalization_type: NormalizationType = NormalizationType.LOGITS
 
         self._logger = get_logger(type(self).__name__)
 
@@ -158,7 +159,7 @@ class WriteH5Callback(Callback):
             self._current_filename = filename
 
         prediction = outputs["prediction"]
-        prediction = torch.sigmoid(prediction).detach().cpu().numpy()
+        prediction = NormalizationType.normalize(self._normalization_type)(prediction)
         coordinates_x, coordinates_y = batch["coordinates"]
         coordinates = torch.stack([coordinates_x, coordinates_y]).T.detach().cpu().numpy()
         self._writers[filename]["queue"].put((coordinates, prediction))
