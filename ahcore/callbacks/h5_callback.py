@@ -159,7 +159,7 @@ class WriteH5Callback(Callback):
             self._current_filename = filename
 
         prediction = outputs["prediction"]
-        prediction = NormalizationType.normalize(self._normalization_type)(prediction)
+        prediction = NormalizationType.normalize(self._normalization_type)(prediction).detach().cpu().numpy()
         coordinates_x, coordinates_y = batch["coordinates"]
         coordinates = torch.stack([coordinates_x, coordinates_y]).T.detach().cpu().numpy()
         self._writers[filename]["queue"].put((coordinates, prediction))
