@@ -10,7 +10,7 @@ import torch
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
-from ahcore.callbacks.utils import InferencePrecision, _get_h5_output_filename, NormalizationType
+from ahcore.utils.callbacks import InferencePrecision, _get_h5_output_filename, NormalizationType
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray

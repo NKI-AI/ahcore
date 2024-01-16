@@ -18,7 +18,7 @@ import numpy.typing as npt
 import PIL.Image
 from dlup.tiling import Grid, GridOrder, TilingMode
 
-from ahcore.callbacks.utils import InferencePrecision  # TODO: Move callbacks utils to somewhere else.
+from ahcore.utils.callbacks import InferencePrecision
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray
 
