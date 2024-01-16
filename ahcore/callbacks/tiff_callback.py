@@ -12,9 +12,9 @@ from numpy import typing as npt
 from pytorch_lightning import Callback
 
 from ahcore.callbacks import WriteH5Callback
-from ahcore.utils.callbacks import _get_h5_output_filename, _ValidationDataset
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.readers import H5FileImageReader, StitchingMode
+from ahcore.utils.callbacks import _get_h5_output_filename, _ValidationDataset
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray
 

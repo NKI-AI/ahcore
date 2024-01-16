@@ -14,10 +14,10 @@ import torch
 from pytorch_lightning import Callback
 
 from ahcore.callbacks import WriteH5Callback
-from ahcore.utils.callbacks import _get_h5_output_filename, _ValidationDataset
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.metrics import WSIMetricFactory
 from ahcore.readers import H5FileImageReader, StitchingMode
+from ahcore.utils.callbacks import _get_h5_output_filename, _ValidationDataset
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.manifest import DataManager, ImageMetadata, fetch_image_metadata, get_mask_and_annotations_from_record

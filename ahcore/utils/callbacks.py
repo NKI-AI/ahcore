@@ -7,10 +7,10 @@ import logging
 from enum import Enum
 from pathlib import Path
 from typing import Any, Iterator, Optional
-import torch
 
 import numpy as np
 import numpy.typing as npt
+import torch
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
 from dlup.data.transforms import convert_annotations, rename_labels

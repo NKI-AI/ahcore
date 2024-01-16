@@ -1,6 +1,7 @@
-import pytest
 import h5py
 import numpy as np
+import pytest
+
 from ahcore.writers import H5FileImageWriter
 
 
