@@ -32,8 +32,8 @@ model_summary:
 write_h5_callback:
   max_queue_size: 100
   max_concurrent_writers: 4
-  normalization_type: "sigmoid" # Make sure to use the appropriate normalization for your use case.
-  precision: "uint8" # Make sure to use the appropriate precision for your use case.
+  normalization_type: null # Make sure to use the appropriate normalization for your use case.
+  precision: null # Make sure to use the appropriate precision for your use case.
 
 write_tiff_callback:
   max_concurrent_writers: 4

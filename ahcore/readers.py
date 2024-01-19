@@ -299,7 +299,7 @@ class H5FileImageReader:
         if self._stitching_mode == StitchingMode.AVERAGE:
             stitched_image = (stitched_image / divisor_array[..., np.newaxis]).astype(float)
 
-        if self._precision != "FP32":
+        if self._precision != "float32":
             # Always convert to float32.
             stitched_image = stitched_image / self._multiplier
             stitched_image = stitched_image.astype(np.float32)

@@ -50,9 +50,6 @@ class InferencePrecision(str, Enum):
     FP32 = "float32"
     UINT8 = "uint8"
 
-    def __str__(self) -> str:
-        return self.value
-
     def get_multiplier(self) -> float:
         if self == InferencePrecision.FP16:
             return 1.0
