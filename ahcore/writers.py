@@ -18,9 +18,8 @@ import numpy.typing as npt
 import PIL.Image
 from dlup.tiling import Grid, GridOrder, TilingMode
 
-from ahcore.utils.callbacks import InferencePrecision
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import GenericArray
+from ahcore.utils.types import GenericArray, InferencePrecision
 
 logger = get_logger(__name__)
 
@@ -176,7 +175,9 @@ class H5FileImageWriter:
             "dtype": str(first_batch.dtype),
             "is_binary": self._is_compressed_image,
             "precision": self._precision.value if self._precision else str(InferencePrecision.FP32),
-            "multiplier": self._precision.get_multiplier() if self._precision else InferencePrecision.FP32.get_multiplier(),
+            "multiplier": self._precision.get_multiplier()
+            if self._precision
+            else InferencePrecision.FP32.get_multiplier(),
             "has_color_profile": self._color_profile is not None,
         }
 

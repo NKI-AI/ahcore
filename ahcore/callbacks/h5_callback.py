@@ -10,10 +10,10 @@ import torch
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
-from ahcore.utils.callbacks import InferencePrecision, NormalizationType, _get_h5_output_filename
+from ahcore.utils.callbacks import _get_h5_output_filename
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import GenericArray
+from ahcore.utils.types import GenericArray, InferencePrecision, NormalizationType
 from ahcore.writers import H5FileImageWriter
 
 

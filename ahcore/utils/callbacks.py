@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from enum import Enum
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import numpy as np
 import numpy.typing as npt
-import torch
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
 from dlup.data.transforms import convert_annotations, rename_labels
@@ -27,38 +25,6 @@ from ahcore.utils.types import DlupDatasetSample
 logger = get_logger(__name__)
 
 logging.getLogger("pyvips").setLevel(logging.ERROR)
-
-
-class NormalizationType(str, Enum):
-    SIGMOID = "sigmoid"
-    SOFTMAX = "softmax"
-    LOGITS = "logits"
-
-    def normalize(self):
-        if self == NormalizationType.SIGMOID:
-            return torch.sigmoid
-        elif self == NormalizationType.SOFTMAX:
-            return torch.softmax
-        elif self == NormalizationType.LOGITS:
-            return lambda x: x
-        else:
-            raise ValueError("Function not supported")
-
-
-class InferencePrecision(str, Enum):
-    FP16 = "float16"
-    FP32 = "float32"
-    UINT8 = "uint8"
-
-    def get_multiplier(self) -> float:
-        if self == InferencePrecision.FP16:
-            return 1.0
-        elif self == InferencePrecision.FP32:
-            return 1.0
-        elif self == InferencePrecision.UINT8:
-            return 255.0
-        else:
-            raise NotImplementedError(f"Precision {self} is not supported for {self.__class__.__name__}.")
 
 
 class _ValidationDataset(Dataset[DlupDatasetSample]):

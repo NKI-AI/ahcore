@@ -18,8 +18,7 @@ import numpy as np
 from scipy.ndimage import map_coordinates
 
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import BoundingBoxType, GenericArray
-from ahcore.utils.callbacks import InferencePrecision
+from ahcore.utils.types import BoundingBoxType, GenericArray, InferencePrecision
 
 logger = get_logger(__name__)
 
