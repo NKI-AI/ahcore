@@ -23,8 +23,8 @@ class WriteH5Callback(Callback):
         max_queue_size: int,
         max_concurrent_writers: int,
         dump_dir: Path,
-        normalization_type: str = "logits",
-        precision: str = "float32",
+        normalization_type: str = str(NormalizationType.LOGITS),
+        precision: str = str(InferencePrecision.FP32),
     ):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
