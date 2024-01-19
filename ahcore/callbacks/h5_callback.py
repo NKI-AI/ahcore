@@ -10,15 +10,22 @@ import torch
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
-from ahcore.callbacks.utils import _get_h5_output_filename
+from ahcore.utils.callbacks import _get_h5_output_filename
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import GenericArray
+from ahcore.utils.types import GenericArray, InferencePrecision, NormalizationType
 from ahcore.writers import H5FileImageWriter
 
 
 class WriteH5Callback(Callback):
-    def __init__(self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path):
+    def __init__(
+        self,
+        max_queue_size: int,
+        max_concurrent_writers: int,
+        dump_dir: Path,
+        normalization_type: str = str(NormalizationType.LOGITS),
+        precision: str = str(InferencePrecision.FP32),
+    ):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
         files in a separate thread.
@@ -34,6 +41,10 @@ class WriteH5Callback(Callback):
             The maximum number of concurrent writers.
         dump_dir : pathlib.Path
             The directory to dump the H5 files to.
+        normalization_type : str
+            The normalization type to use for the predictions. One of "sigmoid", "softmax" or "logits".
+        precision : str
+            The precision to use for the predictions. One of "float16", "float32" or "uint8".
         """
         super().__init__()
         self._writers: dict[str, _WriterMessage] = {}
@@ -42,6 +53,8 @@ class WriteH5Callback(Callback):
         self._max_queue_size = max_queue_size
         self._semaphore = Semaphore(max_concurrent_writers)
         self._dataset_index = 0
+        self._normalization_type: NormalizationType = NormalizationType(normalization_type)
+        self._precision: InferencePrecision = InferencePrecision(precision)
 
         self._logger = get_logger(type(self).__name__)
 
@@ -145,6 +158,7 @@ class WriteH5Callback(Callback):
                 color_profile=None,
                 is_compressed_image=False,
                 progress=None,
+                precision=InferencePrecision(self._precision),
             )
             new_process = Process(target=new_writer.consume, args=(self.generator(new_queue), child_conn))
             new_process.start()
@@ -156,7 +170,8 @@ class WriteH5Callback(Callback):
             }
             self._current_filename = filename
 
-        prediction = outputs["prediction"].detach().cpu().numpy()
+        prediction = outputs["prediction"]
+        prediction = NormalizationType.normalize(self._normalization_type)(prediction).detach().cpu().numpy()
         coordinates_x, coordinates_y = batch["coordinates"]
         coordinates = torch.stack([coordinates_x, coordinates_y]).T.detach().cpu().numpy()
         self._writers[filename]["queue"].put((coordinates, prediction))

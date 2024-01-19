@@ -12,9 +12,9 @@ from numpy import typing as npt
 from pytorch_lightning import Callback
 
 from ahcore.callbacks import WriteH5Callback
-from ahcore.callbacks.utils import _get_h5_output_filename, _ValidationDataset
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.readers import H5FileImageReader, StitchingMode
+from ahcore.utils.callbacks import _get_h5_output_filename, _ValidationDataset
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray
 
@@ -200,7 +200,7 @@ def _write_tiff(
             mpp=h5_reader.mpp,
             tile_size=tile_size,
             pyramid=True,
-            compression=TiffCompression.CCITTFAX4,
+            compression=TiffCompression.ZSTD,
             quality=100,
             interpolator=Resampling.NEAREST,
             colormap=colormap,

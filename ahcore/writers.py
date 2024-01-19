@@ -19,7 +19,7 @@ import PIL.Image
 from dlup.tiling import Grid, GridOrder, TilingMode
 
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import GenericArray
+from ahcore.utils.types import GenericArray, InferencePrecision
 
 logger = get_logger(__name__)
 
@@ -61,6 +61,7 @@ class H5FileImageWriter:
         color_profile: bytes | None = None,
         progress: Optional[Any] = None,
         extra_metadata: Optional[dict[str, Any]] = None,
+        precision: InferencePrecision | None = None,
     ) -> None:
         self._grid: Optional[Grid] = None
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
@@ -74,6 +75,7 @@ class H5FileImageWriter:
         self._is_compressed_image: bool = is_compressed_image
         self._color_profile: bytes | None = color_profile
         self._extra_metadata = extra_metadata
+        self._precision = precision
         self._progress = progress
         self._data: Optional[h5py.Dataset] = None
         self._coordinates_dataset: Optional[h5py.Dataset] = None
@@ -86,6 +88,8 @@ class H5FileImageWriter:
     def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
         """Initializes the image_dataset based on the first tile."""
         if self._is_compressed_image:
+            if self._precision is not None:
+                raise ValueError("Precision cannot be set when writing compressed images.")
             # We need to read the first batch as it is a compressed PIL image
             _first_pil = decode_array_to_pil(first_batch[0])
             _mode = _first_pil.mode
@@ -94,7 +98,7 @@ class H5FileImageWriter:
         else:
             _mode = "ARRAY"
             _format = "RAW"
-            _num_channels = first_batch.shape[-1]
+            _num_channels = first_batch.shape[1]
 
         self._current_index = 0
         # The grid can be smaller than the actual image when slide bounds are given.
@@ -170,6 +174,10 @@ class H5FileImageWriter:
             "format": _format,
             "dtype": str(first_batch.dtype),
             "is_binary": self._is_compressed_image,
+            "precision": self._precision.value if self._precision else str(InferencePrecision.FP32),
+            "multiplier": self._precision.get_multiplier()
+            if self._precision
+            else InferencePrecision.FP32.get_multiplier(),
             "has_color_profile": self._color_profile is not None,
         }
 
@@ -177,6 +185,14 @@ class H5FileImageWriter:
             metadata.update(self._extra_metadata)
         metadata_json = json.dumps(metadata)
         h5file.attrs["metadata"] = metadata_json
+
+    def adjust_batch_precision(self, batch: GenericArray) -> GenericArray:
+        """Adjusts the batch precision based on the precision set in the writer."""
+        if self._precision:
+            multiplier = self._precision.get_multiplier()
+            batch = batch * multiplier
+            batch = batch.astype(self._precision.value)
+        return batch
 
     def add_associated_images(
         self,
@@ -205,6 +221,8 @@ class H5FileImageWriter:
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
                 first_coordinates, first_batch = next(batch_generator)
+                first_batch = self.adjust_batch_precision(first_batch)
+
                 self.init_writer(first_coordinates, first_batch, h5file)
 
                 # Mostly for mypy
@@ -219,6 +237,7 @@ class H5FileImageWriter:
                     batch_generator = self._progress(batch_generator, total=self._num_samples)
 
                 for coordinates, batch in batch_generator:
+                    batch = self.adjust_batch_precision(batch)
                     # We take a coordinate, and step through the grid until we find it.
                     # Note that this assumes that the coordinates come in C-order, so we will always hit it
                     for idx, curr_coordinates in enumerate(coordinates):
