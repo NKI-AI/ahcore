@@ -19,7 +19,12 @@ from ahcore.writers import H5FileImageWriter
 
 class WriteH5Callback(Callback):
     def __init__(
-        self, max_queue_size: int, max_concurrent_writers: int, dump_dir: Path, normalization_type: str, precision: str
+        self,
+        max_queue_size: int,
+        max_concurrent_writers: int,
+        dump_dir: Path,
+        normalization_type: str = "logits",
+        precision: str = "float32",
     ):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
