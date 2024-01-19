@@ -19,6 +19,7 @@ from scipy.ndimage import map_coordinates
 
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import BoundingBoxType, GenericArray
+from ahcore.utils.callbacks import InferencePrecision
 
 logger = get_logger(__name__)
 
@@ -299,7 +300,7 @@ class H5FileImageReader:
         if self._stitching_mode == StitchingMode.AVERAGE:
             stitched_image = (stitched_image / divisor_array[..., np.newaxis]).astype(float)
 
-        if self._precision != "float32":
+        if self._precision != str(InferencePrecision.FP32):
             # Always convert to float32.
             stitched_image = stitched_image / self._multiplier
             stitched_image = stitched_image.astype(np.float32)
