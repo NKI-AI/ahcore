@@ -56,17 +56,16 @@ class H5TileFeatureWriter:
         self._feature_dim: Optional[int] = None
         self._logger = logger
 
-    def init_writer(self, first_features: GenericArray) -> None:
+    def init_writer(self, first_features: GenericArray, h5file) -> None:
         self._feature_dim = first_features.shape[1]
-        with h5py.File("tile_feature_vectors", "w") as h5file:
-            # Create a dataset for feature vectors with shape (wsi_width, wsi_height, feature_dim)
-            self._tile_feature_dataset = h5file.create_dataset(
-                "features",
-                shape=(self._size[0], self._size[1], self._feature_dim),
-                dtype=first_features.dtype,
-                compression="gzip",
-                chunks=(1, 1, self._feature_dim),  # Chunking for each tile
-            )
+        # Create a dataset for feature vectors with shape (wsi_width, wsi_height, feature_dim)
+        self._tile_feature_dataset = h5file.create_dataset(
+            "tile_feature_vectors",
+            shape=(self._size[0], self._size[1], self._feature_dim),
+            dtype=first_features.dtype,
+            compression="gzip",
+            chunks=(1, 1, self._feature_dim),  # Chunking for each tile
+        )
 
     def consume_features(
         self,
