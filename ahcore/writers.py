@@ -76,11 +76,9 @@ class H5TileFeatureWriter:
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
                 first_features, first_batch = next(feature_generator)
-                self.init_writer(first_features)
+                self.init_writer(first_features, h5file)
 
                 assert self._tile_feature_dataset, "Tile feature dataset is not initialized"
-
-                feature_generator = self._feature_generator((first_features, first_batch), feature_generator)
 
                 for coordinates, feature in feature_generator:
                     # The spatial organisation of feature vectors corresponds to the spatial organisation of the tiles.
