@@ -46,6 +46,67 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
     return image
 
 
+class H5TileFeatureWriter:
+    """Feature writer that writes tile-by-tile feature representation to h5."""
+
+    def __init__(self, filename: Path, size: tuple[int, int]) -> None:
+        self._filename = filename
+        self._size = size
+        self._tile_feature_dataset: Optional[h5py.Dataset] = None
+        self._feature_dim: Optional[int] = None
+        self._logger = logger
+
+    def init_writer(self, first_features: GenericArray) -> None:
+        self._feature_dim = first_features.shape[1]
+        with h5py.File("tile_feature_vectors", "w") as h5file:
+            # Create a dataset for feature vectors with shape (wsi_width, wsi_height, feature_dim)
+            self._tile_feature_dataset = h5file.create_dataset(
+                "features",
+                shape=(self._size[0], self._size[1], self._feature_dim),
+                dtype=first_features.dtype,
+                compression="gzip",
+                chunks=(1, 1, self._feature_dim),  # Chunking for each tile
+            )
+
+    def consume_features(
+        self,
+        feature_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        connection_to_parent: Optional[Connection] = None,
+    ) -> None:
+        """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
+        try:
+            with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
+                first_features, first_batch = next(feature_generator)
+                self.init_writer(first_features)
+
+                assert self._tile_feature_dataset, "Tile feature dataset is not initialized"
+
+                feature_generator = self._feature_generator((first_features, first_batch), feature_generator)
+
+                for coordinates, feature in feature_generator:
+                    # The spatial organisation of feature vectors corresponds to the spatial organisation of the tiles.
+                    self._tile_feature_dataset[coordinates[0], coordinates[1], :] = feature
+
+        except Exception as e:
+            self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
+            if connection_to_parent:
+                connection_to_parent.send((False, self._filename, e))
+        else:
+            self._filename.with_suffix(".h5.partial").rename(self._filename)
+
+        finally:
+            if connection_to_parent:
+                connection_to_parent.send((True, None, None))
+                connection_to_parent.close()
+
+    @staticmethod
+    def _feature_generator(feature_generator: Generator[Any, None, None]) -> Generator[Any, None, None]:
+        for coordinates, feature in feature_generator:
+            if feature is None:
+                break
+            yield coordinates, feature
+
+
 class H5FileImageWriter:
     """Image writer that writes tile-by-tile to h5."""
 
