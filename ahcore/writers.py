@@ -51,6 +51,7 @@ class H5TileFeatureWriter:
 
     def __init__(self, filename: Path, size: tuple[int, int]) -> None:
         self._filename = filename
+        # The size corresponds to number of tiles along each coordinate axis.
         self._size = size
         self._tile_feature_dataset: Optional[h5py.Dataset] = None
         self._feature_dim: Optional[int] = None
@@ -58,13 +59,12 @@ class H5TileFeatureWriter:
 
     def init_writer(self, first_features: GenericArray, h5file) -> None:
         self._feature_dim = first_features.shape[0]
-        # Create a dataset for feature vectors with shape (wsi_width, wsi_height, feature_dim)
         self._tile_feature_dataset = h5file.create_dataset(
             "tile_feature_vectors",
             shape=(self._size[0], self._size[1], self._feature_dim),
             dtype=first_features.dtype,
             compression="gzip",
-            chunks=(1, 1, self._feature_dim),  # Chunking for each tile
+            chunks=(1, 1, self._feature_dim),  # Chunking for each tile feature vector
         )
 
     def consume_features(
@@ -82,9 +82,9 @@ class H5TileFeatureWriter:
 
                 _feature_generator = self._feature_generator(first_coordinates, first_features, feature_generator)
 
-                for coordinates, feature in _feature_generator:
+                for tile_coordinates, feature in _feature_generator:
                     # The spatial organisation of feature vectors corresponds to the spatial organisation of the tiles.
-                    self._tile_feature_dataset[coordinates[0], coordinates[1], :] = feature
+                    self._tile_feature_dataset[tile_coordinates[0], tile_coordinates[1], :] = feature
 
         except Exception as e:
             self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
