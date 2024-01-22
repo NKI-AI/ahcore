@@ -57,7 +57,7 @@ class H5TileFeatureWriter:
         self._feature_dim: Optional[int] = None
         self._logger = logger
 
-    def init_writer(self, first_features: GenericArray, h5file) -> None:
+    def init_writer(self, first_features: GenericArray, h5file: h5py.File) -> None:
         self._feature_dim = first_features.shape[0]
         self._tile_feature_dataset = h5file.create_dataset(
             "tile_feature_vectors",
@@ -100,7 +100,7 @@ class H5TileFeatureWriter:
 
     @staticmethod
     def _feature_generator(
-        first_feature_coordinates, first_features, feature_generator: Generator[Any, None, None]
+        first_feature_coordinates: GenericArray, first_features: GenericArray, feature_generator: Generator[Any, None, None]
     ) -> Generator[Any, None, None]:
         # We plug the first coordinates and the first features back into the generator
         # That way, we can yield them while h5 writing.
