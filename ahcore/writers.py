@@ -57,7 +57,7 @@ class H5TileFeatureWriter:
         self._logger = logger
 
     def init_writer(self, first_features: GenericArray, h5file) -> None:
-        self._feature_dim = first_features.shape[1]
+        self._feature_dim = first_features.shape[0]
         # Create a dataset for feature vectors with shape (wsi_width, wsi_height, feature_dim)
         self._tile_feature_dataset = h5file.create_dataset(
             "tile_feature_vectors",
@@ -75,12 +75,14 @@ class H5TileFeatureWriter:
         """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
-                first_features, first_batch = next(feature_generator)
+                first_coordinates, first_features = next(feature_generator)
                 self.init_writer(first_features, h5file)
 
                 assert self._tile_feature_dataset, "Tile feature dataset is not initialized"
 
-                for coordinates, feature in feature_generator:
+                _feature_generator = self._feature_generator(first_coordinates, first_features, feature_generator)
+
+                for coordinates, feature in _feature_generator:
                     # The spatial organisation of feature vectors corresponds to the spatial organisation of the tiles.
                     self._tile_feature_dataset[coordinates[0], coordinates[1], :] = feature
 
@@ -97,7 +99,12 @@ class H5TileFeatureWriter:
                 connection_to_parent.close()
 
     @staticmethod
-    def _feature_generator(feature_generator: Generator[Any, None, None]) -> Generator[Any, None, None]:
+    def _feature_generator(
+        first_feature_coordinates, first_features, feature_generator: Generator[Any, None, None]
+    ) -> Generator[Any, None, None]:
+        # We plug the first coordinates and the first features back into the generator
+        # That way, we can yield them while h5 writing.
+        yield first_feature_coordinates, first_features
         for coordinates, feature in feature_generator:
             if feature is None:
                 break

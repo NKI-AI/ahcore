@@ -79,24 +79,24 @@ def test_h5_tile_feature_writer(temp_h5_file):
 
     writer = H5TileFeatureWriter(filename=temp_h5_file, size=size)
 
-    coordinate_list = [(np.array([0, 0]), np.random.rand(feature_dimension)), np.array([0, 1]), np.array([1, 0]), np.array([1, 1])]
-    features = [np.random.rand(feature_dimension), np.random.rand(feature_dimension), np.random.rand(feature_dimension), np.random.rand(feature_dimension)]
+    coords = np.stack([[0, 0], [0, 1], [1, 0], [1, 1]], 0)
+    features = np.random.rand(num_features, feature_dimension)
 
-    # Initialize the writer
-    with h5py.File(temp_h5_file, "w") as h5file:
-        writer.init_writer(np.stack(features, 0), h5file)
-
-    def feature_generator(coordinate_list, features):
-        for coord, feature in zip(coordinate_list, features):
+    def feature_generator(coords, features):
+        for coord, feature in zip(coords, features):
             yield coord, feature
 
     # Write data to the H5 file
-    writer.consume_features(feature_generator(features, coordinate_list))
+    writer.consume_features(feature_generator(coords, features))
 
     # Perform assertions
     with h5py.File(temp_h5_file, "r") as h5file:
         assert "tile_feature_vectors" in h5file
         assert h5file["tile_feature_vectors"].shape == (size[0], size[1], feature_dimension)
+        assert np.allclose(h5file["tile_feature_vectors"][0, 0, :], features[0])
+        assert np.allclose(h5file["tile_feature_vectors"][0, 1, :], features[1])
+        assert np.allclose(h5file["tile_feature_vectors"][1, 0, :], features[2])
+        assert np.allclose(h5file["tile_feature_vectors"][1, 1, :], features[3])
 
 
 # Run the tests
