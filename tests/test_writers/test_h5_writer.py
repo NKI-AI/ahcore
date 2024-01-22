@@ -1,17 +1,21 @@
+from pathlib import Path
+from typing import Generator
+
 import h5py
 import numpy as np
 import pytest
 
+from ahcore.utils.types import GenericArray
 from ahcore.writers import H5FileImageWriter, H5TileFeatureWriter
 
 
 @pytest.fixture
-def temp_h5_file(tmp_path):
+def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
     h5_file_path = tmp_path / "test_data.h5"
     yield h5_file_path
 
 
-def test_h5_file_image_writer(temp_h5_file):
+def test_h5_file_image_writer(temp_h5_file: Path) -> None:
     # Test parameters
     size = (1000, 800)
     mpp = 0.5
@@ -38,9 +42,9 @@ def test_h5_file_image_writer(temp_h5_file):
         writer.init_writer(dummy_coordinates, dummy_batch, h5file)
 
     # Use a generator to yield dummy batches
-    def batch_generator():
+    def batch_generator() -> Generator[tuple[GenericArray, GenericArray], None, None]:
         for i in range(num_samples):
-            yield (dummy_coordinates, dummy_batch)
+            yield dummy_coordinates, dummy_batch
 
     # Write data to the H5 file
     writer.consume(batch_generator())
@@ -54,7 +58,7 @@ def test_h5_file_image_writer(temp_h5_file):
         # Optionally add more specific assertions here
 
 
-def test_h5_tile_feature_writer(temp_h5_file):
+def test_h5_tile_feature_writer(temp_h5_file: Path) -> None:
     """
     This test the H5TileFeatureWriter class for the following case.
 
@@ -82,7 +86,9 @@ def test_h5_tile_feature_writer(temp_h5_file):
     coords = np.stack([[0, 0], [0, 1], [1, 0], [1, 1]], 0)
     features = np.random.rand(num_features, feature_dimension)
 
-    def feature_generator(coords, features):
+    def feature_generator(
+        coords: GenericArray, features: GenericArray
+    ) -> Generator[tuple[GenericArray, GenericArray], None, None]:
         for coord, feature in zip(coords, features):
             yield coord, feature
 

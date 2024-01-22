@@ -1,6 +1,5 @@
 """Module to write copy manifests files over to SCRATCH directory"""
 from __future__ import annotations
-
 import argparse
 import hashlib
 import os
