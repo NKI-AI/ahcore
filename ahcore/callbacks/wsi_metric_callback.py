@@ -96,7 +96,8 @@ class ComputeWsiMetricsCallback(Callback):
             raise ValueError("Data description is not set.")
 
         self._class_names = dict([(v, k) for k, v in index_map.items()])
-        self._class_names[0] = "background"
+        if self._class_names.get(0, None) is None:
+            self._class_names[0] = "background"
 
         # Here we can query the database for the validation images
         self._data_manager: DataManager = trainer.datamodule.data_manager  # type: ignore

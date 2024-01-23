@@ -60,6 +60,7 @@ class DetectionMetric(TileMetric):
 
         _label_to_class = {v: k for k, v in _index_map.items()}
         self._label_to_class = _label_to_class
+        self._separate_background_channel = self._label_to_class.get(0, None) in ["background", None]
 
     def __call__(
         self, predictions: torch.Tensor, target: torch.Tensor, roi: torch.Tensor | None
@@ -82,8 +83,8 @@ class DetectionMetric(TileMetric):
         match_labels_target = target_labels[match_idxs[:, 1]]
         assert all(match_labels_predictions == match_labels_target)
 
-        # Calculate scores (assume background is always class 0 for now)
-        confusion_matrix = torch.zeros((self._num_classes - 1, 3))
+        # Calculate scores (assume background can be separate channel)
+        confusion_matrix = torch.zeros((self._num_classes - self._separate_background_channel, 3))
         for label_idx, label in self._label_to_class.items():
             if label == "background":
                 continue
@@ -92,14 +93,14 @@ class DetectionMetric(TileMetric):
             fn = (target_labels == label_idx).sum() - tp
 
             # Assume background is always class 0 for now
-            confusion_matrix[label_idx - 1] += torch.Tensor([tp, fp, fn])
+            confusion_matrix[label_idx - self._separate_background_channel] += torch.Tensor([tp, fp, fn])
 
         # Caculate metrics per class and average
         metrics_dict = self._calculate_metrics_from_confusion_matrix(confusion_matrix)
         output = {
-            f"{metric_name}/{self._label_to_class[idx]}": metric_values[idx - 1]
+            f"{metric_name}/{self._label_to_class[idx]}": metric_values[idx - self._separate_background_channel]
             for metric_name, metric_values in metrics_dict.items()
-            for idx in range(1, self._num_classes)
+            for idx in range(self._separate_background_channel, self._num_classes)
         }
         output.update(
             {f"{metric_name}/all": torch.mean(metric_values) for metric_name, metric_values in metrics_dict.items()}
@@ -153,7 +154,8 @@ class DiceMetric(TileMetric):
             _index_map = self._data_description.index_map
 
         _label_to_class = {v: k for k, v in _index_map.items()}
-        _label_to_class[0] = "background"
+        if _label_to_class.get(0, None) is None:
+            _label_to_class[0] = "background"
         self._label_to_class = _label_to_class
 
         self.name = "dice"
@@ -273,7 +275,8 @@ class WSIDiceMetric(WSIMetric):
             _index_map = self._data_description.index_map
 
         _label_to_class: dict[int, str] = {v: k for k, v in _index_map.items()}
-        _label_to_class[0] = "background"
+        if _label_to_class.get(0, None) is None:
+            _label_to_class[0] = "background"
         self._label_to_class = _label_to_class
 
     @property
