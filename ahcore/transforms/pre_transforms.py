@@ -14,7 +14,6 @@ from dlup.data.transforms import ContainsPolygonToLabel, ConvertAnnotationsToMas
 from torchvision.transforms import functional as F
 
 from ahcore.exceptions import ConfigurationError
-from ahcore.transforms.dlup_transforms import ConvertPointAnnotationsToMask
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
@@ -77,16 +76,20 @@ class PreTransformTaskFactory:
                 "`points_radius_micro_m` and `training_grid.mpp` need to be defined for calculation of radius."
             )
         else:
-            _radius_pixels = int(round(data_description.point_radius_microns / data_description.training_grid.mpp))
+            _radius_pixels = round(data_description.point_radius_microns / data_description.training_grid.mpp)
             if _radius_pixels <= 0:
                 raise ConfigurationError(
                     f"Point conversion radius in pixels must be postive but got {_radius_pixels=}."
                 )
 
+        # DLUP experimental branch: https://github.com/NKI-AI/dlup/commit/960c9cf4174171f0c9dbb341f471c3562d703437
         transforms.extend(
             [
-                ConvertPointAnnotationsToMask(
-                    roi_name=data_description.roi_name, index_map=data_description.index_map, radius=_radius_pixels
+                ConvertAnnotationsToMask(
+                    index_map=data_description.index_map,
+                    roi_name=data_description.roi_name,
+                    ignore_name="IGNORE",
+                    buffer_point_radius=_radius_pixels,
                 ),
                 OneHotEncodeMask(index_map=data_description.index_map),
                 AnnotationsToTensor(index_map=data_description.index_map, ann_type="points"),
