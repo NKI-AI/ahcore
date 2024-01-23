@@ -53,7 +53,7 @@ def collate_fn_annotations(batch: list[DlupDatasetSample]) -> Any:
             _ann_coords = [sample.pop(ann_type) for sample in batch]
             _ann_labels = [sample.pop(f"{ann_type}_labels") for sample in batch]
             return (
-                pad_sequence(_ann_coords, batch_first=True, padding_value=torch.nan).float(),
+                pad_sequence(_ann_coords, batch_first=True, padding_value=torch.inf).float(),
                 pad_sequence(_ann_labels, batch_first=True, padding_value=-1),
             )
         return None
@@ -62,11 +62,9 @@ def collate_fn_annotations(batch: list[DlupDatasetSample]) -> Any:
     _padded_boxes = _collate_fn_ann_type(batch, "boxes")
     collated_batch = default_collate(batch)
     if _padded_points is not None:
-        collated_batch["points"] = _padded_points[0]
-        collated_batch["points_labels"] = _padded_points[1]
+        collated_batch["points"], collated_batch["points_labels"] = _padded_points
     if _padded_boxes is not None:
-        collated_batch["boxes"] = _padded_boxes[0]
-        collated_batch["boxes_labels"] = _padded_boxes[1]
+        collated_batch["boxes"], collated_batch["boxes_labels"] = _padded_boxes
     return collated_batch
 
 

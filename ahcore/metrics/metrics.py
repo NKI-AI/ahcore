@@ -51,7 +51,6 @@ class DetectionMetric(TileMetric):
             raise ConfigurationError("`index_map` is required for to setup the classification metric.")
         else:
             _index_map = self._data_description.index_map
-        self._index_map = _index_map
 
         if self._data_description.point_radius_microns is None or self._data_description.training_grid.mpp is None:
             raise ConfigurationError("`point_radius_microns` required for to setup the classification metric.")
@@ -65,11 +64,11 @@ class DetectionMetric(TileMetric):
     def __call__(
         self, predictions: torch.Tensor, target: torch.Tensor, roi: torch.Tensor | None
     ) -> dict[str, torch.Tensor]:
-        # Distance for padding, different classes and out of range is inf
+        # Distance for different classes and out of range is inf
         l2_dist = torch.cdist(predictions[:, :, :2], target[:, :, :2])
         diff_idx = predictions[:, :, 2:3] != target[:, :, 2:3].permute((0, 2, 1))
         oor_idx = (l2_dist > self._hit_criterion_radius).bool()
-        l2_dist[diff_idx | oor_idx | torch.isnan(l2_dist)] = torch.inf
+        l2_dist[diff_idx | oor_idx] = torch.inf
 
         # Create block diagonal with only valid distances
         l2_dist_block = torch.block_diag(*l2_dist)  # type: ignore

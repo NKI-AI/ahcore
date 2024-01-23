@@ -246,6 +246,7 @@ def _process_point_predictions(
     kernel_size: Optional[tuple[int, int] | int] = (5, 5),
     sigma: Optional[tuple[float, float]] = (1.0, 1.0),
     min_threshold: Optional[float] = 0.5,
+    apply_act_fn: bool = True,
 ) -> dict[str, torch.Tensor]:
     """Post-process segementation maps into point annotations.
 
@@ -277,7 +278,11 @@ def _process_point_predictions(
         Dictionary mapping `points`, `points_labels` and `point_confidences` to output as padded tensors of shape
         `(N, K, 2)`, `(N, K, 1)` and `(N, K, 1)` respectively. `K` is the largest number of points.
     """
-    _predictions = torch.softmax(predictions, dim=1) if predictions.shape[1] > 1 else torch.sigmoid(predictions)
+    if apply_act_fn:
+        _predictions = torch.softmax(predictions, dim=1) if predictions.shape[1] > 1 else torch.sigmoid(predictions)
+    else:
+        _predictions = predictions
+
     if roi is not None:
         _predictions *= roi
     if sigma is not None and kernel_size is not None:
@@ -310,7 +315,7 @@ def _process_point_predictions(
             _point_predictions.append(torch.empty((0, 4)))
 
     _padded_point_predictions = torch.nn.utils.rnn.pad_sequence(
-        _point_predictions, batch_first=True, padding_value=torch.nan
+        _point_predictions, batch_first=True, padding_value=torch.inf
     ).float()
     output = {
         "points": _padded_point_predictions[:, :, :2],

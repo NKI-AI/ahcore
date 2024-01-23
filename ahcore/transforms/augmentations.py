@@ -36,7 +36,7 @@ def validate_sample_annotations(
     Returns
     -------
     dict[str, torch.Tensor]
-        Sample with invalid annotation and labels set to torch.nan and -1 respectively.
+        Sample with invalid annotation and labels set to torch.inf and -1 respectively.
 
     Raises
     ------
@@ -46,11 +46,12 @@ def validate_sample_annotations(
     if ann_type == "boxes":
         raise NotImplementedError
 
-    # Validate if annotations are within bounds
-    _size = sample["image"].shape[-2:]
-    _annotations = sample[ann_type]
-    valid_idx = ((_annotations >= 0) & (_annotations < _size[0])).all(dim=2)
-    _annotations[~valid_idx] = torch.nan
+    # Validate if points are within bounds. Bounding boxes are already cropped to image borders
+    if ann_type == "points":
+        _size = sample["image"].shape[-2:]
+        _annotations = sample[ann_type]
+        valid_idx = ((_annotations >= 0) & (_annotations < _size[0])).all(dim=2)
+        _annotations[~valid_idx] = torch.inf
 
     # Validate annotations are within ROI
     _roi = sample.get("roi")
@@ -61,7 +62,7 @@ def validate_sample_annotations(
         _annotations_idx = _annotations.round().long()
         roi_valid = _roi[_first_idx, _annotations_idx[:, :, 1].flatten(), _annotations_idx[:, :, 0].flatten()]
         valid_idx = valid_idx & roi_valid.reshape(-1, _annotations.shape[1]).bool()
-        _annotations[~valid_idx] = torch.nan
+        _annotations[~valid_idx] = torch.inf
 
     _labels = sample[f"{ann_type}_labels"]
     _labels[~valid_idx] = -1
