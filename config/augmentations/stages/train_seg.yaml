@@ -21,21 +21,17 @@ intensity_augmentations:
     contrast: 0.05
     saturation: 0.05
     hue: 0.05
+  - _target_: kornia.augmentation.RandomGrayscale
+    p: 0.1
+    rgb_weights: null
   - _target_: kornia.augmentation.RandomGaussianBlur
     p: 0.5
     kernel_size: [9, 9]
     sigma: [0.1, 1.0]
-  - _target_: kornia.augmentation.RandomSharpness
-    p: 0.5
-    sharpness: 10
-
-#  - _target_: kornia.augmentation.RandomSaturation
-#    p: 0.5
-#    saturation: [0.5, 2.0]
 
 # [a, b] select between a and b random geometric transforms to apply.
 # If True, will select all in a random order. If False, will apply all sequentially.
-random_apply_geometric: [1,]
+random_apply_geometric: false
 random_apply_weights_geometric: null
 geometric_augmentations:
     - _target_: kornia.augmentation.RandomHorizontalFlip
@@ -46,31 +42,13 @@ geometric_augmentations:
       p: 0.5
       distortion_scale: 0.5
     - _target_: kornia.augmentation.RandomAffine
-      p: 0.5
-      degrees: [0.0, 90.0]
-      scale: null
-      translate: null
+      p: 0.75
+      degrees: 180  # sampled randomly from -degree to +degree
+      scale: [.9, 1.1]
+      translate: [0.05, 0.05]  # This is given in percentages for x and y
       shear: null
-    - _target_: kornia.augmentation.RandomAffine
-      p: 0.5
-      degrees: 0
-      scale: [0.75, 1.0]
-      translate: null
-      shear: null
-    - _target_: kornia.augmentation.RandomAffine
-      p: 0.5
-      degrees: 0
-      scale: null
-      translate: [0, 0.05] # This is given in percentages
-      shear: null
-    - _target_: kornia.augmentation.RandomAffine
-      p: 0.5
-      degrees: 0
-      scale: null
-      translate: null
-      shear: [0, 5]
 
 # These transforms are applied in order as a final step.
 final_transforms:
   - _target_: ahcore.transforms.augmentations.CenterCrop
-    size: [512, 512]
+    size: ${data_description.inference_grid.tile_size}  # specify in data_description

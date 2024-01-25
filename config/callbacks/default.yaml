@@ -1,11 +1,11 @@
 defaults:
   - learningrate_monitor.yaml
+  - device_stats_monitor.yaml
   - model_checkpoint.yaml
   - early_stopping.yaml
   - model_summary.yaml
   - rich_progress_bar.yaml
   - write_h5_callback.yaml
-#  - write_tiff_callback.yaml
   - compute_wsi_metrics_callback.yaml # This needs to follow write_h5_callback as it requires the outputs
   - _self_
 
