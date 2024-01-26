@@ -184,7 +184,7 @@ class H5FileImageWriter:
         # TODO: One would need to collect the coordinates and based on the first and the last
         # TODO: of a single grid, one can determine the grid, and the empty indices.
         if self._grid is None:  # During validation, the grid is passed as a parameter
-            grid = Grid.from_tiling(
+            self._grid = Grid.from_tiling(
                 self._grid_offset,
                 size=self._size,
                 tile_size=self._tile_size,
@@ -192,10 +192,8 @@ class H5FileImageWriter:
                 mode=TilingMode.overflow,
                 order=GridOrder.C,
             )
-        else:
-            grid = self._grid
 
-        num_tiles = len(grid)
+        num_tiles = len(self._grid)
         self._tile_indices = h5file.create_dataset(
             "tile_indices",
             shape=(num_tiles,),

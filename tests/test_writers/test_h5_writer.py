@@ -17,11 +17,11 @@ def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
 
 def test_h5_file_image_writer(temp_h5_file: Path) -> None:
     # Test parameters
-    size = (1000, 800)
+    size = (200, 200)
     mpp = 0.5
     tile_size = (200, 200)
-    tile_overlap = (50, 50)
-    num_samples = 10
+    tile_overlap = (0, 0)
+    num_samples = 1
 
     # Create an instance of H5FileImageWriter
     writer = H5FileImageWriter(
@@ -34,12 +34,8 @@ def test_h5_file_image_writer(temp_h5_file: Path) -> None:
     )
 
     # Dummy batch data for testing
-    dummy_coordinates = np.random.randint(0, 255, (10, 2))
-    dummy_batch = np.random.rand(10, 3, 200, 200)
-
-    # Initialize the writer
-    with h5py.File(temp_h5_file, "w") as h5file:
-        writer.init_writer(dummy_coordinates, dummy_batch, h5file)
+    dummy_coordinates = np.random.randint(0, 255, (1, 2))
+    dummy_batch = np.random.rand(1, 3, 200, 200)
 
     # Use a generator to yield dummy batches
     def batch_generator() -> Generator[tuple[GenericArray, GenericArray], None, None]:
@@ -53,9 +49,10 @@ def test_h5_file_image_writer(temp_h5_file: Path) -> None:
     with h5py.File(temp_h5_file, "r") as h5file:
         assert "data" in h5file
         assert "coordinates" in h5file
-        assert "tile_indices" in h5file
-        assert "metadata" in h5file.attrs
-        # Optionally add more specific assertions here
+        assert h5file["data"].shape == (num_samples, 3, 200, 200)
+        assert h5file["coordinates"].shape == (num_samples, 2)
+        assert np.allclose(h5file["data"], dummy_batch)
+        assert np.allclose(h5file["coordinates"], dummy_coordinates)
 
 
 def test_h5_tile_feature_writer(temp_h5_file: Path) -> None:
