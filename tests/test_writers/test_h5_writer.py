@@ -16,7 +16,20 @@ def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
 
 
 def test_h5_file_image_writer(temp_h5_file: Path) -> None:
-    # Test parameters
+    """
+    This test the H5FileImageWriter class for the following case:
+
+    Assuming that we have a tile of size (200, 200) and we want to write it to an H5 file.
+    This test writes the tile to the H5 file and then reads it back to perform assertions.
+
+    Parameters
+    ----------
+    temp_h5_file
+
+    Returns
+    -------
+    None
+    """
     size = (200, 200)
     mpp = 0.5
     tile_size = (200, 200)
@@ -73,6 +86,9 @@ def test_h5_tile_feature_writer(temp_h5_file: Path) -> None:
     ----------
     temp_h5_file : Path
 
+    Returns
+    -------
+    None
     """
     size = (2, 2)
     feature_dimension = 1024
