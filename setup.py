@@ -12,7 +12,7 @@ with open("ahcore/__init__.py") as f:
             break
 
 
-with open("README.md") as readme_file:
+with open("README.rst") as readme_file:
     long_description = readme_file.read()
 
 install_requires = [
@@ -42,7 +42,6 @@ install_requires = [
 setup(
     author="AI for Oncology Lab @ The Netherlands Cancer Institute",
     long_description=long_description,
-    long_description_content_type="text/markdown",
     python_requires=">=3.10",
     classifiers=[
         "Development Status :: 4 - Beta",

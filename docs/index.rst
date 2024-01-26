@@ -11,6 +11,7 @@ AI for Oncology Core for Computational Pathology
 
    cli
    configuration
+   model_zoo
    contributing
    modules
 
