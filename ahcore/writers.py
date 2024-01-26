@@ -62,10 +62,11 @@ class H5FileImageWriter:
         progress: Optional[Any] = None,
         extra_metadata: Optional[dict[str, Any]] = None,
         precision: InferencePrecision | None = None,
+        grid: Grid | None = None,
     ) -> None:
-        self._grid: Optional[Grid] = None
+        self._grid = grid
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
-        self._grid_offset: tuple[int, int] | None = None
+        self._grid_offset: npt.NDArray[np.int_] | None = None
         self._filename: Path = filename
         self._size: tuple[int, int] = size
         self._mpp: float = mpp
@@ -103,7 +104,7 @@ class H5FileImageWriter:
         self._current_index = 0
         # The grid can be smaller than the actual image when slide bounds are given.
         # As the grid should cover the image, the offset is given by the first tile.
-        self._grid_offset = list(first_coordinates[0])
+        self._grid_offset = np.array(first_coordinates[0])
 
         self._coordinates_dataset = h5file.create_dataset(
             "coordinates",
@@ -117,16 +118,19 @@ class H5FileImageWriter:
         # TODO: This would also support multiple grids
         # TODO: One would need to collect the coordinates and based on the first and the last
         # TODO: of a single grid, one can determine the grid, and the empty indices.
-        grid = Grid.from_tiling(
-            self._grid_offset,
-            size=self._size,
-            tile_size=self._tile_size,
-            tile_overlap=self._tile_overlap,
-            mode=TilingMode.overflow,
-            order=GridOrder.C,
-        )
+        if self._grid is None:  # During validation, the grid is passed as a parameter
+            grid = Grid.from_tiling(
+                self._grid_offset,
+                size=self._size,
+                tile_size=self._tile_size,
+                tile_overlap=self._tile_overlap,
+                mode=TilingMode.overflow,
+                order=GridOrder.C,
+            )
+        else:
+            grid = self._grid
+
         num_tiles = len(grid)
-        self._grid = grid
         self._tile_indices = h5file.create_dataset(
             "tile_indices",
             shape=(num_tiles,),

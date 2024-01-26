@@ -130,6 +130,10 @@ class WriteH5Callback(Callback):
             current_dataset: TiledWsiDataset
             current_dataset, _ = total_dataset.index_to_dataset(self._dataset_index)  # type: ignore
             slide_image = current_dataset.slide_image
+            if stage == "validate":
+                grid = current_dataset._grids[0][0]  # pylint: disable=protected-access
+            else:
+                grid = None  # During inference we don't have a grid around ROI
 
             data_description: DataDescription = pl_module.data_description  # type: ignore
             inference_grid: GridDescription = data_description.inference_grid
@@ -159,6 +163,7 @@ class WriteH5Callback(Callback):
                 is_compressed_image=False,
                 progress=None,
                 precision=InferencePrecision(self._precision),
+                grid=grid,
             )
             new_process = Process(target=new_writer.consume, args=(self.generator(new_queue), child_conn))
             new_process.start()
