@@ -259,7 +259,7 @@ class H5FileImageWriter:
         """Adjusts the batch precision based on the precision set in the writer."""
         if self._precision:
             multiplier = self._precision.get_multiplier()
-            batch = batch * multiplier
+            batch = np.multiply(batch, multiplier)
             batch = batch.astype(self._precision.value)
         return batch
 

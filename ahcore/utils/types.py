@@ -38,7 +38,7 @@ class NormalizationType(str, Enum):
     SOFTMAX = "softmax"
     LOGITS = "logits"
 
-    def normalize(self) -> Callable:
+    def normalize(self) -> Callable[..., Any]:
         if self == NormalizationType.SIGMOID:
             return torch.sigmoid
         elif self == NormalizationType.SOFTMAX:
@@ -54,12 +54,12 @@ class InferencePrecision(str, Enum):
     FP32 = "float32"
     UINT8 = "uint8"
 
-    def get_multiplier(self) -> float:
+    def get_multiplier(self) -> GenericArray:
         if self == InferencePrecision.FP16:
-            return 1.0
+            return np.array(1.0).astype(np.float16)
         elif self == InferencePrecision.FP32:
-            return 1.0
+            return np.array(1.0).astype(np.float32)
         elif self == InferencePrecision.UINT8:
-            return 255.0
+            return np.array(255.0).astype(np.uint8)
         else:
             raise NotImplementedError(f"Precision {self} is not supported for {self.__class__.__name__}.")
