@@ -23,7 +23,7 @@ def _quick_hash(file_path: Path, max_bytes: int = 10**6) -> str:
 
 
 def copy_data(args: argparse.Namespace) -> None:
-    manifest_fn = args.manifest_fn
+    manifest_url = args.manifest_uri
     base_dir = args.base_dir
     dataset_name = args.dataset_name
     target_dir = os.environ.get("SCRATCH", None)
@@ -32,7 +32,7 @@ def copy_data(args: argparse.Namespace) -> None:
         print("Please set the SCRATCH environment variable to a writable directory.")
         sys.exit(1)
 
-    with DataManager(manifest_fn) as dm:
+    with DataManager(manifest_url) as dm:
         all_records = dm.get_records_by_split(args.manifest_name, args.split_name, split_category=None)
         with Progress() as progress:
             task = progress.add_task("[cyan]Copying...")
