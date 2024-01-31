@@ -46,6 +46,73 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
     return image
 
 
+class H5TileFeatureWriter:
+    """Feature writer that writes tile-by-tile feature representation to h5."""
+
+    def __init__(self, filename: Path, size: tuple[int, int]) -> None:
+        self._filename = filename
+        # The size corresponds to number of tiles along each coordinate axis.
+        self._size = size
+        self._tile_feature_dataset: Optional[h5py.Dataset] = None
+        self._feature_dim: Optional[int] = None
+        self._logger = logger
+
+    def init_writer(self, first_features: GenericArray, h5file: h5py.File) -> None:
+        self._feature_dim = first_features.shape[0]
+        self._tile_feature_dataset = h5file.create_dataset(
+            "tile_feature_vectors",
+            shape=(self._size[0], self._size[1], self._feature_dim),
+            dtype=first_features.dtype,
+            compression="gzip",
+            chunks=(1, 1, self._feature_dim),  # Chunking for each tile feature vector
+        )
+
+    def consume_features(
+        self,
+        feature_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        connection_to_parent: Optional[Connection] = None,
+    ) -> None:
+        """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
+        try:
+            with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
+                first_coordinates, first_features = next(feature_generator)
+                self.init_writer(first_features, h5file)
+
+                assert self._tile_feature_dataset, "Tile feature dataset is not initialized"
+
+                _feature_generator = self._feature_generator(first_coordinates, first_features, feature_generator)
+
+                for tile_coordinates, feature in _feature_generator:
+                    # The spatial organisation of feature vectors corresponds to the spatial organisation of the tiles.
+                    self._tile_feature_dataset[tile_coordinates[0], tile_coordinates[1], :] = feature
+
+        except Exception as e:
+            self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
+            if connection_to_parent:
+                connection_to_parent.send((False, self._filename, e))
+        else:
+            self._filename.with_suffix(".h5.partial").rename(self._filename)
+
+        finally:
+            if connection_to_parent:
+                connection_to_parent.send((True, None, None))
+                connection_to_parent.close()
+
+    @staticmethod
+    def _feature_generator(
+        first_feature_coordinates: GenericArray,
+        first_features: GenericArray,
+        feature_generator: Generator[Any, None, None],
+    ) -> Generator[Any, None, None]:
+        # We plug the first coordinates and the first features back into the generator
+        # That way, we can yield them while h5 writing.
+        yield first_feature_coordinates, first_features
+        for coordinates, feature in feature_generator:
+            if feature is None:
+                break
+            yield coordinates, feature
+
+
 class H5FileImageWriter:
     """Image writer that writes tile-by-tile to h5."""
 
@@ -119,7 +186,7 @@ class H5FileImageWriter:
         # TODO: One would need to collect the coordinates and based on the first and the last
         # TODO: of a single grid, one can determine the grid, and the empty indices.
         if self._grid is None:  # During validation, the grid is passed as a parameter
-            grid = Grid.from_tiling(
+            self._grid = Grid.from_tiling(
                 self._grid_offset,
                 size=self._size,
                 tile_size=self._tile_size,
@@ -127,10 +194,8 @@ class H5FileImageWriter:
                 mode=TilingMode.overflow,
                 order=GridOrder.C,
             )
-        else:
-            grid = self._grid
 
-        num_tiles = len(grid)
+        num_tiles = len(self._grid)
         self._tile_indices = h5file.create_dataset(
             "tile_indices",
             shape=(num_tiles,),
@@ -194,7 +259,7 @@ class H5FileImageWriter:
         """Adjusts the batch precision based on the precision set in the writer."""
         if self._precision:
             multiplier = self._precision.get_multiplier()
-            batch = batch * multiplier
+            batch = np.multiply(batch, multiplier)
             batch = batch.astype(self._precision.value)
         return batch
 
