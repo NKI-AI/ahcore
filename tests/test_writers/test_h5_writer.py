@@ -74,7 +74,7 @@ def test_h5_tile_feature_writer(temp_h5_file: Path) -> None:
 
     Assume that we have an image of size (1024, 1024) tiled up in a batch of 4 tiles of size (512, 512).
     The feature dimension is 1024. So, we have 4 feature vectors of size 1024 which need to be written to the H5 file.
-    We want to do this while retaining their spatial orientation in correspondence with the spatial orientation of the tiles.
+    We retain their spatial orientation in correspondence with the spatial orientation of the tiles.
 
     The features should be written in the following order:
     1. Top left tile   -> Top left feature
