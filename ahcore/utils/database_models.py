@@ -29,6 +29,9 @@ class Manifest(Base):
 
     patients: Mapped[List["Patient"]] = relationship("Patient", back_populates="manifest")
 
+    def __str__(self):
+        return f"Manifest {self.name}"
+
 
 class Patient(Base):
     """Patient table."""

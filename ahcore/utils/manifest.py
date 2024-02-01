@@ -18,7 +18,9 @@ from dlup.tiling import GridOrder, TilingMode
 from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.sql import exists
 
 from ahcore.exceptions import RecordNotFoundError
 from ahcore.utils.data import DataDescription
@@ -178,7 +180,13 @@ class DataManager:
         split_category: Optional[str] = None,
     ) -> Generator[Patient, None, None]:
         manifest = self._session.query(Manifest).filter_by(name=manifest_name).first()
-        self._ensure_record(manifest, f"Manifest with name {manifest_name}")
+        try:
+            self._ensure_record(manifest, f"Manifest with name {manifest_name}")
+        except RecordNotFoundError as e:
+            raise RecordNotFoundError(
+                f"Manifest with name {manifest_name} not found. "
+                f"Available manifest names: {', '.join([m.name for m in self._session.query(Manifest).all()])}"
+            ) from e
 
         split_definition = self._session.query(SplitDefinitions).filter_by(version=split_version).first()
         self._ensure_record(split_definition, f"Split definition with version {split_version}")
@@ -381,13 +389,15 @@ class ImageMetadata(BaseModel):
     mpp: PositiveFloat
 
 
-def open_db(database_uri: str) -> Session:
+def open_db(database_uri: str, ensure_exists: bool=True) -> Session:
     """Open a database connection.
 
     Parameters
     ----------
     database_uri : str
         The URI of the database.
+    ensure_exists : bool, default=True
+        Whether to raise an exception of the database does not exist.
 
     Returns
     -------
@@ -395,7 +405,22 @@ def open_db(database_uri: str) -> Session:
         The database session.
     """
     engine = create_engine(database_uri)
-    create_tables(engine)
+
+    if not ensure_exists:
+        # Create tables if they don't exist
+        create_tables(engine)
+    else:
+        # Check if the "manifest" table exists
+        inspector = inspect(engine)
+        if "manifest" not in inspector.get_table_names():
+            raise RuntimeError("Manifest table does not exist. Likely you have set the wrong URI.")
+
+        # Check if the "manifest" table is not empty
+        with engine.connect() as connection:
+            result = connection.execute(exists().where(Manifest.id.isnot(None)).select())
+            if not result.scalar():
+                raise RuntimeError("Manifest table is empty. Likely you have set the wrong URI.")
+
     SessionLocal = sessionmaker(bind=engine)
     return SessionLocal()
 
