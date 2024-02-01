@@ -53,6 +53,11 @@ clean-docs: ## clean sphinx docs
 	rm -f docs/ahcore.*.rst
 	rm -rf docs/_build
 
+clean-cache:
+	@echo "Cleaning cache directory..."
+	@python -c "import os; from pathlib import Path; print(Path(os.environ.get('SCRATCH', '/tmp')) / 'ahcore_cache')" | xargs rm -rf
+	@echo "Cache cleaned."
+
 lint: ## check style with flake8
 	flake8 ahcore tests
 
