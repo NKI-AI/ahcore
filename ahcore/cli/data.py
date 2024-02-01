@@ -28,6 +28,9 @@ def copy_data(args: argparse.Namespace) -> None:
     dataset_name = args.dataset_name
     target_dir = os.environ.get("SCRATCH", None)
 
+    # Initialize a counter for the total data size
+    total_size = 0
+
     if target_dir is None or not os.access(target_dir, os.W_OK):
         print("Please set the SCRATCH environment variable to a writable directory.")
         sys.exit(1)
@@ -53,10 +56,13 @@ def copy_data(args: argparse.Namespace) -> None:
                             progress.update(task, advance=1)
                             continue
 
+                    total_size += get_from.stat().st_size
+
                     # Copy file from get_from to write_to
                     shutil.copy(get_from, write_to)
                     progress.update(task, advance=1)
 
+    progress.console.log("Total data size copied: {:.2f} GB".format(total_size / 1024**3))
 
 def register_parser(
     parser: argparse._SubParsersAction[Any],  # pylint: disable=unsubscriptable-object
