@@ -5,7 +5,7 @@
 
 defaults:
   - _self_
-  - /transforms/stages@fit: train_wsi_classification
-  - /transforms/stages@validate: val_seg
-  - /transforms/stages@test: val_seg
-  - /transforms/stages@predict: null
+  - /augmentations/stages@fit: train_seg
+  - /augmentations/stages@validate: val_seg
+  - /augmentations/stages@test: val_seg
+  - /augmentations/stages@predict: val_seg

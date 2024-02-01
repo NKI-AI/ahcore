@@ -57,7 +57,11 @@ class AhCoreLightningModule(pl.LightningModule):
         )  # TODO: we should send the hyperparams to the logger elsewhere
 
         self._num_classes = data_description.num_classes
-        self._model = model(out_channels=self._num_classes)
+        if self._num_classes:
+            # This isn't relevant when the model is a feature extractor
+            self._model = model(out_channels=self._num_classes)
+        else:
+            self._model = model
         self._augmentations = augmentations
 
         self._loss = loss

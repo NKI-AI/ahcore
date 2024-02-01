@@ -1,4 +1,11 @@
-_target_: ahcore.models.feature_extractors.ibot_vit.iBOTViT
-architecture: "vit_base_pancan"
-encoder: "teacher"
-weights_path: "/projects/foundational_models/reproduce_owkin_ibot/downloads/weights/ibot_vit_base_pancan.pth"
+_target_: ahcore.lit_module.AhCoreLightningModule
+
+model:
+  _target_: ahcore.models.feature_extractors.ibot_vit.iBOTViT
+  architecture: "vit_base_pancan"
+  encoder: "teacher"
+  weights_path: "/projects/foundational_models/reproduce_owkin_ibot/downloads/weights/ibot_vit_base_pancan.pth"
+
+optimizer: null
+
+scheduler: null
