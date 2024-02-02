@@ -20,8 +20,31 @@ from ahcore.utils.io import get_logger, log_hyperparameters
 logger = get_logger(__name__)
 
 
+def load_weights_file(model: LightningModule, config: DictConfig) -> LightningModule:
+    """Load a model from a checkpoint file.
+
+    Parameters
+    ----------
+    model: LightningModule
+        The model to load the weights into.
+    config : DictConfig
+        Configuration composed by Hydra.
+
+    Returns
+    -------
+    LightningModule
+        The model loaded from the checkpoint file.
+    """
+    if config.task_name == "inference" or config.task_name == "train":
+        # Load checkpoint weights
+        lit_ckpt = torch.load(config.ckpt_path)
+        model.load_state_dict(lit_ckpt["state_dict"], strict=True)
+
+    return model
+
+
 def create_datamodule(
-    config: DictConfig,
+        config: DictConfig,
 ) -> tuple[DataDescription, LightningDataModule]:
     # Load generic description of the data
     if not config.data_description.get("_target_"):
@@ -227,6 +250,9 @@ def inference(config: DictConfig) -> None:
     if not config.lit_module.get("_target_"):
         raise NotImplementedError(f"No model target found in <{config.lit_module}>")
     logger.info(f"Instantiating model <{config.lit_module._target_}>")  # noqa
+
+    if config.task_name == "extract_features":
+        config.lit_module.model.weights_path = config.ckpt_path
     model: LightningModule = hydra.utils.instantiate(
         config.lit_module,
         augmentations=augmentations,
@@ -235,8 +261,7 @@ def inference(config: DictConfig) -> None:
     )
 
     # Load checkpoint weights
-    lit_ckpt = torch.load(config.ckpt_path)
-    model.load_state_dict(lit_ckpt["state_dict"], strict=True)
+    model = load_weights_file(model, config)
 
     # Init lightning callbacks
     callbacks: list[Callback] = []
