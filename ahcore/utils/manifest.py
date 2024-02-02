@@ -389,7 +389,7 @@ class ImageMetadata(BaseModel):
     mpp: PositiveFloat
 
 
-def open_db(database_uri: str, ensure_exists: bool=True) -> Session:
+def open_db(database_uri: str, ensure_exists: bool = True) -> Session:
     """Open a database connection.
 
     Parameters

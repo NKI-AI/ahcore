@@ -158,30 +158,19 @@ class DlupDataModule(pl.LightningDataModule):
             f" - Max: {lengths.max():.2f}"
         )
 
-        batch_sampler: Sampler[list[int]]
+        sampler: Sampler[list[int]]
         if stage == "fit":
-            batch_sampler = torch.utils.data.BatchSampler(
-                torch.utils.data.RandomSampler(data_source=dataset, replacement=True),
-                batch_size=batch_size,
-                drop_last=True,
-            )
-
-        elif stage == "predict":
-            batch_sampler = ahcore.data.samplers.WsiBatchSamplerPredict(
-                dataset=dataset,
-                batch_size=batch_size,
-            )
+            sampler = torch.utils.data.RandomSampler(data_source=dataset)
 
         else:
-            batch_sampler = ahcore.data.samplers.WsiBatchSampler(
-                dataset=dataset,
-                batch_size=batch_size,
-            )
+            sampler = torch.utils.data.SequentialSampler(data_source=dataset)
 
         return DataLoader(
             dataset,
             num_workers=self._num_workers,
-            batch_sampler=batch_sampler,
+            sampler=sampler,
+            batch_size=batch_size,
+            drop_last=True if stage == "fit" else False,
             persistent_workers=self._persistent_workers,
             pin_memory=self._pin_memory,
         )
@@ -226,10 +215,7 @@ class DlupDataModule(pl.LightningDataModule):
             batch_size=batch_size,
             stage="validate",
         )
-        if val_dataloader:
-            setattr(self, "val_concat_dataset", val_dataloader.dataset)
-        else:
-            setattr(self, "val_concat_dataset", None)
+        setattr(self, "val_concat_dataset", val_dataloader.dataset if val_dataloader else None)
         return val_dataloader
 
     def test_dataloader(self) -> Optional[DataLoader[DlupDatasetSample]]:

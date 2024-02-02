@@ -65,6 +65,7 @@ def copy_data(args: argparse.Namespace) -> None:
 
     progress.console.log("Total data size copied: {:.2f} GB".format(total_size / 1024**3))
 
+
 def register_parser(
     parser: argparse._SubParsersAction[Any],  # pylint: disable=unsubscriptable-object
 ) -> None:  # pylint: disable=E1136
