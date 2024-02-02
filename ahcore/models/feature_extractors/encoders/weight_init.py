@@ -8,9 +8,7 @@ import warnings
 import torch
 
 
-def _no_grad_trunc_normal_(
-    tensor: torch.Tensor, mean: float, std: float, a: float, b: float
-) -> torch.Tensor:
+def _no_grad_trunc_normal_(tensor: torch.Tensor, mean: float, std: float, a: float, b: float) -> torch.Tensor:
     """Truncated normal initialization."""
 
     def _norm_cdf(x: float) -> float:

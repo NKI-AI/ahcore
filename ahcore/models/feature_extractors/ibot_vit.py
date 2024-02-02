@@ -13,8 +13,8 @@ from typing import Optional, Tuple
 import torch
 from torchvision import transforms
 
-from ahcore.models.feature_extractors.encoders import vit_base
 from ahcore.models.feature_extractors.core import Extractor
+from ahcore.models.feature_extractors.encoders import vit_base
 from ahcore.utils.io import get_logger
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -45,12 +45,12 @@ class iBOTViT(Extractor):  # pylint: disable=abstract-method
     """
 
     def __init__(
-            self,
-            architecture="vit_base_pancan",
-            encoder="teacher",
-            mean: Tuple[float, float, float] = IMAGENET_MEAN,
-            std: Tuple[float, float, float] = IMAGENET_STD,
-            weights_path: Optional[str] = None,
+        self,
+        architecture="vit_base_pancan",
+        encoder="teacher",
+        mean: Tuple[float, float, float] = IMAGENET_MEAN,
+        std: Tuple[float, float, float] = IMAGENET_STD,
+        weights_path: Optional[str] = None,
     ):
         super(iBOTViT, self).__init__()
 
@@ -59,32 +59,20 @@ class iBOTViT(Extractor):  # pylint: disable=abstract-method
         self.encoder = encoder
 
         # Load weights for iBOT[ViT-B]PanCancer.
-        assert (
-                architecture == "vit_base_pancan"
-        ), "Weights are released for `vit_base_pancan` architecture only."
-        self.feature_extractor = vit_base(
-            patch_size=16, num_classes=0, use_mean_pooling=False
-        )
+        assert architecture == "vit_base_pancan", "Weights are released for `vit_base_pancan` architecture only."
+        self.feature_extractor = vit_base(patch_size=16, num_classes=0, use_mean_pooling=False)
         self._weights_path = weights_path
         if self._weights_path is None:
-            raise ValueError(
-                "Please specify the path to the weights of the model."
-            )
+            raise ValueError("Please specify the path to the weights of the model.")
 
         # Load state_dict.
         state_dict = torch.load(self._weights_path, map_location="cpu")
         state_dict = state_dict[self.encoder]
-        state_dict = {
-            k.replace("module.", ""): v for k, v in state_dict.items()
-        }
-        state_dict = {
-            k.replace("backbone.", ""): v for k, v in state_dict.items()
-        }
+        state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
         # Set weights with state_dict.
         msg = self.feature_extractor.load_state_dict(state_dict, strict=False)
-        logger.info(
-            f"Pretrained weights found at {self._weights_path} and loaded with msg: {msg}"
-        )
+        logger.info(f"Pretrained weights found at {self._weights_path} and loaded with msg: {msg}")
 
     @property
     def transform(self):

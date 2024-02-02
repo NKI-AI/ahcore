@@ -9,13 +9,12 @@ https://github.com/owkin/HistoSSLscaling/blob/main/rl_benchmarks/models/feature_
 """Base classes for feature extraction."""
 
 from abc import abstractmethod
-from typing import Callable, Dict
-from typing import Union, List, Tuple
+from typing import Callable, Dict, List, Tuple, Union
 
 import numpy as np
 import torch
-from torch import nn
 from PIL.Image import Image
+from torch import nn
 
 
 def prepare_module(
@@ -88,9 +87,7 @@ class Extractor(nn.Module):
         """
         raise NotImplementedError
 
-    def extract_feature_maps(
-        self, images: torch.Tensor
-    ) -> Dict[str, torch.Tensor]:
+    def extract_feature_maps(self, images: torch.Tensor) -> Dict[str, torch.Tensor]:
         """Returns a dictionary with intermediate features.
 
         Parameters
@@ -146,9 +143,7 @@ class ParallelExtractor:
         self.module = module
         if "cuda:" in str(gpu):
             gpu = int(gpu.split("cuda:")[-1])
-        self.feature_extractor, device = prepare_module(
-            self.module.feature_extractor, gpu
-        )
+        self.feature_extractor, device = prepare_module(self.module.feature_extractor, gpu)
         device = [device]
         self.module.device = self.device = device
         self.transform = self.module.transform
@@ -183,7 +178,5 @@ class ParallelExtractor:
         features: np.ndarray
             (BS, D)
         """
-        features = self.__call__(
-            images
-        )  # pylint: disable=unnecessary-dunder-call
+        features = self.__call__(images)  # pylint: disable=unnecessary-dunder-call
         return features.cpu().detach().numpy()

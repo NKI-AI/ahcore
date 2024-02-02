@@ -35,7 +35,7 @@ def load_weights_file(model: LightningModule, config: DictConfig) -> LightningMo
     LightningModule
         The model loaded from the checkpoint file.
     """
-    if config.task_name == "inference" or config.task_name == "train":
+    if config.task_name != "extract_features":
         # Load checkpoint weights
         lit_ckpt = torch.load(config.ckpt_path)
         model.load_state_dict(lit_ckpt["state_dict"], strict=True)
@@ -44,7 +44,7 @@ def load_weights_file(model: LightningModule, config: DictConfig) -> LightningMo
 
 
 def create_datamodule(
-        config: DictConfig,
+    config: DictConfig,
 ) -> tuple[DataDescription, LightningDataModule]:
     # Load generic description of the data
     if not config.data_description.get("_target_"):

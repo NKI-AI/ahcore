@@ -31,7 +31,4 @@ def validate_node_names(module: nn.Module, node_names: List[str]) -> None:
     valid_node_names, _ = get_graph_node_names(model=module)
     for node_name in node_names:
         if node_name not in valid_node_names:
-            raise ValueError(
-                f"Got an invalid graph node name ({node_name}) "
-                f"for the given network."
-            )
+            raise ValueError(f"Got an invalid graph node name ({node_name}) " f"for the given network.")

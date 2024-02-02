@@ -3,10 +3,10 @@
 - ``timm`` library: https://github.com/rwightman/pytorch-image-models/blob/master/timm/ (Apache License 2.0)
 """
 
-from typing import Callable, Dict, List, Optional, Tuple
-from functools import partial
-
 import math
+from functools import partial
+from typing import Callable, Dict, List, Optional, Tuple
+
 import torch
 from torch import nn
 
@@ -42,12 +42,8 @@ def drop_path(
     if drop_prob == 0.0 or not training:
         return x
     keep_prob = 1 - drop_prob
-    shape = (x.shape[0],) + (1,) * (
-        x.ndim - 1
-    )  # work with diff dim tensors, not just 2D ConvNets
-    random_tensor = keep_prob + torch.rand(
-        shape, dtype=x.dtype, device=x.device
-    )
+    shape = (x.shape[0],) + (1,) * (x.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
+    random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
     random_tensor.floor_()  # binarize
     output = x.div(keep_prob) * random_tensor
     return output
@@ -230,11 +226,7 @@ class Attention(nn.Module):
             Output tensor.
         """
         B, N, C = x.shape
-        qkv = (
-            self.qkv(x)
-            .reshape(B, N, 3, self.num_heads, C // self.num_heads)
-            .permute(2, 0, 3, 1, 4)
-        )
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
@@ -321,9 +313,7 @@ class Block(nn.Module):
             attn_drop=attn_drop,
             proj_drop=drop,
         )
-        self.drop_path = (
-            DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        )
+        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(
@@ -334,18 +324,12 @@ class Block(nn.Module):
         )
 
         if init_values > 0:
-            self.gamma_1 = nn.Parameter(
-                init_values * torch.ones((dim)), requires_grad=True
-            )
-            self.gamma_2 = nn.Parameter(
-                init_values * torch.ones((dim)), requires_grad=True
-            )
+            self.gamma_1 = nn.Parameter(init_values * torch.ones((dim)), requires_grad=True)
+            self.gamma_2 = nn.Parameter(init_values * torch.ones((dim)), requires_grad=True)
         else:
             self.gamma_1, self.gamma_2 = None, None
 
-    def forward(
-        self, x: torch.Tensor, return_attention: bool = False
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_attention: bool = False) -> torch.Tensor:
         """
         Forward pass of the Vision Transformer Block module.
 
@@ -417,9 +401,7 @@ class PatchEmbed(nn.Module):
         self.patch_size = patch_size
         self.num_patches = num_patches
 
-        self.proj = nn.Conv2d(
-            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
-        )
+        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the PatchEmbed module.
@@ -524,9 +506,7 @@ class VisionTransformer(nn.Module):
         num_patches = self.patch_embed.num_patches
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pos_embed = nn.Parameter(
-            torch.zeros(1, num_patches + 1, embed_dim)
-        )
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         # Stochastic depth decay rule.
@@ -549,17 +529,11 @@ class VisionTransformer(nn.Module):
             ]
         )
 
-        self.norm = (
-            nn.Identity() if use_mean_pooling else norm_layer(embed_dim)
-        )
+        self.norm = nn.Identity() if use_mean_pooling else norm_layer(embed_dim)
         self.fc_norm = norm_layer(embed_dim) if use_mean_pooling else None
 
         # Classifier head.
-        self.head = (
-            nn.Linear(embed_dim, num_classes)
-            if num_classes > 0
-            else nn.Identity()
-        )
+        self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
         trunc_normal_(self.pos_embed, std=0.02)
         trunc_normal_(self.cls_token, std=0.02)
@@ -586,9 +560,7 @@ class VisionTransformer(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def interpolate_pos_encoding(
-        self, x: torch.Tensor, w: int, h: int
-    ) -> torch.Tensor:
+    def interpolate_pos_encoding(self, x: torch.Tensor, w: int, h: int) -> torch.Tensor:
         """Interpolate the positional encoding to match the size of the input
         tokens.
 
@@ -619,24 +591,15 @@ class VisionTransformer(nn.Module):
         # see discussion at https://github.com/facebookresearch/dino/issues/8
         w0, h0 = w0 + 0.1, h0 + 0.1
         patch_pos_embed = nn.functional.interpolate(
-            patch_pos_embed.reshape(
-                1, int(math.sqrt(N)), int(math.sqrt(N)), dim
-            ).permute(0, 3, 1, 2),
+            patch_pos_embed.reshape(1, int(math.sqrt(N)), int(math.sqrt(N)), dim).permute(0, 3, 1, 2),
             scale_factor=(w0 / math.sqrt(N), h0 / math.sqrt(N)),
             mode="bicubic",
         )
-        assert (
-            int(w0) == patch_pos_embed.shape[-2]
-            and int(h0) == patch_pos_embed.shape[-1]
-        )
+        assert int(w0) == patch_pos_embed.shape[-2] and int(h0) == patch_pos_embed.shape[-1]
         patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
-        return torch.cat(
-            (class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1
-        )
+        return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
 
-    def prepare_tokens(
-        self, x: torch.Tensor, mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
+    def prepare_tokens(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Prepare the input tokens for the Vision Transformer.
 
         Parameters
@@ -705,22 +668,14 @@ class VisionTransformer(nn.Module):
 
         x = self.norm(x)
         if self.fc_norm is not None:
-            x[:, 0] = self.fc_norm(  # pylint: disable=not-callable
-                x[:, 1:, :].mean(1)
-            )
+            x[:, 0] = self.fc_norm(x[:, 1:, :].mean(1))  # pylint: disable=not-callable
 
-        return_all_tokens = (
-            self.return_all_tokens
-            if return_all_tokens is None
-            else return_all_tokens
-        )
+        return_all_tokens = self.return_all_tokens if return_all_tokens is None else return_all_tokens
         if return_all_tokens:
             return x
         return x[:, 0]
 
-    def extract_feature_maps(
-        self, x: torch.Tensor, output_layers: List[str]
-    ) -> Dict[str, torch.Tensor]:
+    def extract_feature_maps(self, x: torch.Tensor, output_layers: List[str]) -> Dict[str, torch.Tensor]:
         """Extract feature maps from the given input tensor.
 
         Parameters
@@ -769,9 +724,7 @@ class VisionTransformer(nn.Module):
                 # Return attention of the last block.
                 return blk(x, return_attention=True)
 
-    def get_intermediate_layers(
-        self, x: torch.Tensor, n: int = 1
-    ) -> List[torch.Tensor]:
+    def get_intermediate_layers(self, x: torch.Tensor, n: int = 1) -> List[torch.Tensor]:
         """Return the output tokens from the last ``n`` last blocks.
 
         Parameters
@@ -840,13 +793,7 @@ def vit_small(patch_size: int = 16, **kwargs) -> VisionTransformer:
         The small Vision Transformer model.
     """
     model = VisionTransformer(
-        patch_size=patch_size,
-        embed_dim=384,
-        depth=12,
-        num_heads=6,
-        mlp_ratio=4,
-        qkv_bias=True,
-        **kwargs
+        patch_size=patch_size, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4, qkv_bias=True, **kwargs
     )
     return model
 
@@ -867,13 +814,7 @@ def vit_base(patch_size: int = 16, **kwargs):
         The Base Vision Transformer model.
     """
     model = VisionTransformer(
-        patch_size=patch_size,
-        embed_dim=768,
-        depth=12,
-        num_heads=12,
-        mlp_ratio=4,
-        qkv_bias=True,
-        **kwargs
+        patch_size=patch_size, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True, **kwargs
     )
     return model
 
@@ -894,12 +835,6 @@ def vit_large(patch_size: int = 16, **kwargs):
         The Large Vision Transformer model.
     """
     model = VisionTransformer(
-        patch_size=patch_size,
-        embed_dim=1024,
-        depth=24,
-        num_heads=16,
-        mlp_ratio=4,
-        qkv_bias=True,
-        **kwargs
+        patch_size=patch_size, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True, **kwargs
     )
     return model

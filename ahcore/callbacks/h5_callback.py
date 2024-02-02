@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from multiprocessing import Pipe, Process, Queue, Semaphore
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -14,7 +15,12 @@ from ahcore.utils.callbacks import _get_h5_output_filename
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericArray, InferencePrecision, NormalizationType
-from ahcore.writers import H5FileImageWriter
+from ahcore.writers import H5FileImageWriter, H5TileFeatureWriter
+
+
+class WriterTypes(str, Enum):
+    IMAGE = "image"
+    FEATURE = "feature"
 
 
 class WriteH5Callback(Callback):
@@ -25,6 +31,7 @@ class WriteH5Callback(Callback):
         dump_dir: Path,
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
+        writer_type: str = WriterTypes.IMAGE,
     ):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
@@ -55,6 +62,7 @@ class WriteH5Callback(Callback):
         self._dataset_index = 0
         self._normalization_type: NormalizationType = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)
+        self._writer_type: WriterTypes = WriterTypes(writer_type)
 
         self._logger = get_logger(type(self).__name__)
 
@@ -152,19 +160,33 @@ class WriteH5Callback(Callback):
             # TODO: We are really putting strange things in the Queue if we may believe mypy
             new_queue: Queue[Any] = Queue()  # pylint: disable=unsubscriptable-object
             parent_conn, child_conn = Pipe()
-            new_writer = H5FileImageWriter(
-                output_filename,
-                size=size,
-                mpp=mpp,
-                tile_size=tile_size,
-                tile_overlap=tile_overlap,
-                num_samples=num_samples,
-                color_profile=None,
-                is_compressed_image=False,
-                progress=None,
-                precision=InferencePrecision(self._precision),
-                grid=grid,
-            )
+            if self._writer_type == WriterTypes.IMAGE:
+                new_writer = H5FileImageWriter(
+                    output_filename,
+                    size=size,
+                    mpp=mpp,
+                    tile_size=tile_size,
+                    tile_overlap=tile_overlap,
+                    num_samples=num_samples,
+                    color_profile=None,
+                    is_compressed_image=False,
+                    progress=None,
+                    precision=InferencePrecision(self._precision),
+                    grid=grid,
+                )
+            elif self._writer_type == WriterTypes.FEATURE:
+                new_writer = H5TileFeatureWriter(
+                    output_filename,
+                    size=size,
+                    num_samples=num_samples,
+                    grid=grid,
+                    tile_size=tile_size,
+                    tile_overlap=tile_overlap,
+                )
+            else:
+                raise NotImplementedError(
+                    f"Writer type {self._writer_type} is not supported for {self.__class__.__name__}"
+                )
             new_process = Process(target=new_writer.consume, args=(self.generator(new_queue), child_conn))
             new_process.start()
             self._writers[filename] = {
@@ -233,6 +255,6 @@ class WriteH5Callback(Callback):
 
 class _WriterMessage(TypedDict):
     queue: Queue[Optional[tuple[GenericArray, GenericArray]]]  # pylint: disable=unsubscriptable-object
-    writer: H5FileImageWriter
+    writer: H5FileImageWriter | H5TileFeatureWriter
     process: Process
     connection: Connection
