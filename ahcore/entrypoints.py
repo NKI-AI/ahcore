@@ -178,8 +178,8 @@ def train(config: DictConfig) -> torch.Tensor | None:
     # Print path to best checkpoint
     if trainer.checkpoint_callback:
         if not config.trainer.get("fast_dev_run") and config.get("train"):
-            logger.info(f"Best model checkpoint at {trainer.checkpoint_callback.best_model_path}")  # type: ignore
-
+            if trainer.checkpoint_callback.best_model_path:
+                logger.info(f"Best model checkpoint at {trainer.checkpoint_callback.best_model_path}")  # type: ignore
     # Return metric score for hyperparameter optimization
     return score
 
