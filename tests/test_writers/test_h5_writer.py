@@ -90,6 +90,7 @@ def test_h5_tile_feature_writer(temp_h5_file: Path) -> None:
 
     dummy_coordinates = np.random.randint(0, 200, (1, 2))
     dummy_features = np.random.rand(1, 786)
+    tile_index = 0
 
     def feature_generator() -> Generator[tuple[GenericArray, GenericArray], None, None]:
         for i in range(num_samples):
@@ -102,6 +103,7 @@ def test_h5_tile_feature_writer(temp_h5_file: Path) -> None:
     with h5py.File(temp_h5_file, "r") as h5file:
         assert np.allclose(h5file["data"], dummy_features)
         assert np.allclose(h5file["coordinates"], dummy_coordinates)
+        assert np.allclose(h5file["tile_indices"], tile_index)
 
 
 # Run the tests
