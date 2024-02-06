@@ -180,8 +180,6 @@ class WriteH5Callback(Callback):
                     size=size,
                     num_samples=num_samples,
                     grid=grid,
-                    tile_size=tile_size,
-                    tile_overlap=tile_overlap,
                 )
             else:
                 raise NotImplementedError(
