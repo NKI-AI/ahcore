@@ -84,7 +84,8 @@ class H5TileFeatureWriter:
         self._coordinates_dataset: Optional[h5py.Dataset] = None
         self._tile_feature_indices: Optional[h5py.Dataset] = None
         self._tile_feature_dataset: Optional[h5py.Dataset] = None
-        # One feature vector represents a whole tile. So, the size of a tile in feature space is (1,1) with no overlap.
+        # A single feature vector represents a tile.
+        # So, the size of a tile in feature space is (1,1) with no overlap.
         self._tile_size: tuple[int, int] = (1, 1)
         self._tile_overlap: tuple[int, int] = (0, 0)
 
