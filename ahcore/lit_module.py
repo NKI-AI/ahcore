@@ -18,6 +18,7 @@ from ahcore.models.jit_model import AhcoreJitModel
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
+import functools
 
 logger = get_logger(__name__)
 
@@ -58,7 +59,7 @@ class AhCoreLightningModule(pl.LightningModule):
         )  # TODO: we should send the hyperparams to the logger elsewhere
         if isinstance(model, AhcoreJitModel):
             self._model = model
-        elif isinstance(model, nn.Module):
+        elif isinstance(model, functools.partial):
             self._num_classes = data_description.num_classes
             if self._num_classes:
                 self._model = model(out_channels=self._num_classes)

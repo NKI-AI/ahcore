@@ -228,7 +228,7 @@ def inference(config: DictConfig) -> None:
 
     # Convert relative ckpt path to absolute path if necessary
     checkpoint_path = config.get("ckpt_path")
-    jit_path = config.get("lit_module").model.jit_path
+    jit_path = config.get("lit_module").model.get("jit_path", None)
     if not (checkpoint_path or jit_path):
         raise RuntimeError("No checkpoint or jit path inputted in config")
     if checkpoint_path and jit_path:
