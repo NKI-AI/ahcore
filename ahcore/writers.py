@@ -47,7 +47,7 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
 
 
 def _find_coordinate_in_grid(
-        grid: Grid, grid_counter: int, coordinates: tuple[int, int], current_index: int, index_dataset: h5py.Dataset
+    grid: Grid, grid_counter: int, coordinates: tuple[int, int], current_index: int, index_dataset: h5py.Dataset
 ) -> int:
     # We take a coordinate, and step through the grid until we find it.
     # Note that this assumes that the coordinates come in C-order, so we will always hit it
@@ -67,18 +67,18 @@ class H5TileFeatureWriter:
     """Feature writer that writes tile-by-tile feature representation to h5."""
 
     def __init__(
-            self,
-            filename: Path,
-            size: tuple[int, int],
-            num_samples: int,
-            grid: Grid | None = None,
+        self,
+        filename: Path,
+        size: tuple[int, int],
+        num_samples: int,
+        grid: Grid | None = None,
     ) -> None:
         self._filename = filename
         self._size = size
-        self._feature_dim: Optional[int] = None
+        self._feature_length: Optional[int] = None
         self._logger = logger
         self._num_samples: int = num_samples
-        self._grid: Optional[Grid] = grid
+        self._grid: Grid = grid
         self._grid_offset: npt.NDArray[np.int_] | None = None
         self._current_index: int = 0
         self._coordinates_dataset: Optional[h5py.Dataset] = None
@@ -93,7 +93,7 @@ class H5TileFeatureWriter:
         # The grid can be smaller than the actual image when slide bounds are given.
         # As the grid should cover the image, the offset is given by the first tile.
         self._grid_offset = np.array(first_coordinates[0])
-        self._feature_dim = first_features.shape[-1:]
+        self._feature_length = first_features.shape[-1:]
         self._coordinates_dataset = h5file.create_dataset(
             "coordinates",
             shape=(self._num_samples, 2),
@@ -101,19 +101,9 @@ class H5TileFeatureWriter:
             compression="gzip",
         )
 
-        self._grid = Grid.from_tiling(
-            self._grid_offset,
-            size=self._size,
-            tile_size=self._tile_size,
-            tile_overlap=self._tile_overlap,
-            mode=TilingMode.overflow,
-            order=GridOrder.C,
-        )
-
-        num_tiles = len(self._grid)
         self._tile_feature_indices = h5file.create_dataset(
             "tile_indices",
-            shape=(num_tiles,),
+            shape=(self._num_samples,),
             dtype=int,
             compression="gzip",
         )
@@ -122,19 +112,18 @@ class H5TileFeatureWriter:
 
         self._tile_feature_dataset = h5file.create_dataset(
             "data",
-            shape=(self._num_samples,) + self._feature_dim,
+            shape=(self._num_samples,) + self._feature_length,
             dtype=first_features.dtype,
             compression="gzip",
-            chunks=(1,) + self._feature_dim,
+            chunks=(1,) + self._feature_length,
         )
 
         metadata = {
             "size": (int(self._size[0]), int(self._size[1])),
-            "feature_length": self._feature_dim,
-            "num_samples": self._num_samples,
+            "num_channels": self._feature_length,
             "tile_size": tuple(self._tile_size),
             "tile_overlap": tuple(self._tile_overlap),
-            "num_tiles": num_tiles,
+            "num_tiles": self._num_samples,
             "grid_order": "C",
             "tiling_mode": "overflow",
             "dtype": str(first_features.dtype),
@@ -144,28 +133,30 @@ class H5TileFeatureWriter:
         h5file.attrs["metadata"] = metadata_json
 
     def consume(
-            self,
-            feature_generator: Generator[tuple[GenericArray, GenericArray], None, None],
-            connection_to_parent: Optional[Connection] = None,
+        self,
+        feature_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        connection_to_parent: Optional[Connection] = None,
     ) -> None:
-        grid_counter = 0
         """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
+        grid_counter = 0
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
                 first_coordinates, first_features = next(feature_generator)
                 self.init_writer(first_coordinates, first_features, h5file)
 
                 assert self._tile_feature_dataset, "Tile feature dataset is not initialized"
+                assert self._grid, "Grid not initialized"
 
                 _feature_generator = self._feature_generator(first_coordinates, first_features, feature_generator)
 
                 for coordinates, batch in _feature_generator:
+                    batch_size = batch.shape[0]
                     grid_counter = _find_coordinate_in_grid(
                         self._grid, grid_counter, coordinates, self._current_index, self._tile_feature_indices
                     )
-                    self._tile_feature_dataset[self._current_index: self._current_index + batch.shape[0]] = batch
-                    self._coordinates_dataset[self._current_index: self._current_index + batch.shape[0]] = coordinates
-                    self._current_index += batch.shape[0]
+                    self._tile_feature_dataset[self._current_index : self._current_index + batch_size] = batch
+                    self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
+                    self._current_index += batch_size
 
         except Exception as e:
             self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
@@ -181,9 +172,9 @@ class H5TileFeatureWriter:
 
     @staticmethod
     def _feature_generator(
-            first_feature_coordinates: GenericArray,
-            first_features: GenericArray,
-            feature_generator: Generator[Any, None, None],
+        first_feature_coordinates: GenericArray,
+        first_features: GenericArray,
+        feature_generator: Generator[Any, None, None],
     ) -> Generator[Any, None, None]:
         # We plug the first coordinates and the first features back into the generator
         # That way, we can yield them while h5 writing.
@@ -198,19 +189,19 @@ class H5FileImageWriter:
     """Image writer that writes tile-by-tile to h5."""
 
     def __init__(
-            self,
-            filename: Path,
-            size: tuple[int, int],
-            mpp: float,
-            tile_size: tuple[int, int],
-            tile_overlap: tuple[int, int],
-            num_samples: int,
-            is_compressed_image: bool = False,
-            color_profile: bytes | None = None,
-            progress: Optional[Any] = None,
-            extra_metadata: Optional[dict[str, Any]] = None,
-            precision: InferencePrecision | None = None,
-            grid: Grid | None = None,
+        self,
+        filename: Path,
+        size: tuple[int, int],
+        mpp: float,
+        tile_size: tuple[int, int],
+        tile_overlap: tuple[int, int],
+        num_samples: int,
+        is_compressed_image: bool = False,
+        color_profile: bytes | None = None,
+        progress: Optional[Any] = None,
+        extra_metadata: Optional[dict[str, Any]] = None,
+        precision: InferencePrecision | None = None,
+        grid: Grid | None = None,
     ) -> None:
         self._grid = grid
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
@@ -345,9 +336,9 @@ class H5FileImageWriter:
         return batch
 
     def add_associated_images(
-            self,
-            images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
-            description: Optional[str] = None,
+        self,
+        images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
+        description: Optional[str] = None,
     ) -> None:
         """Adds associated images to the h5 file."""
 
@@ -361,9 +352,9 @@ class H5FileImageWriter:
                 associated_images.attrs["description"] = description
 
     def consume(
-            self,
-            batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
-            connection_to_parent: Optional[Connection] = None,
+        self,
+        batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        connection_to_parent: Optional[Connection] = None,
     ) -> None:
         """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
         grid_counter = 0
@@ -395,8 +386,8 @@ class H5FileImageWriter:
                     )
 
                     batch_size = batch.shape[0]
-                    self._data[self._current_index: self._current_index + batch_size] = batch
-                    self._coordinates_dataset[self._current_index: self._current_index + batch_size] = coordinates
+                    self._data[self._current_index : self._current_index + batch_size] = batch
+                    self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
                     self._current_index += batch_size
 
         except Exception as e:
@@ -413,7 +404,7 @@ class H5FileImageWriter:
 
     @staticmethod
     def _batch_generator(
-            first_coordinates_batch: Any, batch_generator: Generator[Any, None, None]
+        first_coordinates_batch: Any, batch_generator: Generator[Any, None, None]
     ) -> Generator[Any, None, None]:
         # We yield the first batch too so the progress bar takes the first batch also into account
         yield first_coordinates_batch

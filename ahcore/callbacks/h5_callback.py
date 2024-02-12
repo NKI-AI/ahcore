@@ -138,10 +138,8 @@ class WriteH5Callback(Callback):
             current_dataset: TiledWsiDataset
             current_dataset, _ = total_dataset.index_to_dataset(self._dataset_index)  # type: ignore
             slide_image = current_dataset.slide_image
-            if stage == "validate":
-                grid = current_dataset._grids[0][0]  # pylint: disable=protected-access
-            else:
-                grid = None  # During inference we don't have a grid around ROI
+
+            grid = current_dataset._grids[0][0]  # pylint: disable=protected-access
 
             data_description: DataDescription = pl_module.data_description  # type: ignore
             inference_grid: GridDescription = data_description.inference_grid
@@ -161,6 +159,8 @@ class WriteH5Callback(Callback):
             new_queue: Queue[Any] = Queue()  # pylint: disable=unsubscriptable-object
             parent_conn, child_conn = Pipe()
             if self._writer_type == WriterTypes.IMAGE:
+                if stage != "validate":
+                    grid = None  # During inference we don't have a grid around ROI
                 new_writer = H5FileImageWriter(
                     output_filename,
                     size=size,
@@ -177,7 +177,7 @@ class WriteH5Callback(Callback):
             elif self._writer_type == WriterTypes.FEATURE:
                 new_writer = H5TileFeatureWriter(
                     output_filename,
-                    size=size,
+                    size=grid.size,
                     num_samples=num_samples,
                     grid=grid,
                 )
