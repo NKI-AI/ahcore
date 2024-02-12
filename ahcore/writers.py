@@ -120,7 +120,7 @@ class H5TileFeatureWriter:
 
         metadata = {
             "size": (int(self._size[0]), int(self._size[1])),
-            "num_channels": self._feature_length,
+            "num_channels": self._feature_length[0],
             "tile_size": tuple(self._tile_size),
             "tile_overlap": tuple(self._tile_overlap),
             "num_tiles": self._num_samples,
