@@ -14,6 +14,7 @@ from pytorch_lightning import Callback, LightningDataModule, LightningModule, Tr
 from pytorch_lightning.loggers import Logger
 from torch import nn
 
+from ahcore.models.jit_model import AhcoreJitModel
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger, log_hyperparameters
 
@@ -35,11 +36,13 @@ def load_weights_file(model: LightningModule, config: DictConfig) -> LightningMo
     LightningModule
         The model loaded from the checkpoint file.
     """
-    if config.task_name != "extract_features":
+    _model = getattr(model, "_model")
+    if isinstance(_model, AhcoreJitModel):
+        return model
+    else:
         # Load checkpoint weights
         lit_ckpt = torch.load(config.ckpt_path)
         model.load_state_dict(lit_ckpt["state_dict"], strict=True)
-
     return model
 
 
@@ -225,8 +228,11 @@ def inference(config: DictConfig) -> None:
 
     # Convert relative ckpt path to absolute path if necessary
     checkpoint_path = config.get("ckpt_path")
-    if not checkpoint_path:
-        raise RuntimeError("No checkpoint inputted in config.ckpt_path")
+    jit_path = config.get("lit_module").model.jit_path
+    if not (checkpoint_path or jit_path):
+        raise RuntimeError("No checkpoint or jit path inputted in config")
+    if checkpoint_path and jit_path:
+        raise RuntimeError("Checkpoint path and jit path cannot be defined simultaneously.")
     if checkpoint_path and not os.path.isabs(checkpoint_path):
         config.trainer.resume_from_checkpoint = pathlib.Path(hydra.utils.get_original_cwd()) / checkpoint_path
 
@@ -251,8 +257,6 @@ def inference(config: DictConfig) -> None:
         raise NotImplementedError(f"No model target found in <{config.lit_module}>")
     logger.info(f"Instantiating model <{config.lit_module._target_}>")  # noqa
 
-    if config.task_name == "extract_features":
-        config.lit_module.model.weights_path = config.ckpt_path
     model: LightningModule = hydra.utils.instantiate(
         config.lit_module,
         augmentations=augmentations,
