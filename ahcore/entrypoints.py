@@ -21,7 +21,7 @@ from ahcore.utils.io import get_logger, log_hyperparameters
 logger = get_logger(__name__)
 
 
-def load_weights_file(model: LightningModule, config: DictConfig) -> LightningModule:
+def load_weights(model: LightningModule, config: DictConfig) -> LightningModule:
     """Load a model from a checkpoint file.
 
     Parameters
@@ -265,7 +265,7 @@ def inference(config: DictConfig) -> None:
     )
 
     # Load checkpoint weights
-    model = load_weights_file(model, config)
+    model = load_weights(model, config)
 
     # Init lightning callbacks
     callbacks: list[Callback] = []

@@ -60,9 +60,11 @@ class AhCoreLightningModule(pl.LightningModule):
         if isinstance(model, AhcoreJitModel):
             self._model = model
         elif isinstance(model, functools.partial):
-            self._num_classes = data_description.num_classes
-            if self._num_classes:
-                self._model = model(out_channels=self._num_classes)
+            try:
+                self._num_classes = data_description.num_classes
+            except AttributeError:
+                raise AttributeError("num_classes must be specified in data_description")
+            self._model = model(out_channels=self._num_classes)
         self._augmentations = augmentations
 
         self._loss = loss

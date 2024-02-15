@@ -89,6 +89,8 @@ class H5TileFeatureWriter:
         self._tile_size: tuple[int, int] = (1, 1)
         self._tile_overlap: tuple[int, int] = (0, 0)
 
+
+    #TODO: Initialize values for mpp, precision and multiplier.
     def init_writer(self, first_coordinates: GenericArray, first_features: GenericArray, h5file: h5py.File) -> None:
         # The grid can be smaller than the actual image when slide bounds are given.
         # As the grid should cover the image, the offset is given by the first tile.
