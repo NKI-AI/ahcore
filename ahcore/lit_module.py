@@ -5,6 +5,7 @@ This module contains the core Lightning module for ahcore. This module is respon
 """
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import pytorch_lightning as pl
@@ -18,7 +19,6 @@ from ahcore.models.jit_model import AhcoreJitModel
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
-import functools
 
 logger = get_logger(__name__)
 

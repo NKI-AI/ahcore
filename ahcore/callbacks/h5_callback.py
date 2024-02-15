@@ -161,7 +161,7 @@ class WriteH5Callback(Callback):
             if self._writer_type == WriterTypes.IMAGE:
                 if stage != "validate":
                     grid = None  # During inference we don't have a grid around ROI
-                new_writer = H5FileImageWriter(
+                new_writer: H5FileImageWriter | H5TileFeatureWriter = H5FileImageWriter(
                     output_filename,
                     size=size,
                     mpp=mpp,
@@ -180,6 +180,7 @@ class WriteH5Callback(Callback):
                     size=grid.size,
                     num_samples=num_samples,
                     grid=grid,
+                    precision=InferencePrecision(self._precision),
                 )
             else:
                 raise NotImplementedError(

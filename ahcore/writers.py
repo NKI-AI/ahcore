@@ -47,7 +47,7 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
 
 
 def _find_coordinate_in_grid(
-    grid: Grid, grid_counter: int, coordinates: tuple[int, int], current_index: int, index_dataset: h5py.Dataset
+    grid: Grid, grid_counter: int, coordinates: GenericArray, current_index: int, index_dataset: h5py.Dataset
 ) -> int:
     # We take a coordinate, and step through the grid until we find it.
     # Note that this assumes that the coordinates come in C-order, so we will always hit it
@@ -72,10 +72,11 @@ class H5TileFeatureWriter:
         size: tuple[int, int],
         num_samples: int,
         grid: Grid | None = None,
+        precision: InferencePrecision | None = None,
     ) -> None:
         self._filename = filename
         self._size = size
-        self._feature_length: Optional[int] = None
+        self._feature_length: Optional[tuple[int, ...]] = None
         self._logger = logger
         self._num_samples: int = num_samples
         self._grid: Grid = grid
@@ -88,9 +89,9 @@ class H5TileFeatureWriter:
         # So, the size of a tile in feature space is (1,1) with no overlap.
         self._tile_size: tuple[int, int] = (1, 1)
         self._tile_overlap: tuple[int, int] = (0, 0)
+        self._precision = precision
 
-
-    #TODO: Initialize values for mpp, precision and multiplier.
+    # TODO: Initialize values for mpp, precision and multiplier.
     def init_writer(self, first_coordinates: GenericArray, first_features: GenericArray, h5file: h5py.File) -> None:
         # The grid can be smaller than the actual image when slide bounds are given.
         # As the grid should cover the image, the offset is given by the first tile.
@@ -121,6 +122,7 @@ class H5TileFeatureWriter:
         )
 
         metadata = {
+            "mpp": -1,  # Features have no mpp. So, we set it to -1.
             "size": (int(self._size[0]), int(self._size[1])),
             "num_channels": self._feature_length[0],
             "tile_size": tuple(self._tile_size),
@@ -129,6 +131,10 @@ class H5TileFeatureWriter:
             "grid_order": "C",
             "tiling_mode": "overflow",
             "dtype": str(first_features.dtype),
+            "precision": self._precision.value if self._precision else str(InferencePrecision.FP32),
+            "multiplier": self._precision.get_multiplier()
+            if self._precision
+            else InferencePrecision.FP32.get_multiplier(),
         }
 
         metadata_json = json.dumps(metadata)
@@ -148,6 +154,7 @@ class H5TileFeatureWriter:
 
                 assert self._tile_feature_dataset, "Tile feature dataset is not initialized"
                 assert self._grid, "Grid not initialized"
+                assert self._coordinates_dataset, "Coordinates dataset is not initialized"
 
                 _feature_generator = self._feature_generator(first_coordinates, first_features, feature_generator)
 

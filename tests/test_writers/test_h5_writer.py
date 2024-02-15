@@ -8,6 +8,9 @@ import pytest
 from ahcore.utils.types import GenericArray
 from ahcore.writers import H5FileImageWriter, H5TileFeatureWriter
 
+# TODO: Make parameterized tests and think of edge cases.
+# TODO: Add a case where there are no features to write.
+
 
 @pytest.fixture
 def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
