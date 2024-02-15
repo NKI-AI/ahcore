@@ -10,8 +10,6 @@ import time
 
 logger = get_logger(__name__)
 
-LAST_BATCH_FOR_IMAGE = "LAST_BATCH_FOR_IMAGE"
-
 
 class WriterCallback(Callback):
     def __init__(self, queue_size: int = 16, max_concurrent_queues: int = 16):
@@ -40,13 +38,19 @@ class WriterCallback(Callback):
         image_batches = [batch["image"][indices[i] : indices[i + 1]] for i in range(len(indices) - 1)]
         logger.info(f"indices: {indices}")
 
+        prev_filename = None
+        last_batch = False
         for i, image_batch in enumerate(image_batches):
-            last_batch = len(indices) > 1
-            self._process_batch(image_batch, filename=batch["path"][indices[i]], last_batch=last_batch)
+            if batch["path"][indices[i]] != prev_filename:
+                last_batch = True
+                prev_filename = batch["path"][indices[i]]
+            self._process_batch(image_batch.cpu(), filename=batch["path"][indices[i]], last_batch=last_batch)
 
     def _process_batch(self, batch, filename, last_batch):
         if filename not in self._queues:
+            logger.info(f"{filename} not in queue")
             self._semaphore.acquire()
+            logger.info("Acquired semaphore")
             completion_flag = Value(ctypes.c_int, 0)  # For process completion signaling
             self._queues[filename] = Queue(maxsize=self._queue_size)
             process = Process(
@@ -55,19 +59,22 @@ class WriterCallback(Callback):
             self._processes[filename] = process
             self._completion_flags[filename] = completion_flag
             process.start()
+        logger.info(f"Putting {filename} in queue {type(batch)}")
         self._queues[filename].put(batch)
         if last_batch:
-            self._queues[filename].put(LAST_BATCH_FOR_IMAGE)
+            self._queues[filename].put(None)
 
     def _cleanup_completed_processes(self):
         for filename, flag in list(self._completion_flags.items()):
             if flag.value == 1:  # Process has completed
+                logger.info(f"{filename} is completed.")
                 process = self._processes[filename]
                 process.join()  # Ensure process resources are freed
                 # Cleanup queue and remove references
                 del self._queues[filename]
                 del self._processes[filename]
                 del self._completion_flags[filename]
+                logger.info(f"Cleaned up {filename}")
 
     def _monitor_and_cleanup(self):
         """Continuously monitor for completed processes and clean them up."""
@@ -83,15 +90,15 @@ class TileWriter:
 
     def consume(self, generator):
         for elem in generator:
-            logger.info(f"Got {elem}")
+            logger.info(f"Got {type(elem)}")
 
 
 def queue_generator(queue):
     while True:
         item = queue.get()
-        if item is LAST_BATCH_FOR_IMAGE:
-            break
         yield item
+        if item is None:
+            break
 
 
 def writer_process(queue, filename, semaphore, completion_flag):
