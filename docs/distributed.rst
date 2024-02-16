@@ -15,11 +15,11 @@ Since Ahcore is based on Lightning, we can change the configuration for the Trai
     strategy: ddp
     precision: 32
 
-which will execute on 2 GPUs (devices=2) on 1 node using Distributed Data Parallel (DDP). Launching from the command line can be done using, e.g., torch distributed launch:
+which will execute on 2 GPUs (devices=2) on 1 node using Distributed Data Parallel (DDP). Launching from the command line can be done using, e.g., torchrun:
 
 .. code-block:: bash
 
-    python -m torch.distributed.launch --nproc_per_node=2 --use_env /.../ahcore/tools/train.py data_description=something lit_module=your_module trainer=default_ddp
+    torchrun --nproc_per_node=2 /.../ahcore/tools/train.py data_description=something lit_module=your_module trainer=default_ddp
 
 Note that a simple command without a distributed launch might only detect 1 GPU!
 
