@@ -1,12 +1,16 @@
+import ctypes
+import time
+from multiprocessing import Process, Queue, Semaphore, Value
+from pprint import pformat
+from threading import Thread
 from typing import Any
 
+import pytorch_lightning as pl
+import torch
+from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
 from ahcore.utils.io import get_logger
-from multiprocessing import Process, Queue, Semaphore, Value
-import ctypes
-from threading import Thread
-import time
 
 logger = get_logger(__name__)
 
@@ -18,12 +22,28 @@ class WriterCallback(Callback):
         self._completion_flags = {}
         self._processes = {}
 
+        self._dataset_index = 0  # Keeps track of the current index in the dataset
+        self._dataset_sizes: dict[str, int] = {}  # Keeps track of the total size of a dataset
+        self._tile_counter: dict[str, int] = {}  # Keeps track of the number of tiles processed for a dataset
+
         self._semaphore = Semaphore(max_concurrent_queues)
 
         # Start a thread to monitor for process completion and cleanup
         self._cleanup_thread = Thread(target=self._monitor_and_cleanup)
         self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
         self._cleanup_thread.start()
+
+    def on_validation_epoch_start(self, trainer, pl_module):
+        if self._dataset_sizes != {}:
+            return
+
+        total_dataset: ConcatDataset = trainer.datamodule.validate_dataset  # type: ignore
+        current_dataset: TiledWsiDataset
+
+        for current_dataset in total_dataset.datasets:
+            self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
+
+        logger.info(f"Dataset sizes: {pformat(self._dataset_sizes)}")
 
     def on_validation_batch_end(
         self,
@@ -34,19 +54,33 @@ class WriterCallback(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:
-        indices = [i for i in range(len(batch["path"])) if i != 0 and batch["path"][i] != batch["path"][i - 1]]
-        image_batches = [batch["image"][indices[i] : indices[i + 1]] for i in range(len(indices) - 1)]
-        logger.info(f"indices: {indices}")
+        data_key = "image"
+        data = batch[data_key]
+        coordinates = torch.stack(batch["coordinates"], dim=1)
+        paths = batch["path"]
+        indices = [0] + [i for i in range(len(paths)) if paths[i] != paths[i - 1]] + [len(paths)]
+        chunked_batch = [
+            (coordinates[indices[idx] : indices[idx + 1]], data[indices[idx] : indices[idx + 1]])
+            for idx in range(len(indices) - 1)
+        ]
 
-        prev_filename = None
-        last_batch = False
-        for i, image_batch in enumerate(image_batches):
-            if batch["path"][indices[i]] != prev_filename:
+        for i, (coordinates, data) in enumerate(chunked_batch):
+            curr_filename = paths[indices[i]]
+            # We need to determine if this is the last batch for the current filename
+            if not self._tile_counter.get(curr_filename):
+                self._tile_counter[curr_filename] = 0
+            self._tile_counter[curr_filename] += data.shape[0]
+
+            last_batch = False
+            if self._tile_counter[curr_filename] == self._dataset_sizes[curr_filename]:
                 last_batch = True
-                prev_filename = batch["path"][indices[i]]
-            self._process_batch(image_batch.cpu(), filename=batch["path"][indices[i]], last_batch=last_batch)
+                self._tile_counter[curr_filename] = 0
 
-    def _process_batch(self, batch, filename, last_batch):
+            self._process_batch(
+                coordinates.cpu().numpy(), data.cpu().numpy(), filename=curr_filename, last_batch=last_batch
+            )
+
+    def _process_batch(self, coordinates: torch.Tensor, batch: torch.Tensor, filename: str, last_batch: bool):
         if filename not in self._queues:
             logger.info(f"{filename} not in queue")
             self._semaphore.acquire()
@@ -60,21 +94,21 @@ class WriterCallback(Callback):
             self._completion_flags[filename] = completion_flag
             process.start()
         logger.info(f"Putting {filename} in queue {type(batch)}")
-        self._queues[filename].put(batch)
+        self._queues[filename].put((coordinates, batch))
         if last_batch:
-            self._queues[filename].put(None)
+            self._queues[filename].put((None, None))
 
     def _cleanup_completed_processes(self):
         for filename, flag in list(self._completion_flags.items()):
             if flag.value == 1:  # Process has completed
-                logger.info(f"{filename} is completed.")
+                # logger.info(f"{filename} is completed.")
                 process = self._processes[filename]
                 process.join()  # Ensure process resources are freed
                 # Cleanup queue and remove references
                 del self._queues[filename]
                 del self._processes[filename]
                 del self._completion_flags[filename]
-                logger.info(f"Cleaned up {filename}")
+                # logger.info(f"Cleaned up {filename}")
 
     def _monitor_and_cleanup(self):
         """Continuously monitor for completed processes and clean them up."""
@@ -82,92 +116,47 @@ class WriterCallback(Callback):
             self._cleanup_completed_processes()
             time.sleep(0.5)  # Short sleep to yield control and reduce CPU usage
 
+    # TODO: This needs to be properly called.
+    def _epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        self._dataset_index = 0
+
+    def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        self._epoch_end(trainer, pl_module)
+
+    def on_predict_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        self._epoch_end(trainer, pl_module)
+
 
 # Mockup
-class TileWriter:
+class BasicTileWriter:
     def __init__(self, filename):
-        logger.info(f"Created tilewriter for {filename}")
+        self._filename = filename
+        logger.info(f"Created BasicTileWriter for {filename}")
+        self._counter = 0
 
     def consume(self, generator):
-        for elem in generator:
-            logger.info(f"Got {type(elem)}")
+        for coordinates, item in generator:
+            # TODO: We need to unroll the batch here
+            for coordinates_slice, item_slice in zip(coordinates, item):
+                self._counter += 1
+                print(f"{self._counter}: Got coordinates {coordinates_slice} in {self._filename}")
 
 
 def queue_generator(queue):
     while True:
-        item = queue.get()
-        yield item
+        coordinates, item = queue.get()
         if item is None:
             break
+        yield coordinates, item
 
 
 def writer_process(queue, filename, semaphore, completion_flag):
     try:
-        writer = TileWriter(filename)
+        writer = BasicTileWriter(filename)
         writer.consume(queue_generator(queue))
+        logger.info(f"Stopped writing for {filename}")
+    except Exception as e:
+        logger.exception(f"Error in writer_process for {filename}: {e}")
     finally:
         completion_flag.value = 1
         semaphore.release()
-
-
-# class WriterCallback(Callback):
-#     # def __init__(self, writer_class, max_concurrent_queues=5):
-#     def __init__(self, max_concurrent_queues=5):
-#
-#         # self._writer_class = writer_class
-#         self._queues = {}
-#         self._processes = {}
-#         self._semaphore = Semaphore(max_concurrent_queues)
-#
-#         self._gather_results = True
-#
-#     def on_predict_batch_end(
-#         self,
-#         trainer: "pl.Trainer",
-#         pl_module: "pl.LightningModule",
-#         outputs: Any,
-#         batch: Any,
-#         batch_idx: int,
-#         dataloader_idx: int = 0,
-#     ) -> None:
-#
-#         # We need to split the batch into a batch corresponding to a fixed ["path"]
-#         #
-#
-#         logger.info(batch.keys())
-#         logger.info(batch["filename"])
-#
-#         # identifier = self._extract_identifier_from_batch(batch)
-#         # logger.info(f"Got {identifier} for batch {batch_idx} on {trainer.global_rank}")
-#         #
-#         # # Check if a new queue and process should be created for this filename
-#         # if identifier not in self._queues:
-#         #     logger.info(f"Got new {identifier} for batch {batch_idx} on {trainer.global_rank}")
-#         #     self._semaphore.acquire()
-#         #     logger.info(f"Acquired semaphore for new {identifier} for batch {batch_idx} on {trainer.global_rank}")
-#         #     self._queues[identifier] = Queue()
-#         #     process = Process(target=writer_process, args=(self._queues[identifier], identifier, self._semaphore))
-#         #     self._processes[identifier] = process
-#         #     process.start()
-#         #
-#         # # Add the batch to the queue for this filename
-#         # self._queues[identifier].put(outputs)
-#         #
-#         # # Check if this is the last batch for this filename and signal the end if so
-#         # # This is just in case
-#         # if self._is_last_batch_for_file(identifier, batch_idx):
-#         #     self._queues[identifier].put(None)
-#
-#     def on_inference_end(self, trainer, pl_module):
-#         # Wait for all processes to finish
-#         for process in self._processes.values():
-#             process.join()
-#
-#     @staticmethod
-#     def _extract_identifier_from_batch(batch):
-#         return batch["filename"][0]
-#
-#     def _is_last_batch_for_file(self, filename, batch_idx):
-#         # Implement logic to determine if this is the last batch for the given filename
-#         is_last_batch = True
-#         return is_last_batch

@@ -279,7 +279,7 @@ def save_tiles(
     dataset: TiledWsiDataset,
     h5_writer: H5FileImageWriter,
     compression: Literal["jpg", "png", "none"],
-    quality: int | None = 80,
+    quality: int | None = 85,
 ) -> None:
     """
     Saves the tiles in the given image slide dataset to disk.
@@ -526,7 +526,7 @@ def register_parser(parser: argparse._SubParsersAction[Any]) -> None:
     _parser.add_argument(
         "--quality",
         type=int,
-        default=80,
+        default=85,
         help="Quality of the saved tiles in jpg (default: 80)",
     )
 
