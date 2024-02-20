@@ -202,12 +202,12 @@ class WriterCallback(Callback):
         """Continuously monitor for completed processes and clean them up."""
         while True:
             self._cleanup_completed_processes()
+
+
             time.sleep(0.5)  # Short sleep to yield control and reduce CPU usage
 
-    # TODO: This needs to be properly called.
     def _epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
-        # Here we can cleanup anything relevant
-        pass
+        self._cleanup_thread.join()
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._epoch_end(trainer, pl_module)
