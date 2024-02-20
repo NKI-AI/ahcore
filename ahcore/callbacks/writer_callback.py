@@ -9,10 +9,22 @@ import torch
 import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
-
+from functools import partial
 from ahcore.utils.io import get_logger
 
 logger = get_logger(__name__)
+
+class BasicTileWriter:
+    def __init__(self, filename):
+        self._filename = filename
+        logger.debug(f"Created BasicTileWriter for {filename}")
+        self._counter = 0
+
+    def consume(self, generator):
+        for coordinates, item in generator:
+            for coordinates_slice, item_slice in zip(coordinates, item):
+                self._counter += 1
+                logger.debug(f"{self._counter}: Got coordinates {coordinates_slice} in {self._filename}")
 
 
 def _gather_batch(batch: dict, data_key: str) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
@@ -62,6 +74,7 @@ class WriterCallback(Callback):
         max_concurrent_queues: int = 16,
         requires_gather: bool = True,
         data_key: str = "image",
+        writer_class=BasicTileWriter,
     ):
         # TODO: Test cleanup
         # TODO: Test predict
@@ -74,6 +87,7 @@ class WriterCallback(Callback):
         self._processes: dict[str, Process] = {}
         self._requires_gather = requires_gather
         self._data_key = data_key
+        self._writer_class = writer_class
 
         self._dataset_sizes: dict[str, int] = {}  # Keeps track of the total size of a dataset
         self._tile_counter: dict[str, int] = {}  # Keeps track of the number of tiles processed for a dataset
@@ -100,11 +114,13 @@ class WriterCallback(Callback):
             self._cleanup_thread.start()
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        logger.info("Validation epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
         return self._on_epoch_start(trainer, trainer.datamodule.validate_dataset)
 
     def on_predict_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        logger.info("Prediction epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
         return self._on_epoch_start(trainer, trainer.predict_dataloaders.dataset)
@@ -164,7 +180,7 @@ class WriterCallback(Callback):
             completion_flag = Value(ctypes.c_int, 0)  # For process completion signaling
             self._queues[filename] = Queue(maxsize=self._queue_size)
             process = Process(
-                target=writer_process, args=(self._queues[filename], filename, self._semaphore, completion_flag)
+                target=partial(writer_process, writer=self._writer_class), args=(self._queues[filename], filename, self._semaphore, completion_flag)
             )
             self._processes[filename] = process
             self._completion_flags[filename] = completion_flag
@@ -201,21 +217,6 @@ class WriterCallback(Callback):
     def on_predict_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._epoch_end(trainer, pl_module)
 
-
-# Mockup
-class BasicTileWriter:
-    def __init__(self, filename):
-        self._filename = filename
-        logger.debug(f"Created BasicTileWriter for {filename}")
-        self._counter = 0
-
-    def consume(self, generator):
-        for coordinates, item in generator:
-            for coordinates_slice, item_slice in zip(coordinates, item):
-                self._counter += 1
-                logger.debug(f"{self._counter}: Got coordinates {coordinates_slice} in {self._filename}")
-
-
 def queue_generator(queue):
     while True:
         coordinates, item = queue.get()
@@ -224,11 +225,11 @@ def queue_generator(queue):
         yield coordinates, item
 
 
-def writer_process(queue, filename, semaphore, completion_flag, writer_class=BasicTileWriter):
+def writer_process(queue, filename, semaphore, completion_flag, writer):
     try:
-        writer = writer_class(filename)
-        writer.consume(queue_generator(queue))
-        logger.info(f"Stopped writing for {filename}")
+        _writer = writer(filename)
+        _writer.consume(queue_generator(queue))
+        logger.debug(f"Stopped writing for {filename}")
     except Exception as e:
         logger.exception(f"Error in writer_process for {filename}: {e}")
     finally:
