@@ -1,22 +1,35 @@
 import ctypes
 import time
 from multiprocessing import Process, Queue, Semaphore, Value
-from pprint import pformat
 from threading import Thread
 from typing import Any
 
 import pytorch_lightning as pl
 import torch
+import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
-import torch.distributed as dist
 
 from ahcore.utils.io import get_logger
 
 logger = get_logger(__name__)
 
 
-def _gather_batch(batch, data_key: str):
+def _gather_batch(batch: dict, data_key: str) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
+    """
+    Gather the batch from all processes in a distributed environment.
+    This only gathers the coordinates, paths and the data as needed for the writers.
+
+    Parameters
+    ----------
+    batch : dict
+        The batch to gather.
+
+    Returns
+    -------
+    tuple
+        A tuple containing the gathered coordinates, data and paths.
+    """
     if dist.is_initialized():
         world_size = dist.get_world_size()
 
@@ -41,8 +54,15 @@ def _gather_batch(batch, data_key: str):
 
     return all_coordinates, all_data, all_paths
 
+
 class WriterCallback(Callback):
-    def __init__(self, queue_size: int = 16, max_concurrent_queues: int = 16, requires_gather: bool = True, data_key: str="image"):
+    def __init__(
+        self,
+        queue_size: int = 16,
+        max_concurrent_queues: int = 16,
+        requires_gather: bool = True,
+        data_key: str = "image",
+    ):
         # TODO: Test cleanup
         # TODO: Test predict
         # TODO: Make flag variable.
@@ -99,7 +119,6 @@ class WriterCallback(Callback):
         dataloader_idx: int = 0,
     ) -> None:
         logger.info(f"Batch {batch_idx}")
-
 
         if trainer.world_size > 1 and self._requires_gather:  # Check if running in a distributed environment
             coordinates, data, paths = _gather_batch(batch, self._data_key)
@@ -195,6 +214,7 @@ class BasicTileWriter:
             for coordinates_slice, item_slice in zip(coordinates, item):
                 self._counter += 1
                 logger.debug(f"{self._counter}: Got coordinates {coordinates_slice} in {self._filename}")
+
 
 def queue_generator(queue):
     while True:
