@@ -182,7 +182,7 @@ class WriterCallback(Callback):
             completion_flag = Value(ctypes.c_int, 0)  # For process completion signaling
             self._queues[filename] = Queue(maxsize=self._queue_size)
             process = Process(
-                target=partial(writer_process, writer=self._writer_class), args=(self._queues[filename], filename, self._semaphore, completion_flag)
+                target=partial(_writer_process, writer=self._writer_class), args=(self._queues[filename], filename, self._semaphore, completion_flag)
             )
             self._processes[filename] = process
             self._completion_flags[filename] = completion_flag
@@ -220,7 +220,22 @@ class WriterCallback(Callback):
     def on_predict_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._epoch_end(trainer, pl_module)
 
-def queue_generator(queue):
+
+def _queue_generator(queue: Queue):
+    """
+    Generator to yield items from a queue. This is used to consume the queue in the writer process.
+
+    Parameters
+    ----------
+    queue : Queue
+        The queue to consume.
+
+    Yields
+    ------
+    tuple
+        A tuple containing the coordinates and the item (data, target, ...).
+
+    """
     while True:
         coordinates, item = queue.get()
         if item is None:
@@ -228,10 +243,28 @@ def queue_generator(queue):
         yield coordinates, item
 
 
-def writer_process(queue, filename, semaphore, completion_flag, writer):
+def _writer_process(queue: Queue, filename: str, semaphore: Semaphore, completion_flag: Value, writer):
+    """
+    Process to consume a queue and write to a writer.
+
+    Parameters
+    ----------
+    queue : Queue
+        The queue to consume.
+    filename : str
+        The filename to write to.
+    semaphore : Semaphore
+        The semaphore to release when the process is done.
+    completion_flag : Value
+        The flag to signal process completion.
+
+    Returns
+    ------
+    None
+    """
     try:
         _writer = writer(filename)
-        _writer.consume(queue_generator(queue))
+        _writer.consume(_queue_generator(queue))
         logger.debug(f"Stopped writing for {filename}")
     except Exception as e:
         logger.exception(f"Error in writer_process for {filename}: {e}")
