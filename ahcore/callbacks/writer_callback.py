@@ -14,6 +14,7 @@ from ahcore.utils.io import get_logger
 
 logger = get_logger(__name__)
 
+
 class BasicTileWriter:
     def __init__(self, filename):
         self._filename = filename
@@ -76,10 +77,7 @@ class WriterCallback(Callback):
         data_key: str = "image",
         writer_class=BasicTileWriter,
     ):
-        # TODO: Test cleanup
         # TODO: Test predict
-        # TODO: Make flag variable.
-        # TODO: If multigpu and gather required, skip the other ranks
 
         self._queue_size = queue_size
         self._queues: dict[str, Queue] = {}
@@ -100,6 +98,11 @@ class WriterCallback(Callback):
         self._cleanup_thread.start()
 
     def _on_epoch_start(self, trainer: "pl.Trainer", total_dataset: ConcatDataset) -> None:
+        logger.info("All should be cleared: ")
+        logger.info(f"Queues: {self._queues}")
+        logger.info(f"Processes: {self._processes}")
+        logger.info(f"Completion flags: {self._completion_flags}")
+
         if self._dataset_sizes != {}:
             return
 
@@ -134,7 +137,6 @@ class WriterCallback(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:
-        logger.info(f"Batch {batch_idx}")
 
         if trainer.world_size > 1 and self._requires_gather:  # Check if running in a distributed environment
             coordinates, data, paths = _gather_batch(batch, self._data_key)
@@ -193,6 +195,7 @@ class WriterCallback(Callback):
     def _cleanup_completed_processes(self):
         for filename, flag in list(self._completion_flags.items()):
             if flag.value == 1:  # Process has completed
+                logger.debug(f"{filename} is completed. Clearing.")
                 process = self._processes[filename]
                 process.join()  # Ensure process resources are freed
                 # Cleanup queue and remove references
