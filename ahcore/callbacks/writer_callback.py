@@ -9,18 +9,58 @@ import pytorch_lightning as pl
 import torch
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
+import torch.distributed as dist
 
 from ahcore.utils.io import get_logger
 
 logger = get_logger(__name__)
 
 
+def _gather_batch(batch, data_key: str):
+    if dist.is_initialized():
+        world_size = dist.get_world_size()
+
+        # Stacking coordinates as a single tensor
+        _coordinates = torch.stack(batch["coordinates"], dim=1)
+
+        # Prepare tensors for gathering across all processes
+        gathered_coords_list = [torch.zeros_like(_coordinates) for _ in range(world_size)]
+        # Gather coordinates
+        dist.all_gather(gathered_coords_list, _coordinates)
+
+        # Concatenate gathered coordinates along the first dimension (now they are in a list)
+        all_coordinates = torch.cat(gathered_coords_list, dim=0)
+
+        # Gather paths using all_gather_object for non-tensor data
+        all_paths = [None] * world_size
+        dist.all_gather_object(all_paths, batch["path"])
+        all_paths = [path for sublist in all_paths for path in sublist]
+
+        gathered_image_list = [torch.zeros_like(batch[data_key]) for _ in range(world_size)]
+        dist.all_gather(gathered_image_list, batch[data_key])
+        all_data = torch.cat(gathered_image_list, dim=0)
+
+    else:
+        all_paths = batch["path"]
+        all_coordinates = torch.stack(batch["coordinates"], dim=1)
+        all_data = batch[data_key]
+
+    return all_coordinates, all_data, all_paths
+
 class WriterCallback(Callback):
-    def __init__(self, queue_size: int = 16, max_concurrent_queues: int = 16):
+    def __init__(self, queue_size: int = 16, max_concurrent_queues: int = 16, requires_gather: bool = True):
+        # TODO: Test semaphores
+        # TODO: Test cleanup
+        # TODO: Test multigpu
+        # TODO: Test predict
+        # TODO: Make flag variable.
+        # TODO: If multigpu and gather required, skip the other ranks
+
         self._queue_size = queue_size
-        self._queues = {}
+        self._queues: dict[str, Queue] = {}
         self._completion_flags = {}
-        self._processes = {}
+        self._processes: dict[str, Process] = {}
+        self._requires_gather = requires_gather
 
         self._dataset_index = 0  # Keeps track of the current index in the dataset
         self._dataset_sizes: dict[str, int] = {}  # Keeps track of the total size of a dataset
@@ -55,9 +95,14 @@ class WriterCallback(Callback):
         dataloader_idx: int = 0,
     ) -> None:
         data_key = "image"
-        data = batch[data_key]
-        coordinates = torch.stack(batch["coordinates"], dim=1)
-        paths = batch["path"]
+
+        if trainer.world_size > 1 and self._requires_gather:  # Check if running in a distributed environment
+            coordinates, data, paths = _gather_batch(batch, data_key)
+        else:
+            coordinates = torch.stack(batch["coordinates"], dim=1)
+            data = batch[data_key]
+            paths = batch["path"]
+
         indices = [0] + [i for i in range(len(paths)) if paths[i] != paths[i - 1]] + [len(paths)]
         chunked_batch = [
             (coordinates[indices[idx] : indices[idx + 1]], data[indices[idx] : indices[idx + 1]])
@@ -66,7 +111,10 @@ class WriterCallback(Callback):
 
         for i, (coordinates, data) in enumerate(chunked_batch):
             curr_filename = paths[indices[i]]
-            # We need to determine if this is the last batch for the current filename
+            # We need to determine if this is the last batch for the current filename, so we can end the generator
+            # there This might strictly not be needed if we can estimate the size of the grid, but it's a good safety
+            # measure For instance, if we have multiresolution grids, or anything else that might make the standard grid
+            # size estimation inaccurate
             if not self._tile_counter.get(curr_filename):
                 self._tile_counter[curr_filename] = 0
             self._tile_counter[curr_filename] += data.shape[0]
@@ -160,3 +208,5 @@ def writer_process(queue, filename, semaphore, completion_flag):
     finally:
         completion_flag.value = 1
         semaphore.release()
+
+#
