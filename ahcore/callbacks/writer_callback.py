@@ -98,11 +98,6 @@ class WriterCallback(Callback):
         self._cleanup_thread.start()
 
     def _on_epoch_start(self, trainer: "pl.Trainer", total_dataset: ConcatDataset) -> None:
-        logger.info("All should be cleared: ")
-        logger.info(f"Queues: {self._queues}")
-        logger.info(f"Processes: {self._processes}")
-        logger.info(f"Completion flags: {self._completion_flags}")
-
         if self._dataset_sizes != {}:
             return
 
