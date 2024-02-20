@@ -209,7 +209,7 @@ class WriterCallback(Callback):
             if self._queues == {}:
                 break
             time.sleep(0.1)
-        del self._cleanup_thread
+        self._cleanup_thread = None
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._epoch_end(trainer, pl_module)
