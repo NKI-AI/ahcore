@@ -1,5 +1,6 @@
 import ctypes
 import time
+from functools import partial
 from multiprocessing import Process, Queue, Semaphore, Value
 from threading import Thread
 from typing import Any
@@ -9,26 +10,28 @@ import torch
 import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
-from functools import partial
+
 from ahcore.utils.io import get_logger
 
 logger = get_logger(__name__)
 
 
-class BasicTileWriter:
+class DebugTileWriter:
     def __init__(self, filename):
         self._filename = filename
-        logger.debug(f"Created BasicTileWriter for {filename}")
+        logger.info(f"Created BasicTileWriter for {filename}")
         self._counter = 0
 
     def consume(self, generator):
         for coordinates, item in generator:
             for coordinates_slice, item_slice in zip(coordinates, item):
+                logger.info(f"{self._counter}: Got coordinates {coordinates_slice} in {self._filename}")
                 self._counter += 1
-                logger.debug(f"{self._counter}: Got coordinates {coordinates_slice} in {self._filename}")
+
+        logger.info(f"Counter at {self._counter} for {self._filename}")
 
 
-def _gather_batch(batch: dict, data_key: str) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
+def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
     """
     Gather the batch from all processes in a distributed environment.
     This only gathers the coordinates, paths and the data as needed for the writers.
@@ -51,8 +54,8 @@ def _gather_batch(batch: dict, data_key: str) -> tuple[torch.Tensor, torch.Tenso
         dist.all_gather(gathered_coords_list, _coordinates)
         all_coordinates = torch.cat(gathered_coords_list, dim=0)
 
-        gathered_image_list = [torch.zeros_like(batch[data_key]) for _ in range(world_size)]
-        dist.all_gather(gathered_image_list, batch[data_key])
+        gathered_image_list = [torch.zeros_like(output) for _ in range(world_size)]
+        dist.all_gather(gathered_image_list, output)
         all_data = torch.cat(gathered_image_list, dim=0)
 
         # Gather paths using all_gather_object for non-tensor data
@@ -63,7 +66,7 @@ def _gather_batch(batch: dict, data_key: str) -> tuple[torch.Tensor, torch.Tenso
     else:
         all_paths = batch["path"]
         all_coordinates = torch.stack(batch["coordinates"], dim=1)
-        all_data = batch[data_key]
+        all_data = output
 
     return all_coordinates, all_data, all_paths
 
@@ -74,8 +77,8 @@ class WriterCallback(Callback):
         queue_size: int = 16,
         max_concurrent_queues: int = 16,
         requires_gather: bool = True,
-        data_key: str = "image",
-        writer_class=BasicTileWriter,
+        data_key: str = "prediction",
+        writer_class=DebugTileWriter,
     ):
         # TODO: Test predict
 
@@ -97,16 +100,19 @@ class WriterCallback(Callback):
         self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
         self._cleanup_thread.start()
 
-    def _on_epoch_start(self, trainer: "pl.Trainer", total_dataset: ConcatDataset) -> None:
+        self._total_dataset: ConcatDataset | None = None
+        self._dataset_index = 0
+
+    def _on_epoch_start(self, trainer: "pl.Trainer") -> None:
         if self._dataset_sizes != {}:
             return
 
         current_dataset: TiledWsiDataset
 
-        for current_dataset in total_dataset.datasets:
+        for current_dataset in self._total_dataset.datasets:
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
 
-        if trainer.global_rank != 0 and self._requires_gather:
+        if trainer.global_rank == 0 and self._requires_gather:
             self._cleanup_thread = Thread(target=self._monitor_and_cleanup)
             self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
             self._cleanup_thread.start()
@@ -115,13 +121,16 @@ class WriterCallback(Callback):
         logger.info("Validation epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
-        return self._on_epoch_start(trainer, trainer.datamodule.validate_dataset)
+
+        self._total_dataset = trainer.datamodule.validate_dataset
+        return self._on_epoch_start(trainer)
 
     def on_predict_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         logger.info("Prediction epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
-        return self._on_epoch_start(trainer, trainer.predict_dataloaders.dataset)
+        self._total_dataset = trainer.predict_dataloaders.dataset
+        return self._on_epoch_start(trainer)
 
     def on_validation_batch_end(
         self,
@@ -134,7 +143,7 @@ class WriterCallback(Callback):
     ) -> None:
 
         if trainer.world_size > 1 and self._requires_gather:  # Check if running in a distributed environment
-            coordinates, data, paths = _gather_batch(batch, self._data_key)
+            coordinates, data, paths = _gather_batch(batch, outputs[self._data_key])
         else:
             coordinates = torch.stack(batch["coordinates"], dim=1)
             data = batch[self._data_key]
@@ -159,6 +168,7 @@ class WriterCallback(Callback):
             if not self._tile_counter.get(curr_filename):
                 self._tile_counter[curr_filename] = 0
             self._tile_counter[curr_filename] += data.shape[0]
+            self._dataset_index += data.shape[0]
 
             last_batch = False
             if self._tile_counter[curr_filename] == self._dataset_sizes[curr_filename]:
@@ -166,10 +176,20 @@ class WriterCallback(Callback):
                 self._tile_counter[curr_filename] = 0
 
             self._process_batch(
-                coordinates.cpu().numpy(), data.cpu().numpy(), filename=curr_filename, last_batch=last_batch
+                coordinates.cpu().numpy(),
+                data.cpu().numpy(),
+                pl_module=pl_module,
+                stage="validate",
+                filename=curr_filename,
+                last_batch=last_batch,
             )
 
-    def _process_batch(self, coordinates: torch.Tensor, batch: torch.Tensor, filename: str, last_batch: bool):
+    def build_writer_class(self, pl_module, stage, filename):
+        return DebugTileWriter(filename)
+
+    def _process_batch(
+        self, coordinates: torch.Tensor, batch: torch.Tensor, pl_module, stage, filename: str, last_batch: bool
+    ):
         if filename not in self._queues:
             logger.debug(f"{filename} not in queue")
             self._semaphore.acquire()
@@ -177,7 +197,8 @@ class WriterCallback(Callback):
             completion_flag = Value(ctypes.c_int, 0)  # For process completion signaling
             self._queues[filename] = Queue(maxsize=self._queue_size)
             process = Process(
-                target=partial(_writer_process, writer=self._writer_class), args=(self._queues[filename], filename, self._semaphore, completion_flag)
+                target=_writer_process,
+                args=(self, self._queues[filename], filename, self._semaphore, completion_flag, stage, pl_module),
             )
             self._processes[filename] = process
             self._completion_flags[filename] = completion_flag
@@ -205,6 +226,7 @@ class WriterCallback(Callback):
             time.sleep(0.5)  # Short sleep to yield control and reduce CPU usage
 
     def _epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        self._dataset_index = 0
         while True:
             if self._queues == {}:
                 break
@@ -240,7 +262,7 @@ def _queue_generator(queue: Queue):
         yield coordinates, item
 
 
-def _writer_process(queue: Queue, filename: str, semaphore: Semaphore, completion_flag: Value, writer):
+def _writer_process(callback_instance, queue: Queue, filename: str, semaphore: Semaphore, completion_flag: Value, stage: str, pl_module: "pl.LightningModule"):
     """
     Process to consume a queue and write to a writer.
 
@@ -260,8 +282,8 @@ def _writer_process(queue: Queue, filename: str, semaphore: Semaphore, completio
     None
     """
     try:
-        _writer = writer(filename)
-        _writer.consume(_queue_generator(queue))
+        writer = callback_instance.build_writer_class(pl_module, stage, filename)
+        writer.consume(_queue_generator(queue))
         logger.debug(f"Stopped writing for {filename}")
     except Exception as e:
         logger.exception(f"Error in writer_process for {filename}: {e}")
