@@ -92,10 +92,7 @@ class WriterCallback(Callback):
 
         self._semaphore = Semaphore(max_concurrent_queues)
 
-        # Start a thread to monitor for process completion and cleanup
-        self._cleanup_thread: Thread | None = Thread(target=self._monitor_and_cleanup)
-        self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
-        self._cleanup_thread.start()
+        self._cleanup_thread: Thread | None = None
 
     def _on_epoch_start(self, trainer: "pl.Trainer", total_dataset: ConcatDataset) -> None:
         if self._dataset_sizes != {}:
