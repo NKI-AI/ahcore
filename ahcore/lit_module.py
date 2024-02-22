@@ -5,6 +5,7 @@ This module contains the core Lightning module for ahcore. This module is respon
 """
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import pytorch_lightning as pl
@@ -14,6 +15,7 @@ from torch import nn
 
 from ahcore.exceptions import ConfigurationError
 from ahcore.metrics import MetricFactory, WSIMetricFactory
+from ahcore.models.jit_model import AhcoreJitModel
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
@@ -35,7 +37,7 @@ class AhCoreLightningModule(pl.LightningModule):
 
     def __init__(
         self,
-        model: nn.Module,
+        model: nn.Module | AhcoreJitModel,
         optimizer: torch.optim.Optimizer,  # noqa
         data_description: DataDescription,
         loss: nn.Module | None = None,
@@ -55,9 +57,14 @@ class AhCoreLightningModule(pl.LightningModule):
                 "loss",
             ],
         )  # TODO: we should send the hyperparams to the logger elsewhere
-
-        self._num_classes = data_description.num_classes
-        self._model = model(out_channels=self._num_classes)
+        if isinstance(model, AhcoreJitModel):
+            self._model = model
+        elif isinstance(model, functools.partial):
+            try:
+                self._num_classes = data_description.num_classes
+            except AttributeError:
+                raise AttributeError("num_classes must be specified in data_description")
+            self._model = model(out_channels=self._num_classes)
         self._augmentations = augmentations
 
         self._loss = loss

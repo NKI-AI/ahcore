@@ -28,7 +28,7 @@ defaults:
   - optional local: segmentation.yaml
 
 # checkpoint path
-ckpt_path: ???
+ckpt_path: null
 
 # task name -- used for output directory path (or name it to a specific experiment if you'd like)
 task_name: "inference"

@@ -1,0 +1,9 @@
+_target_: ahcore.lit_module.AhCoreLightningModule
+
+model:
+  _target_: ahcore.models.jit_model.AhcoreJitModel.from_jit_path
+  jit_path: ???
+
+optimizer: null
+
+scheduler: null
