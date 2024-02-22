@@ -34,6 +34,7 @@ write_h5_callback:
   max_concurrent_writers: 4
   normalization_type: "logits" # Make sure to use the appropriate normalization for your use case.
   precision: "float32" # Make sure to use the appropriate precision for your use case.
+  writer_type: "image" # Make sure to use the appropriate writer type for your use case.
 
 write_tiff_callback:
   max_concurrent_writers: 4

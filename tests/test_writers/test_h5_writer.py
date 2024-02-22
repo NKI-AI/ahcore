@@ -68,54 +68,45 @@ def test_h5_file_image_writer(temp_h5_file: Path) -> None:
         assert np.allclose(h5file["coordinates"], dummy_coordinates)
 
 
-def test_h5_tile_feature_writer(temp_h5_file: Path) -> None:
-    """
-    This test the H5TileFeatureWriter class for the following case.
+# TODO: Make parameterized tests and think of edge cases.
+# TODO: Add a case where there are no features to write.
 
-    Assume that we have an image of size (1024, 1024) tiled up in a batch of 4 tiles of size (512, 512).
-    The feature dimension is 1024. So, we have 4 feature vectors of size 1024 which need to be written to the H5 file.
-    We retain their spatial orientation in correspondence with the spatial orientation of the tiles.
+@pytest.mark.parametrize("num_samples, feature_size, grid_size", [
+    (1, 786, (1, 1)),   # Single sample with typical feature size
+    (25, 786, (5, 5)),  # Multiple samples with specific grid size
+    (1, 0, (1, 1)),     # Edge case: Empty feature
+])
+def test_h5_tile_feature_writer(temp_h5_file: Path, num_samples: int, feature_size: int, grid_size: tuple[int, int]) -> None:
+    writer = H5TileFeatureWriter(filename=temp_h5_file, size=grid_size, num_samples=num_samples)
 
-    The features should be written in the following order:
-    1. Top left tile   -> Top left feature
-    2. Top right tile  -> Top right feature
-    3. Bottom left tile -> Bottom left feature
-    4. Bottom right tile -> Bottom right feature
+    # Generate deterministic coordinates based on grid size
+    dummy_coordinates = np.array([[x, y] for x in range(grid_size[0]) for y in range(grid_size[1])])
+    if feature_size > 0:
+        dummy_features = np.random.rand(num_samples, feature_size).astype(np.float32)
+    else:
+        # For the case with no features, create an array with the correct shape but no content
+        dummy_features = np.empty((num_samples, 0), dtype=np.float32)
+    tile_index = np.arange(num_samples)
 
-    Parameters
-    ----------
-    temp_h5_file : Path
+    # Define a generator for the test
+    def feature_generator() -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+        for i in range(num_samples):
+            yield dummy_coordinates[i:i + 1], dummy_features[i:i + 1] if feature_size > 0 else np.array([[]], dtype=np.float32)
 
-    Returns
-    -------
-    None
-    """
-    size = (2, 2)
-    feature_dimension = 1024
-    num_features = 4
+    # Act: Write data to the H5 file
+    writer.consume(feature_generator())
 
-    writer = H5TileFeatureWriter(filename=temp_h5_file, size=size)
-
-    coords = np.stack([[0, 0], [0, 1], [1, 0], [1, 1]], 0)
-    features = np.random.rand(num_features, feature_dimension)
-
-    def feature_generator(
-        coords: GenericArray, features: GenericArray
-    ) -> Generator[tuple[GenericArray, GenericArray], None, None]:
-        for coord, feature in zip(coords, features):
-            yield coord, feature
-
-    # Write data to the H5 file
-    writer.consume_features(feature_generator(coords, features))
-
-    # Perform assertions
+    # Assert
     with h5py.File(temp_h5_file, "r") as h5file:
-        assert "tile_feature_vectors" in h5file
-        assert h5file["tile_feature_vectors"].shape == (size[0], size[1], feature_dimension)
-        assert np.allclose(h5file["tile_feature_vectors"][0, 0, :], features[0])
-        assert np.allclose(h5file["tile_feature_vectors"][0, 1, :], features[1])
-        assert np.allclose(h5file["tile_feature_vectors"][1, 0, :], features[2])
-        assert np.allclose(h5file["tile_feature_vectors"][1, 1, :], features[3])
+        if num_samples > 0 and feature_size > 0:
+            assert np.allclose(h5file["data"][:], dummy_features), "Feature data does not match expected values."
+            assert np.allclose(h5file["coordinates"][:], dummy_coordinates), "Coordinates data does not match expected values."
+            assert np.all(np.diff(h5file["tile_indices"][:]) >= 0), "Tile indices are not in ascending order."
+        else:
+            # Assert that the dataset is empty or has the expected shape with no data
+            assert "data" not in h5file or h5file["data"].shape[0] == 0, "Data dataset should be empty or not exist."
+            assert "coordinates" not in h5file or h5file["coordinates"].shape[0] == 0, "Coordinates dataset should be empty or not exist."
+            assert "tile_indices" not in h5file or h5file["tile_indices"].shape[0] == 0, "Tile indices dataset should be empty or not exist."
 
 
 # Run the tests

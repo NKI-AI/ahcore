@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 
 
 class StitchingMode(str, Enum):
+    NONE = "none"
     CROP = "crop"
     AVERAGE = "average"
     MAXIMUM = "maximum"
@@ -119,7 +120,7 @@ class H5FileImageReader:
             self._tile_size[1] - self._tile_overlap[1],
         )
 
-        if self._metadata["has_color_profile"]:
+        if self._metadata.get("has_color_profile", None):
             _color_profile = self._h5file["color_profile"][()].tobytes()
             raise NotImplementedError(f"Color profiles are not yet implemented, and are present in {self._filename}.")
 
@@ -269,7 +270,12 @@ class H5FileImageReader:
                 img_start_x = max(0, start_x)
                 img_end_x = min(w, end_x)
 
-                if self._stitching_mode == StitchingMode.CROP:
+                if self._stitching_mode == StitchingMode.NONE:
+                    # This will only happen when we are reading features.
+                    tile = tile.reshape((self._num_channels, 1, 1))
+                    stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = tile
+
+                elif self._stitching_mode == StitchingMode.CROP:
                     crop_start_y = img_start_y - start_y
                     crop_end_y = img_end_y - start_y
                     crop_start_x = img_start_x - start_x
@@ -299,7 +305,7 @@ class H5FileImageReader:
         if self._stitching_mode == StitchingMode.AVERAGE:
             stitched_image = (stitched_image / divisor_array[..., np.newaxis]).astype(float)
 
-        if self._precision != str(InferencePrecision.FP32):
+        if self._precision is not None and self._precision != str(InferencePrecision.FP32):
             # Always convert to float32.
             stitched_image = stitched_image / self._multiplier
             stitched_image = stitched_image.astype(np.float32)
