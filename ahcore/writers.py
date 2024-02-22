@@ -46,45 +46,135 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
     return image
 
 
+def _find_coordinate_in_grid(
+    grid: Grid, grid_counter: int, coordinates: GenericArray, current_index: int, index_dataset: h5py.Dataset
+) -> int:
+    # We take a coordinate, and step through the grid until we find it.
+    # Note that this assumes that the coordinates come in C-order, so we will always hit it
+    for idx, curr_coordinates in enumerate(coordinates):
+        # As long as our current coordinates are not equal to the grid coordinates, we make a step
+        while not np.all(curr_coordinates == grid[grid_counter]):
+            grid_counter += 1
+        # If we find it, we set it to the index, so we can find it later on
+        # This can be tested by comparing the grid evaluated at a grid index with the tile index
+        # mapped to its coordinates
+        index_dataset[grid_counter] = current_index + idx
+        grid_counter += 1
+    return grid_counter
+
+
 class H5TileFeatureWriter:
     """Feature writer that writes tile-by-tile feature representation to h5."""
 
-    def __init__(self, filename: Path, size: tuple[int, int]) -> None:
+    def __init__(
+        self,
+        filename: Path,
+        size: tuple[int, int],
+        num_samples: int,
+        grid: Grid | None = None,
+        precision: InferencePrecision | None = None,
+    ) -> None:
         self._filename = filename
-        # The size corresponds to number of tiles along each coordinate axis.
         self._size = size
-        self._tile_feature_dataset: Optional[h5py.Dataset] = None
-        self._feature_dim: Optional[int] = None
+        self._feature_length: Optional[tuple[int, ...]] = None
         self._logger = logger
+        self._num_samples: int = num_samples
+        self._grid: Grid = grid
+        self._grid_offset: npt.NDArray[np.int_] | None = None
+        self._current_index: int = 0
+        self._coordinates_dataset: Optional[h5py.Dataset] = None
+        self._tile_feature_indices: Optional[h5py.Dataset] = None
+        self._tile_feature_dataset: Optional[h5py.Dataset] = None
+        # A single feature vector represents a tile.
+        # So, the size of a tile in feature space is (1,1) with no overlap.
+        self._tile_size: tuple[int, int] = (1, 1)
+        self._tile_overlap: tuple[int, int] = (0, 0)
+        self._precision = precision
 
-    def init_writer(self, first_features: GenericArray, h5file: h5py.File) -> None:
-        self._feature_dim = first_features.shape[0]
-        self._tile_feature_dataset = h5file.create_dataset(
-            "tile_feature_vectors",
-            shape=(self._size[0], self._size[1], self._feature_dim),
-            dtype=first_features.dtype,
+    def init_writer(self, first_coordinates: GenericArray, first_features: GenericArray, h5file: h5py.File) -> None:
+        # The grid can be smaller than the actual image when slide bounds are given.
+        # As the grid should cover the image, the offset is given by the first tile.
+        self._feature_length = first_features.shape[-1:]
+        self._coordinates_dataset = h5file.create_dataset(
+            "coordinates",
+            shape=(self._num_samples, 2),
+            dtype=int,
             compression="gzip",
-            chunks=(1, 1, self._feature_dim),  # Chunking for each tile feature vector
         )
 
-    def consume_features(
+        if self._grid is None:
+            self._grid_offset = np.array(first_coordinates[0])
+            self._grid = Grid.from_tiling(
+                self._grid_offset,
+                size=self._size,
+                tile_size=self._tile_size,
+                tile_overlap=self._tile_overlap,
+                mode=TilingMode.overflow,
+                order=GridOrder.C,
+            )
+
+        self._tile_feature_indices = h5file.create_dataset(
+            "tile_indices",
+            shape=(self._num_samples,),
+            dtype=int,
+            compression="gzip",
+        )
+        # Initialize to -1, which is the default value
+        self._tile_feature_indices[:] = -1
+
+        self._tile_feature_dataset = h5file.create_dataset(
+            "data",
+            shape=(self._num_samples,) + self._feature_length,
+            dtype=first_features.dtype,
+            compression="gzip",
+            chunks=(1,) + self._feature_length,
+        )
+
+        metadata = {
+            "mpp": -1,  # Features have no mpp. So, we set it to -1.
+            "size": (int(self._size[0]), int(self._size[1])),
+            "num_channels": self._feature_length[0],
+            "tile_size": tuple(self._tile_size),
+            "tile_overlap": tuple(self._tile_overlap),
+            "num_tiles": self._num_samples,
+            "grid_order": "C",
+            "tiling_mode": "overflow",
+            "dtype": str(first_features.dtype),
+            "precision": self._precision.value if self._precision else str(InferencePrecision.FP32),
+            "multiplier": self._precision.get_multiplier()
+            if self._precision
+            else InferencePrecision.FP32.get_multiplier(),
+        }
+
+        metadata_json = json.dumps(metadata)
+        h5file.attrs["metadata"] = metadata_json
+
+    def consume(
         self,
         feature_generator: Generator[tuple[GenericArray, GenericArray], None, None],
         connection_to_parent: Optional[Connection] = None,
     ) -> None:
         """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
+        grid_counter = 0
         try:
             with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
                 first_coordinates, first_features = next(feature_generator)
-                self.init_writer(first_features, h5file)
+                self.init_writer(first_coordinates, first_features, h5file)
 
                 assert self._tile_feature_dataset, "Tile feature dataset is not initialized"
+                assert self._grid, "Grid not initialized"
+                assert self._coordinates_dataset, "Coordinates dataset is not initialized"
 
                 _feature_generator = self._feature_generator(first_coordinates, first_features, feature_generator)
 
-                for tile_coordinates, feature in _feature_generator:
-                    # The spatial organisation of feature vectors corresponds to the spatial organisation of the tiles.
-                    self._tile_feature_dataset[tile_coordinates[0], tile_coordinates[1], :] = feature
+                for coordinates, batch in _feature_generator:
+                    batch_size = batch.shape[0]
+                    grid_counter = _find_coordinate_in_grid(
+                        self._grid, grid_counter, coordinates, self._current_index, self._tile_feature_indices
+                    )
+                    self._tile_feature_dataset[self._current_index : self._current_index + batch_size] = batch
+                    self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
+                    self._current_index += batch_size
 
         except Exception as e:
             self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
@@ -309,15 +399,9 @@ class H5FileImageWriter:
                     batch = self.adjust_batch_precision(batch)
                     # We take a coordinate, and step through the grid until we find it.
                     # Note that this assumes that the coordinates come in C-order, so we will always hit it
-                    for idx, curr_coordinates in enumerate(coordinates):
-                        # As long as our current coordinates are not equal to the grid coordinates, we make a step
-                        while not np.all(curr_coordinates == self._grid[grid_counter]):
-                            grid_counter += 1
-                        # If we find it, we set it to the index, so we can find it later on
-                        # This can be tested by comparing the grid evaluated at a grid index with the tile index
-                        # mapped to its coordinates
-                        self._tile_indices[grid_counter] = self._current_index + idx
-                        grid_counter += 1
+                    grid_counter = _find_coordinate_in_grid(
+                        self._grid, grid_counter, coordinates, self._current_index, self._tile_indices
+                    )
 
                     batch_size = batch.shape[0]
                     self._data[self._current_index : self._current_index + batch_size] = batch
