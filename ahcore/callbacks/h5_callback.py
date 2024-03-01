@@ -54,6 +54,7 @@ class WriteH5Callback(WriterCallback):
         return self._dump_dir
 
     def build_writer_class(self, pl_module, stage, filename):
+        logger.info("Building writer class for stage %s (filename=%s)", stage, filename)
         output_filename = _get_h5_output_filename(
             self.dump_dir,
             filename,
@@ -70,8 +71,9 @@ class WriteH5Callback(WriterCallback):
         current_dataset: TiledWsiDataset
         current_dataset, _ = self._total_dataset.index_to_dataset(self._dataset_index)  # type: ignore
         slide_image = current_dataset.slide_image
+        num_samples = len(current_dataset)
 
-        logger.info("Dataset length: %s for filename %s", len(current_dataset), filename)
+        logger.info("Dataset length: %s for filename %s", num_samples, filename)
 
         data_description: DataDescription = pl_module.data_description  # type: ignore
         inference_grid: GridDescription = data_description.inference_grid
@@ -81,7 +83,6 @@ class WriteH5Callback(WriterCallback):
             mpp = slide_image.mpp
 
         _, size = slide_image.get_scaled_slide_bounds(slide_image.get_scaling(mpp))
-        num_samples = len(current_dataset)
 
         # Let's get the data_description, so we can figure out the tile size and things like that
         tile_size = inference_grid.tile_size
@@ -89,6 +90,7 @@ class WriteH5Callback(WriterCallback):
 
         if stage == "validate":
             grid = current_dataset._grids[0][0]  # pylint: disable=protected-access
+            logger.info("Grid length in validation mode: %s", len(grid))
         else:
             grid = None  # During inference we don't have a grid around ROI
         logger.info("Initializing H5FileImageWriter for %s writing to %s", filename, output_filename)

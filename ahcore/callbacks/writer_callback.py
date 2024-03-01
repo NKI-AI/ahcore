@@ -146,7 +146,7 @@ class WriterCallback(Callback):
             coordinates, data, paths = _gather_batch(batch, outputs[self._data_key])
         else:
             coordinates = torch.stack(batch["coordinates"], dim=1)
-            data = batch[self._data_key]
+            data = outputs[self._data_key]
             paths = batch["path"]
 
         # You need to put this here *after* the gathering, otherwise it will hang!
