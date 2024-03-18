@@ -146,14 +146,29 @@ class DlupDataModule(pl.LightningDataModule):
         if not data_iterator:
             return None
 
-        def construct_dataset() -> ConcatDataset[DlupDatasetSample]:
+        def construct_dataset() -> tuple[ConcatDataset[DlupDatasetSample], torch.Tensor | None]:
             datasets = []
-            for _, ds in enumerate(data_iterator):
+            weights: list = []
+            class_weights = (
+                torch.Tensor(self.data_description.class_weights)
+                if self.data_description.class_weights is not None
+                else None
+            )
+            for ds in data_iterator:
                 datasets.append(ds)
-            return ConcatDataset(datasets)
+                if stage == "fit" and class_weights is not None:
+                    # Calculate weight per sample
+                    weight_matrix: Optional[np.ndarray] = ds.tile_weight_matrix  # type: ignore
+                    assert weight_matrix is not None
+                    sample_weights = torch.Tensor(weight_matrix) * class_weights
+                    weights.append(sample_weights.sum(dim=1))
+
+            return ConcatDataset(datasets), (
+                torch.cat(weights) if stage == "fit" and class_weights is not None else None
+            )
 
         self._logger.info("Constructing dataset for stage %s (this can take a while)", stage)
-        dataset = self._load_from_cache(construct_dataset, stage=stage)
+        dataset, weights = self._load_from_cache(construct_dataset, stage=stage)
         setattr(self, f"{stage}_dataset", dataset)
 
         lengths = np.asarray([len(ds) for ds in dataset.datasets])
@@ -167,8 +182,12 @@ class DlupDataModule(pl.LightningDataModule):
 
         batch_sampler: Sampler[list[int]]
         if stage == "fit":
+            if weights is not None:
+                sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=len(dataset), replacement=True)
+            else:
+                sampler = torch.utils.data.RandomSampler(data_source=dataset, replacement=True)  # type: ignore
             batch_sampler = torch.utils.data.BatchSampler(
-                torch.utils.data.RandomSampler(data_source=dataset, replacement=True),
+                sampler=sampler,
                 batch_size=batch_size,
                 drop_last=True,
             )
