@@ -32,6 +32,7 @@ class DlupDataModule(pl.LightningDataModule):
         num_workers: int = 16,
         persistent_workers: bool = False,
         pin_memory: bool = False,
+        prefetch_factor: Optional[int] = None
     ) -> None:
         """
         Construct a DataModule based on a manifest.
@@ -69,6 +70,7 @@ class DlupDataModule(pl.LightningDataModule):
                 "num_workers",
                 "persistent_workers",
                 "pin_memory",
+                "prefetch_factor"
             ],
         )  # save all relevant hyperparams
 
@@ -95,6 +97,7 @@ class DlupDataModule(pl.LightningDataModule):
         self._num_workers = num_workers
         self._persistent_workers = persistent_workers
         self._pin_memory = pin_memory
+        self._prefetch_factor = 2 if num_workers > 0 and prefetch_factor is None else prefetch_factor
 
         self._fit_data_iterator: Iterator[_DlupDataset] | None = None
         self._validate_data_iterator: Iterator[_DlupDataset] | None = None
@@ -189,6 +192,7 @@ class DlupDataModule(pl.LightningDataModule):
             batch_sampler=batch_sampler,
             persistent_workers=self._persistent_workers,
             pin_memory=self._pin_memory,
+            prefetch_factor=self._prefetch_factor
         )
 
     def _load_from_cache(self, func: Callable[[], Any], stage: str, *args: Any, **kwargs: Any) -> Any:
