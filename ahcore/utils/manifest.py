@@ -344,6 +344,7 @@ def datasets_from_data_description(
             labels = None if patient_labels is image_labels is None else (patient_labels or []) + (image_labels or [])
             rois = _get_rois(mask, data_description, stage)
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
+            create_annotation_weights = True if stage == "fit" and data_description.class_weights is not None else False
 
             dataset = TiledWsiDataset.from_standard_tiling(
                 path=image_root / image.filename,
@@ -364,6 +365,7 @@ def datasets_from_data_description(
                 overwrite_mpp=(image.mpp, image.mpp),
                 limit_bounds=True,
                 apply_color_profile=data_description.apply_color_profile,
+                create_annotation_weights=create_annotation_weights,
             )
 
             yield dataset

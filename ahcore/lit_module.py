@@ -32,6 +32,7 @@ class AhCoreLightningModule(pl.LightningModule):
         "mpp",
         "path",
         "region_index",
+        "region_size",
         "grid_local_coordinates",
         "grid_index",
     ]

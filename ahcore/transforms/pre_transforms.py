@@ -265,10 +265,10 @@ class ImageToTensor:
     """
 
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
-        sample["image"] = F.pil_to_tensor(sample["image"].convert("RGB")).float()
-
-        if sample["image"].sum() == 0:
-            raise RuntimeError(f"Empty tile for {sample['path']} at {sample['coordinates']}")
+        if sample["image"] is not None:
+            sample["image"] = F.pil_to_tensor(sample["image"].convert("RGB")).float()
+            if sample["image"].sum() == 0:
+                raise RuntimeError(f"Empty tile for {sample['path']} at {sample['coordinates']}")
 
         # annotation_data is added by the ConvertPolygonToMask transform.
         if "annotation_data" not in sample:

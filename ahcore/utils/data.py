@@ -97,3 +97,5 @@ class DataDescription(BaseModel):
     use_points: bool = False
     use_boxes: bool = False
     point_radius_microns: Optional[float] = None
+
+    class_weights: Optional[list[float]] = None
