@@ -5,6 +5,7 @@ Reader classes.
 
 """
 import errno
+import io
 import json
 import math
 import os
@@ -15,6 +16,7 @@ from typing import Literal, Optional, Type, cast
 
 import h5py
 import numpy as np
+import PIL
 from scipy.ndimage import map_coordinates
 
 from ahcore.utils.io import get_logger
@@ -50,6 +52,9 @@ class H5FileImageReader:
         self._num_channels = None
         self._dtype = None
         self._stride = None
+        self._precision = None
+        self._multiplier = None
+        self._is_binary = None
 
     @classmethod
     def from_file_path(cls, filename: Path, stitching_mode: StitchingMode = StitchingMode.CROP) -> "H5FileImageReader":
@@ -114,6 +119,7 @@ class H5FileImageReader:
         self._dtype = self._metadata["dtype"]
         self._precision = self._metadata["precision"]
         self._multiplier = self._metadata["multiplier"]
+        self._is_binary = self._metadata["is_binary"]
         self._stride = (
             self._tile_size[0] - self._tile_overlap[0],
             self._tile_size[1] - self._tile_overlap[1],
@@ -137,6 +143,13 @@ class H5FileImageReader:
 
         self.__empty_tile = np.zeros((self._num_channels, *self._tile_size), dtype=self._dtype)
         return self.__empty_tile
+
+    def _decompress_data(self, tile: GenericArray) -> GenericArray:
+        if self._is_binary:
+            with PIL.Image.open(io.BytesIO(tile)) as img:
+                return np.array(img).transpose(2, 0, 1)
+        else:
+            return tile
 
     def read_region(
         self,
@@ -257,7 +270,7 @@ class H5FileImageReader:
                 tile = (
                     self._empty_tile()
                     if tile_index_in_image_dataset == -1
-                    else image_dataset[tile_index_in_image_dataset]
+                    else self._decompress_data(image_dataset[tile_index_in_image_dataset])
                 )
                 start_y = i * self._stride[1] - y
                 end_y = start_y + self._tile_size[1]
@@ -319,3 +332,4 @@ class H5FileImageReader:
     ) -> Literal[False]:
         self.close()
         return False
+        
