@@ -290,7 +290,7 @@ def _writer_process(callback_instance, queue: Queue, filename: str, semaphore: S
     try:
         writer = callback_instance.build_writer_class(pl_module, stage, filename)
         writer.consume(_queue_generator(queue))
-        logger.info(f"Stopped writing for {filename}")
+        logger.debug(f"Stopped writing for {filename}")
     except Exception as e:
         logger.exception(f"Error in writer_process for {filename}: {e}")
     finally:

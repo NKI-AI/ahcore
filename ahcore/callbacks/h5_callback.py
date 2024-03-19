@@ -94,7 +94,7 @@ class WriteH5Callback(WriterCallback):
             logger.debug("Grid length in validation mode: %s", len(grid))
         else:
             grid = None  # During inference we don't have a grid around ROI
-        logger.info("Initializing H5FileImageWriter for %s writing to %s", filename, output_filename)
+        logger.debug("Initializing H5FileImageWriter for %s writing to %s", filename, output_filename)
         writer = H5FileImageWriter(
             output_filename,
             size=size,
