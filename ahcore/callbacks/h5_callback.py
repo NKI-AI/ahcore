@@ -74,7 +74,7 @@ class WriteH5Callback(WriterCallback):
         slide_image = current_dataset.slide_image
         num_samples = len(current_dataset)
 
-        logger.info("Dataset length: %s for filename %s", num_samples, filename)
+        logger.debug("Dataset length: %s for filename %s", num_samples, filename)
 
         data_description: DataDescription = pl_module.data_description
         inference_grid: GridDescription = data_description.inference_grid
@@ -91,7 +91,7 @@ class WriteH5Callback(WriterCallback):
 
         if stage == "validate":
             grid = current_dataset._grids[0][0]  # pylint: disable=protected-access
-            logger.info("Grid length in validation mode: %s", len(grid))
+            logger.debug("Grid length in validation mode: %s", len(grid))
         else:
             grid = None  # During inference we don't have a grid around ROI
         logger.info("Initializing H5FileImageWriter for %s writing to %s", filename, output_filename)
