@@ -86,6 +86,8 @@ class H5FileImageWriter:
         self._logger = logger  # maybe not the best way, think about it
         self._logger.debug("Writing h5 to %s", self._filename)
 
+        self._tiles_seen = 0
+
     def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
         """Initializes the image_dataset based on the first tile."""
         if self._is_compressed_image:
@@ -240,18 +242,23 @@ class H5FileImageWriter:
                 if self._progress:
                     batch_generator = self._progress(batch_generator, total=self._num_samples)
 
-                for coordinates, batch in batch_generator:
+                for idx, (coordinates, batch) in enumerate(batch_generator):
+                    self._tiles_seen += batch.shape[0]
+                    # self._logger.info("(%s/%s) Writing batch %s with shape %s", self._tiles_seen, len(self._grid), idx, batch.shape)
+                    #
+                    # import time
+                    # time.sleep(1)
                     batch = self.adjust_batch_precision(batch)
                     # We take a coordinate, and step through the grid until we find it.
                     # Note that this assumes that the coordinates come in C-order, so we will always hit it
-                    for idx, curr_coordinates in enumerate(coordinates):
+                    for curr_idx, curr_coordinates in enumerate(coordinates):
                         # As long as our current coordinates are not equal to the grid coordinates, we make a step
                         while not np.all(curr_coordinates == self._grid[grid_counter]):
                             grid_counter += 1
                         # If we find it, we set it to the index, so we can find it later on
                         # This can be tested by comparing the grid evaluated at a grid index with the tile index
                         # mapped to its coordinates
-                        self._tile_indices[grid_counter] = self._current_index + idx
+                        self._tile_indices[grid_counter] = self._current_index + curr_idx
                         grid_counter += 1
 
                     batch_size = batch.shape[0]
@@ -261,6 +268,8 @@ class H5FileImageWriter:
 
         except Exception as e:
             self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
+            import sys
+            sys.exit()
             if connection_to_parent:
                 connection_to_parent.send((False, self._filename, e))  # Send a message to the parent
         else:

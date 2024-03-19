@@ -153,14 +153,19 @@ class WriterCallback(Callback):
         if trainer.global_rank != 0 and self._requires_gather:
             return
 
-        indices = [0] + [i for i in range(len(paths)) if paths[i] != paths[i - 1]] + [len(paths)]
+        indices = [0] + [i for i in range(1, len(paths)) if paths[i] != paths[i - 1]] + [len(paths)]
+
         chunked_batch = [
-            (coordinates[indices[idx] : indices[idx + 1]], data[indices[idx] : indices[idx + 1]])
+            (paths[indices[idx]: indices[idx + 1]], coordinates[indices[idx] : indices[idx + 1]], data[indices[idx] : indices[idx + 1]])
             for idx in range(len(indices) - 1)
         ]
 
-        for i, (coordinates, data) in enumerate(chunked_batch):
-            curr_filename = paths[indices[i]]
+        for i, (paths_chunk, coordinates, data) in enumerate(chunked_batch):
+            # Need this sanity check at this point
+            assert len(set(paths_chunk)) == 1
+            curr_filename = paths_chunk[0]
+
+            # logger.info("Chunked batch %s: %s, %s %s", i, coordinates.shape, data.shape, curr_filename)
             # We need to determine if this is the last batch for the current filename, so we can end the generator
             # there This might strictly not be needed if we can estimate the size of the grid, but it's a good safety
             # measure For instance, if we have multiresolution grids, or anything else that might make the standard grid
@@ -190,6 +195,12 @@ class WriterCallback(Callback):
     def _process_batch(
         self, coordinates: torch.Tensor, batch: torch.Tensor, pl_module, stage, filename: str, last_batch: bool
     ):
+
+        if batch.shape[0] == 0:
+            logger.info("Processing batch for %s. %s %s", filename, batch.shape, coordinates.shape)
+            import sys
+            sys.exit()
+
         if filename not in self._queues:
             logger.debug(f"{filename} not in queue")
             self._semaphore.acquire()
@@ -209,15 +220,16 @@ class WriterCallback(Callback):
             self._queues[filename].put((None, None))
 
     def _cleanup_completed_processes(self):
-        for filename, flag in list(self._completion_flags.items()):
-            if flag.value == 1:  # Process has completed
-                logger.debug(f"{filename} is completed. Clearing.")
-                process = self._processes[filename]
-                process.join()  # Ensure process resources are freed
-                # Cleanup queue and remove references
-                del self._queues[filename]
-                del self._processes[filename]
-                del self._completion_flags[filename]
+        pass
+        # for filename, flag in list(self._completion_flags.items()):
+        #     if flag.value == 1:  # Process has completed
+        #         logger.debug(f"{filename} is completed. Clearing.")
+        #         process = self._processes[filename]
+        #         process.join()  # Ensure process resources are freed
+        #         # Cleanup queue and remove references
+        #         del self._queues[filename]
+        #         del self._processes[filename]
+        #         del self._completion_flags[filename]
 
     def _monitor_and_cleanup(self):
         """Continuously monitor for completed processes and clean them up."""
@@ -284,7 +296,7 @@ def _writer_process(callback_instance, queue: Queue, filename: str, semaphore: S
     try:
         writer = callback_instance.build_writer_class(pl_module, stage, filename)
         writer.consume(_queue_generator(queue))
-        logger.debug(f"Stopped writing for {filename}")
+        logger.info(f"Stopped writing for {filename}")
     except Exception as e:
         logger.exception(f"Error in writer_process for {filename}: {e}")
     finally:
