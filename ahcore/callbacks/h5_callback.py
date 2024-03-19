@@ -40,7 +40,6 @@ class WriteH5Callback(WriterCallback):
         precision : str
             The precision to use for the predictions. One of "float16", "float32" or "uint8".
         """
-        super().__init__()
         self._current_filename = None
         self._dump_dir = Path(dump_dir)
 

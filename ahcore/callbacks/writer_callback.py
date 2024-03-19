@@ -96,9 +96,9 @@ class WriterCallback(Callback):
         self._semaphore = Semaphore(max_concurrent_queues)
 
         # Start a thread to monitor for process completion and cleanup
-        self._cleanup_thread: Thread | None = Thread(target=self._monitor_and_cleanup)
-        self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
-        self._cleanup_thread.start()
+        # self._cleanup_thread: Thread | None = Thread(target=self._monitor_and_cleanup)
+        # self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
+        # self._cleanup_thread.start()
 
         self._total_dataset: ConcatDataset | None = None
         self._dataset_index = 0
@@ -112,10 +112,9 @@ class WriterCallback(Callback):
         for current_dataset in self._total_dataset.datasets:
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
 
-        if trainer.global_rank == 0 and self._requires_gather:
-            self._cleanup_thread = Thread(target=self._monitor_and_cleanup)
-            self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
-            self._cleanup_thread.start()
+        self._cleanup_thread = Thread(target=self._monitor_and_cleanup)
+        self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
+        self._cleanup_thread.start()
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         logger.info("Validation epoch start")
