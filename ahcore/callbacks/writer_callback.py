@@ -196,11 +196,6 @@ class WriterCallback(Callback):
         self, coordinates: torch.Tensor, batch: torch.Tensor, pl_module, stage, filename: str, last_batch: bool
     ):
 
-        if batch.shape[0] == 0:
-            logger.info("Processing batch for %s. %s %s", filename, batch.shape, coordinates.shape)
-            import sys
-            sys.exit()
-
         if filename not in self._queues:
             logger.debug(f"{filename} not in queue")
             self._semaphore.acquire()
@@ -220,16 +215,15 @@ class WriterCallback(Callback):
             self._queues[filename].put((None, None))
 
     def _cleanup_completed_processes(self):
-        pass
-        # for filename, flag in list(self._completion_flags.items()):
-        #     if flag.value == 1:  # Process has completed
-        #         logger.debug(f"{filename} is completed. Clearing.")
-        #         process = self._processes[filename]
-        #         process.join()  # Ensure process resources are freed
-        #         # Cleanup queue and remove references
-        #         del self._queues[filename]
-        #         del self._processes[filename]
-        #         del self._completion_flags[filename]
+        for filename, flag in list(self._completion_flags.items()):
+            if flag.value == 1:  # Process has completed
+                logger.debug(f"{filename} is completed. Clearing.")
+                process = self._processes[filename]
+                process.join()  # Ensure process resources are freed
+                # Cleanup queue and remove references
+                del self._queues[filename]
+                del self._processes[filename]
+                del self._completion_flags[filename]
 
     def _monitor_and_cleanup(self):
         """Continuously monitor for completed processes and clean them up."""
