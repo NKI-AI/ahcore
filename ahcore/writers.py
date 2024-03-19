@@ -133,6 +133,7 @@ class H5FileImageWriter(Writer):
                 mode=TilingMode.overflow,
                 order=GridOrder.C,
             )
+            self._grid = grid
         else:
             grid = self._grid
 

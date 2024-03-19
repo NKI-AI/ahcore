@@ -87,15 +87,16 @@ class WriteTiffCallback(Callback):
     ) -> None:
         assert self.dump_dir, "dump_dir should never be None here."
 
-        filename = Path(batch["path"][0])  # Filenames are constant across the batch.
-        if filename not in self._filenames:
-            output_filename = _get_h5_output_filename(
-                dump_dir=self.dump_dir,
-                input_path=filename,
-                model_name=str(pl_module.name),
-                step=pl_module.global_step,
-            )
-            self._filenames[filename] = output_filename
+        filenames = set([Path(_) for _ in batch["path"]])
+        for filename in filenames:
+            if filename not in self._filenames:
+                output_filename = _get_h5_output_filename(
+                    dump_dir=self.dump_dir,
+                    input_path=filename,
+                    model_name=str(pl_module.name),
+                    step=pl_module.global_step,
+                )
+                self._filenames[filename] = output_filename
 
     def _epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
         assert self.dump_dir, "dump_dir should never be None here."
@@ -175,6 +176,7 @@ def _generator_from_reader(
 
     for sample in validation_dataset:
         region = sample["prediction"]
+        logger.info("Region shape: %s", region.shape)
         yield region if tile_process_function is None else tile_process_function(region)
 
 
