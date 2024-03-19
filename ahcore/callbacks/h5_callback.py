@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 from dlup.data.dataset import TiledWsiDataset
 
 from ahcore.utils.callbacks import _get_h5_output_filename
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import InferencePrecision, NormalizationType
-from ahcore.writers import H5FileImageWriter
+from ahcore.writers import H5FileImageWriter, Writer
 
 from .writer_callback import WriterCallback
 
@@ -53,7 +54,7 @@ class WriteH5Callback(WriterCallback):
     def dump_dir(self) -> Path:
         return self._dump_dir
 
-    def build_writer_class(self, pl_module, stage, filename):
+    def build_writer_class(self, pl_module, stage, filename) -> Writer:
         logger.info("Building writer class for stage %s (filename=%s)", stage, filename)
         output_filename = _get_h5_output_filename(
             self.dump_dir,
@@ -75,7 +76,7 @@ class WriteH5Callback(WriterCallback):
 
         logger.info("Dataset length: %s for filename %s", num_samples, filename)
 
-        data_description: DataDescription = pl_module.data_description  # type: ignore
+        data_description: DataDescription = pl_module.data_description
         inference_grid: GridDescription = data_description.inference_grid
 
         mpp = inference_grid.mpp

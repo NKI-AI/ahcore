@@ -46,7 +46,11 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
     return image
 
 
-class H5FileImageWriter:
+class Writer:
+    pass
+
+
+class H5FileImageWriter(Writer):
     """Image writer that writes tile-by-tile to h5."""
 
     def __init__(

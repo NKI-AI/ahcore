@@ -64,9 +64,9 @@ class WriteTiffCallback(Callback):
         self._model_name = pl_module.name
 
         _callback: Optional[WriteH5Callback] = None
-        for idx, callback in enumerate(trainer.callbacks):  # type: ignore
+        for idx, callback in enumerate(trainer.callbacks):
             if isinstance(callback, WriteH5Callback):
-                _callback = cast(WriteH5Callback, trainer.callbacks[idx])  # type: ignore
+                _callback = cast(WriteH5Callback, trainer.callbacks[idx])
                 break
         if _callback is None:
             raise ValueError("WriteH5Callback required before tiff images can be written using this Callback.")
@@ -155,7 +155,7 @@ class WriteTiffCallback(Callback):
     def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
         self._epoch_end(trainer, pl_module)
 
-    def on_predict_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+    def on_predict_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule, outputs: list[Any]) -> None:
         self._epoch_end(trainer, pl_module)
 
 
