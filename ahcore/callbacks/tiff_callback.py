@@ -31,7 +31,6 @@ class WriteTiffCallback(Callback):
         self._pool = multiprocessing.Pool(max_concurrent_writers)
         self._logger = get_logger(type(self).__name__)
         self._dump_dir: Optional[Path] = None
-        self.__write_h5_callback_index = -1
 
         self._model_name: str | None = None
         self._tile_size = tile_size
@@ -85,6 +84,8 @@ class WriteTiffCallback(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:
+        if trainer.global_rank != 0:
+            return
         assert self.dump_dir, "dump_dir should never be None here."
 
         filenames = set([Path(_) for _ in batch["path"]])
@@ -99,6 +100,8 @@ class WriteTiffCallback(Callback):
                 self._filenames[filename] = output_filename
 
     def _epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        if trainer.global_rank != 0:
+            return
         assert self.dump_dir, "dump_dir should never be None here."
         self._logger.info("Writing TIFF files to %s", self.dump_dir / "outputs" / f"{pl_module.name}")
         results = []
