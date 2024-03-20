@@ -14,6 +14,7 @@ from .writer_callback import WriterCallback
 
 logger = get_logger(__name__)
 
+
 class WriteH5Callback(WriterCallback):
     def __init__(
         self,

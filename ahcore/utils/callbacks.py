@@ -9,6 +9,7 @@ from typing import Any, Iterator, Optional
 
 import numpy as np
 import numpy.typing as npt
+import torch
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
 from dlup.data.transforms import convert_annotations, rename_labels
@@ -227,6 +228,23 @@ def _get_uuid_for_filename(input_path: Path) -> str:
     hash_object = hashlib.sha256(str(input_path).encode())
     hex_dig = hash_object.hexdigest()
     return hex_dig
+
+
+def sort_indices_row_major(coordinates: torch.Tensor) -> torch.Tensor:
+    """
+    Generates indices to sort a tensor of coordinates in row-major order.
+
+    Parameters:
+    - coordinates: A tensor of shape [N, 2], where N is the number of coordinates
+                   and each coordinate is represented by [x, y].
+
+    Returns:
+    - Indices to sort the coordinates in row-major order.
+    """
+    coords_float = coordinates.float()
+    combined = coords_float[:, 1] * coords_float.max(dim=0)[0][0] + coords_float[:, 0]
+    sorted_indices = combined.argsort()
+    return sorted_indices
 
 
 def _get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:

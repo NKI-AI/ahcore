@@ -1,7 +1,7 @@
 import ctypes
 import time
 from functools import partial
-from multiprocessing import Process, Queue, Semaphore, Value
+from multiprocessing import Event, Process, Queue, Semaphore, Value
 from threading import Thread
 from typing import Any
 
@@ -11,6 +11,7 @@ import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
+from ahcore.utils.callbacks import sort_indices_row_major
 from ahcore.utils.io import get_logger
 
 logger = get_logger(__name__)
@@ -68,6 +69,12 @@ def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torc
         all_coordinates = torch.stack(batch["coordinates"], dim=1)
         all_data = output
 
+    # Sort the coordinates in row-major order
+    sorted_indices = sort_indices_row_major(all_coordinates)
+    all_coordinates = all_coordinates[sorted_indices]
+    all_data = all_data[sorted_indices]
+    all_paths = [all_paths[i] for i in sorted_indices]
+
     return all_coordinates, all_data, all_paths
 
 
@@ -94,27 +101,23 @@ class WriterCallback(Callback):
         self._tile_counter: dict[str, int] = {}  # Keeps track of the number of tiles processed for a dataset
 
         self._semaphore = Semaphore(max_concurrent_queues)
-
-        # Start a thread to monitor for process completion and cleanup
-        # self._cleanup_thread: Thread | None = Thread(target=self._monitor_and_cleanup)
-        # self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
-        # self._cleanup_thread.start()
+        self._cleanup_shutdown_event = Event()
 
         self._total_dataset: ConcatDataset | None = None
         self._dataset_index = 0
 
     def _on_epoch_start(self, trainer: "pl.Trainer") -> None:
+        self._cleanup_shutdown_event.clear()
+        self._cleanup_thread = Thread(target=self._monitor_and_cleanup)
+        self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
+        self._cleanup_thread.start()
+
         if self._dataset_sizes != {}:
             return
 
         current_dataset: TiledWsiDataset
-
         for current_dataset in self._total_dataset.datasets:
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
-
-        self._cleanup_thread = Thread(target=self._monitor_and_cleanup)
-        self._cleanup_thread.daemon = True  # Ensure the thread does not prevent the program from exiting
-        self._cleanup_thread.start()
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         logger.info("Validation epoch start")
@@ -131,6 +134,30 @@ class WriterCallback(Callback):
         self._total_dataset = trainer.predict_dataloaders.dataset
         return self._on_epoch_start(trainer)
 
+    def _halt_for_val_or_sanity_limit(self, trainer: "pl.Trainer", batch_idx: int, last_batch: bool) -> bool:
+        """During sanity checking or when the limit_val_batches is not 1, we may need to force the last batch to end.
+        This is because the last batch might not be complete and we get stuck in the writer process."""
+        if trainer.sanity_checking:
+            total_steps = trainer.num_sanity_val_steps
+            is_last_step = batch_idx + 1 == total_steps
+        elif trainer.limit_val_batches != 1:
+            if isinstance(trainer.limit_val_batches, int):
+                total_steps = trainer.limit_val_batches
+            else:
+                total_steps = int(trainer.limit_val_batches * len(trainer.val_dataloaders))
+            is_last_step = batch_idx + 1 == total_steps
+        else:
+            raise ValueError(
+                "This function should only be called during sanity checking or when limit_val_batches is not 1."
+            )
+        if is_last_step:
+            if not last_batch:
+                logger.warning("Forcing last batch for writing -- slide might be incomplete!\n")
+            return True
+        elif last_batch:
+            return True
+        return False
+
     def on_validation_batch_end(
         self,
         trainer: "pl.Trainer",
@@ -140,7 +167,6 @@ class WriterCallback(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:
-
         if trainer.world_size > 1 and self._requires_gather:  # Check if running in a distributed environment
             coordinates, data, paths = _gather_batch(batch, outputs[self._data_key])
         else:
@@ -155,7 +181,11 @@ class WriterCallback(Callback):
         indices = [0] + [i for i in range(1, len(paths)) if paths[i] != paths[i - 1]] + [len(paths)]
 
         chunked_batch = [
-            (paths[indices[idx]: indices[idx + 1]], coordinates[indices[idx] : indices[idx + 1]], data[indices[idx] : indices[idx + 1]])
+            (
+                paths[indices[idx] : indices[idx + 1]],
+                coordinates[indices[idx] : indices[idx + 1]],
+                data[indices[idx] : indices[idx + 1]],
+            )
             for idx in range(len(indices) - 1)
         ]
 
@@ -179,6 +209,9 @@ class WriterCallback(Callback):
                 last_batch = True
                 self._tile_counter[curr_filename] = 0
 
+            if trainer.sanity_checking or trainer.limit_val_batches != 1:
+                last_batch = self._halt_for_val_or_sanity_limit(trainer, batch_idx, last_batch)
+
             self._process_batch(
                 coordinates.cpu().numpy(),
                 data.cpu().numpy(),
@@ -189,12 +222,12 @@ class WriterCallback(Callback):
             )
 
     def build_writer_class(self, pl_module, stage, filename):
+        logger.warning("Building DEBUG writer class for stage %s (filename=%s)", stage, filename)
         return DebugTileWriter(filename)
 
     def _process_batch(
         self, coordinates: torch.Tensor, batch: torch.Tensor, pl_module, stage, filename: str, last_batch: bool
     ):
-
         if filename not in self._queues:
             logger.debug(f"{filename} not in queue")
             self._semaphore.acquire()
@@ -226,7 +259,7 @@ class WriterCallback(Callback):
 
     def _monitor_and_cleanup(self):
         """Continuously monitor for completed processes and clean them up."""
-        while True:
+        while not self._cleanup_shutdown_event.is_set():
             self._cleanup_completed_processes()
             time.sleep(0.5)  # Short sleep to yield control and reduce CPU usage
 
@@ -236,7 +269,8 @@ class WriterCallback(Callback):
             if self._queues == {}:
                 break
             time.sleep(0.1)
-        self._cleanup_thread = None
+        self._cleanup_shutdown_event.set()
+        self._tile_counter = {}
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._epoch_end(trainer, pl_module)
@@ -267,7 +301,15 @@ def _queue_generator(queue: Queue):
         yield coordinates, item
 
 
-def _writer_process(callback_instance, queue: Queue, filename: str, semaphore: Semaphore, completion_flag: Value, stage: str, pl_module: "pl.LightningModule"):
+def _writer_process(
+    callback_instance,
+    queue: Queue,
+    filename: str,
+    semaphore: Semaphore,
+    completion_flag: Value,
+    stage: str,
+    pl_module: "pl.LightningModule",
+):
     """
     Process to consume a queue and write to a writer.
 
