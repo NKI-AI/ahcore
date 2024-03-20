@@ -249,10 +249,6 @@ class H5FileImageWriter(Writer):
 
                 for idx, (coordinates, batch) in enumerate(batch_generator):
                     self._tiles_seen += batch.shape[0]
-                    # self._logger.info("(%s/%s) Writing batch %s with shape %s", self._tiles_seen, len(self._grid), idx, batch.shape)
-                    #
-                    # import time
-                    # time.sleep(1)
                     batch = self.adjust_batch_precision(batch)
                     # We take a coordinate, and step through the grid until we find it.
                     # Note that this assumes that the coordinates come in C-order, so we will always hit it
@@ -273,10 +269,9 @@ class H5FileImageWriter(Writer):
 
         except Exception as e:
             self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
-            import sys
-            sys.exit()
             if connection_to_parent:
                 connection_to_parent.send((False, self._filename, e))  # Send a message to the parent
+
         else:
             # When done writing rename the file.
             self._filename.with_suffix(".h5.partial").rename(self._filename)
