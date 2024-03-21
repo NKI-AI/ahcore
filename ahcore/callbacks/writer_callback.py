@@ -11,7 +11,7 @@ import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
-from ahcore.utils.callbacks import sort_indices_row_major
+from ahcore.utils.callbacks import sort_indices_row_major, sort_paths_and_return_both
 from ahcore.utils.io import get_logger
 
 logger = get_logger(__name__)
@@ -68,12 +68,6 @@ def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torc
         all_paths = batch["path"]
         all_coordinates = torch.stack(batch["coordinates"], dim=1)
         all_data = output
-
-    # Sort the coordinates in row-major order
-    sorted_indices = sort_indices_row_major(all_coordinates)
-    all_coordinates = all_coordinates[sorted_indices]
-    all_data = all_data[sorted_indices]
-    all_paths = [all_paths[i] for i in sorted_indices]
 
     return all_coordinates, all_data, all_paths
 
@@ -178,6 +172,9 @@ class WriterCallback(Callback):
         if trainer.global_rank != 0 and self._requires_gather:
             return
 
+        paths, sorted_indices = sort_paths_and_return_both(paths)
+        coordinates = coordinates[sorted_indices]
+        data = data[sorted_indices]
         indices = [0] + [i for i in range(1, len(paths)) if paths[i] != paths[i - 1]] + [len(paths)]
 
         chunked_batch = [
@@ -211,16 +208,21 @@ class WriterCallback(Callback):
             if trainer.sanity_checking or trainer.limit_val_batches != 1:
                 last_batch = self._halt_for_val_or_sanity_limit(trainer, batch_idx, last_batch)
 
+            coordinates = coordinates.cpu()
+            data = data.cpu()
+            row_major_indices = sort_indices_row_major(coordinates)
+            coordinates = coordinates[row_major_indices].numpy()
+            data = data[row_major_indices].numpy()
+
             self._process_batch(
-                coordinates.cpu().numpy(),
-                data.cpu().numpy(),
+                coordinates,
+                data,
                 pl_module=pl_module,
                 stage="validate",
                 filename=curr_filename,
                 last_batch=last_batch,
             )
             self._dataset_index += data.shape[0]
-
 
     def build_writer_class(self, pl_module, stage, filename):
         logger.warning("Building DEBUG writer class for stage %s (filename=%s)", stage, filename)

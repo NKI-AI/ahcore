@@ -49,7 +49,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         reader : H5FileImageReader
         annotations : WsiAnnotations
         mask : WsiAnnotations
-        region_size : Tuple[int, int]
+        region_size : tuple[int, int]
             The region size to use to split up the image into regions.
         """
         super().__init__()
@@ -97,7 +97,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
 
         Returns
         -------
-        List[Tuple[int, int]]
+        list[tuple[int, int]]
             The list of regions.
         """
         regions = []
@@ -114,7 +114,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
 
         Parameters
         ----------
-        coordinates : Tuple[int, int]
+        coordinates : tuple[int, int]
             The coordinates of the region to check.
 
         Returns
@@ -245,6 +245,27 @@ def sort_indices_row_major(coordinates: torch.Tensor) -> torch.Tensor:
     combined = coords_float[:, 1] * coords_float.max(dim=0)[0][0] + coords_float[:, 0]
     sorted_indices = combined.argsort()
     return sorted_indices
+
+
+def sort_paths_and_return_both(paths: list[str]) -> tuple[list[str], list[int]]:
+    path_indices: dict[str, list[int]] = {}
+    for index, path in enumerate(paths):
+        if path in path_indices:
+            path_indices[path].append(index)
+        else:
+            path_indices[path] = [index]
+
+    sorted_groups: list[tuple[int, str, list[int]]] = sorted(
+        (indices[0], path, indices) for path, indices in path_indices.items()
+    )
+
+    sorted_paths: list[str] = []
+    sorted_indices: list[int] = []
+    for _, path, group_indices in sorted_groups:
+        sorted_paths.extend([path] * len(group_indices))
+        sorted_indices.extend(group_indices)
+
+    return sorted_paths, sorted_indices
 
 
 def _get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:
