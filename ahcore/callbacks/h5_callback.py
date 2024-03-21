@@ -44,7 +44,6 @@ class WriteH5Callback(WriterCallback):
         self._current_filename = None
         self._dump_dir = Path(dump_dir)
 
-        self._dataset_index = 0
         self._normalization_type: NormalizationType = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)
 
@@ -55,6 +54,8 @@ class WriteH5Callback(WriterCallback):
             normalization_type=normalization_type,
             precision=precision,
         )
+
+        self._dataset_index = 0
 
     @property
     def dump_dir(self) -> Path:
@@ -75,6 +76,7 @@ class WriteH5Callback(WriterCallback):
             file.write(f"{filename},{output_filename}\n")
 
         current_dataset: TiledWsiDataset
+        logger.info("Trying to get dataset index %s of dataset with %s elements", self._dataset_index, len(self._total_dataset))
         current_dataset, _ = self._total_dataset.index_to_dataset(self._dataset_index)  # type: ignore
         slide_image = current_dataset.slide_image
         num_samples = len(current_dataset)

@@ -1,5 +1,6 @@
 import abc
 import ctypes
+import pathlib
 import time
 from multiprocessing import Event, Process, Queue, Semaphore, Value
 from threading import Thread
@@ -13,7 +14,7 @@ from pytorch_lightning import Callback
 
 from ahcore.utils.callbacks import sort_indices_row_major, sort_paths_and_return_both
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import GenericArray, InferencePrecision, NormalizationType
+from ahcore.utils.types import InferencePrecision, NormalizationType
 
 logger = get_logger(__name__)
 
@@ -118,7 +119,8 @@ class WriterCallback(abc.ABC, Callback):
         self._total_dataset = trainer.predict_dataloaders.dataset
         return self._on_epoch_start(trainer)
 
-    def _halt_for_val_or_sanity_limit(self, trainer: "pl.Trainer", batch_idx: int, last_batch: bool) -> bool:
+    @staticmethod
+    def _halt_for_val_or_sanity_limit(trainer: "pl.Trainer", batch_idx: int, last_batch: bool) -> bool:
         """During sanity checking or when the limit_val_batches is not 1, we may need to force the last batch to end.
         This is because the last batch might not be complete and we get stuck in the writer process."""
         if trainer.sanity_checking:
@@ -212,14 +214,21 @@ class WriterCallback(abc.ABC, Callback):
                 filename=curr_filename,
                 last_batch=last_batch,
             )
+            logger.info(f"Incrementing dataset index from {self._dataset_index} to {self._dataset_index + data.shape[0]}")
             self._dataset_index += data.shape[0]
 
     @abc.abstractmethod
-    def build_writer_class(self, pl_module, stage, filename):
+    def build_writer_class(self, pl_module: "pl.LightningModule", stage: str, filename: pathlib.Path):
         pass
 
     def _process_batch(
-        self, coordinates: torch.Tensor, batch: torch.Tensor, pl_module, stage, filename: str, last_batch: bool
+        self,
+        coordinates: torch.Tensor,
+        batch: torch.Tensor,
+        pl_module: "pl.LightningModule",
+        stage: str,
+        filename: str,
+        last_batch: bool,
     ):
         if filename not in self._queues:
             self._semaphore.acquire()
