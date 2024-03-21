@@ -202,7 +202,6 @@ class WriterCallback(Callback):
             if not self._tile_counter.get(curr_filename):
                 self._tile_counter[curr_filename] = 0
             self._tile_counter[curr_filename] += data.shape[0]
-            self._dataset_index += data.shape[0]
 
             last_batch = False
             if self._tile_counter[curr_filename] == self._dataset_sizes[curr_filename]:
@@ -220,6 +219,8 @@ class WriterCallback(Callback):
                 filename=curr_filename,
                 last_batch=last_batch,
             )
+            self._dataset_index += data.shape[0]
+
 
     def build_writer_class(self, pl_module, stage, filename):
         logger.warning("Building DEBUG writer class for stage %s (filename=%s)", stage, filename)
