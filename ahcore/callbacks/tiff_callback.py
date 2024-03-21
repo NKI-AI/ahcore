@@ -179,7 +179,6 @@ def _generator_from_reader(
 
     for sample in validation_dataset:
         region = sample["prediction"]
-        logger.info("Region shape: %s", region.shape)
         yield region if tile_process_function is None else tile_process_function(region)
 
 

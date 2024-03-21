@@ -55,7 +55,6 @@ class WriteH5Callback(WriterCallback):
         return self._dump_dir
 
     def build_writer_class(self, pl_module, stage, filename) -> Writer:
-        logger.info("Building writer class for stage %s (filename=%s)", stage, filename)
         output_filename = _get_h5_output_filename(
             self.dump_dir,
             filename,
@@ -74,8 +73,6 @@ class WriteH5Callback(WriterCallback):
         slide_image = current_dataset.slide_image
         num_samples = len(current_dataset)
 
-        logger.debug("Dataset length: %s for filename %s", num_samples, filename)
-
         data_description: DataDescription = pl_module.data_description
         inference_grid: GridDescription = data_description.inference_grid
 
@@ -91,10 +88,9 @@ class WriteH5Callback(WriterCallback):
 
         if stage == "validate":
             grid = current_dataset._grids[0][0]  # pylint: disable=protected-access
-            logger.debug("Grid length in validation mode: %s", len(grid))
         else:
             grid = None  # During inference we don't have a grid around ROI
-        logger.debug("Initializing H5FileImageWriter for %s writing to %s", filename, output_filename)
+
         writer = H5FileImageWriter(
             output_filename,
             size=size,
