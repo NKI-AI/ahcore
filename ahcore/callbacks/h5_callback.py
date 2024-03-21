@@ -48,7 +48,13 @@ class WriteH5Callback(WriterCallback):
         self._normalization_type: NormalizationType = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)
 
-        super().__init__(queue_size=queue_size, max_concurrent_queues=max_concurrent_queues, data_key="prediction")
+        super().__init__(
+            queue_size=queue_size,
+            max_concurrent_queues=max_concurrent_queues,
+            data_key="prediction",
+            normalization_type=normalization_type,
+            precision=precision,
+        )
 
     @property
     def dump_dir(self) -> Path:

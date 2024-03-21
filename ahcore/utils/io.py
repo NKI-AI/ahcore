@@ -5,6 +5,7 @@ https://github.com/ashleve/lightning-hydra-template
 This template is licensed under the MIT License.
 
 """
+
 from __future__ import annotations
 
 import logging

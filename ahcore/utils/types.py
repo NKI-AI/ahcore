@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from functools import partial
 from typing import Any
 
 import numpy as np
@@ -42,7 +43,7 @@ class NormalizationType(str, Enum):
         if self == NormalizationType.SIGMOID:
             return torch.sigmoid
         elif self == NormalizationType.SOFTMAX:
-            return torch.softmax
+            return partial(torch.softmax, dim=0)
         elif self == NormalizationType.LOGITS:
             return lambda x: x
         else:

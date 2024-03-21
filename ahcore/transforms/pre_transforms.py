@@ -2,6 +2,7 @@
 Module for the pre-transforms, which are the transforms that are applied before samples are outputted in a
 dataset.
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable

@@ -4,6 +4,7 @@ Loss factory
 All the relevant loss modules. In ahcore, losses are returned per sample in the batch.
 
 """
+
 from __future__ import annotations
 
 from typing import Callable, Optional, Union, cast

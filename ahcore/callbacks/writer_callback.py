@@ -1,7 +1,6 @@
 import abc
 import ctypes
 import time
-from functools import partial
 from multiprocessing import Event, Process, Queue, Semaphore, Value
 from threading import Thread
 from typing import Any
@@ -67,8 +66,8 @@ class WriterCallback(abc.ABC, Callback):
         requires_gather: bool = True,
         data_key: str = "prediction",
         normalization_type: str = NormalizationType.SOFTMAX,
-        precision: str = InferencePrecision.FP32,  # TODO: Pass this
-        writer_class = None,
+        precision: str = InferencePrecision.FP32,  # This is passed to the writer class
+        writer_class=None,
     ):
         # TODO: Test predict
 
@@ -302,6 +301,7 @@ def _writer_process(
     semaphore: Semaphore,
     completion_flag: Value,
     stage: str,
+    precision: InferencePrecision,
     pl_module: "pl.LightningModule",
 ):
     """
@@ -323,7 +323,7 @@ def _writer_process(
     None
     """
     try:
-        writer = callback_instance.build_writer_class(pl_module, stage, filename)
+        writer = callback_instance.build_writer_class(pl_module, stage, filename, precision)
         writer.consume(_queue_generator(queue))
         logger.debug(f"Stopped writing for {filename}")
     except Exception as e:

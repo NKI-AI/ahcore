@@ -1,4 +1,5 @@
 """Database models for ahcore's manifest database."""
+
 from enum import Enum as PyEnum
 from typing import List
 

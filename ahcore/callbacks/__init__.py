@@ -6,4 +6,3 @@ from .writer_callback import WriterCallback
 from .wsi_metric_callback import ComputeWsiMetricsCallback
 
 __all__ = ("WriteH5Callback", "WriteTiffCallback", "ComputeWsiMetricsCallback", "WriterCallback")
-

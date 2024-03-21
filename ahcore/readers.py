@@ -4,6 +4,7 @@ Reader classes.
 - `H5FileImageReader`: to read files written using the `ahcore.writers.H5FileImageWriter`.
 
 """
+
 import errno
 import io
 import json
@@ -332,4 +333,3 @@ class H5FileImageReader:
     ) -> Literal[False]:
         self.close()
         return False
-        

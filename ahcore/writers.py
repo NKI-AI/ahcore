@@ -6,6 +6,7 @@ This module contains writer classes. Currently implemented:
   h5 files.
 
 """
+
 import io
 import json
 from multiprocessing.connection import Connection
@@ -186,9 +187,9 @@ class H5FileImageWriter(Writer):
             "dtype": str(first_batch.dtype),
             "is_binary": self._is_compressed_image,
             "precision": self._precision.value if self._precision else str(InferencePrecision.FP32),
-            "multiplier": self._precision.get_multiplier()
-            if self._precision
-            else InferencePrecision.FP32.get_multiplier(),
+            "multiplier": (
+                self._precision.get_multiplier() if self._precision else InferencePrecision.FP32.get_multiplier()
+            ),
             "has_color_profile": self._color_profile is not None,
         }
 

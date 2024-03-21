@@ -2,6 +2,7 @@
 
 Many models uses 0.5um/pixel at 224 x 224 size.
 """
+
 from __future__ import annotations
 
 import argparse
