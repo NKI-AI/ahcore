@@ -301,7 +301,6 @@ def _writer_process(
     semaphore: Semaphore,
     completion_flag: Value,
     stage: str,
-    precision: InferencePrecision,
     pl_module: "pl.LightningModule",
 ):
     """
@@ -323,7 +322,7 @@ def _writer_process(
     None
     """
     try:
-        writer = callback_instance.build_writer_class(pl_module, stage, filename, precision)
+        writer = callback_instance.build_writer_class(pl_module, stage, filename)
         writer.consume(_queue_generator(queue))
         logger.debug(f"Stopped writing for {filename}")
     except Exception as e:
