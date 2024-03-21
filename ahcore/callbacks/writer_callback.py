@@ -67,6 +67,7 @@ class WriterCallback(abc.ABC, Callback):
         requires_gather: bool = True,
         data_key: str = "prediction",
         normalization_type: str = NormalizationType.SOFTMAX,
+        precision: str = InferencePrecision.FP32,  # TODO: Pass this
         writer_class = None,
     ):
         # TODO: Test predict
@@ -78,6 +79,7 @@ class WriterCallback(abc.ABC, Callback):
         self._requires_gather = requires_gather
         self._data_key = data_key
         self._normalization_type = NormalizationType(normalization_type)
+        self._precision: InferencePrecision = InferencePrecision(precision)
         self._writer_class = writer_class
 
         self._dataset_sizes: dict[str, int] = {}  # Keeps track of the total size of a dataset
