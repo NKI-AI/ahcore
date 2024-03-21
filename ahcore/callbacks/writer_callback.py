@@ -222,9 +222,7 @@ class WriterCallback(abc.ABC, Callback):
         self, coordinates: torch.Tensor, batch: torch.Tensor, pl_module, stage, filename: str, last_batch: bool
     ):
         if filename not in self._queues:
-            logger.debug(f"{filename} not in queue")
             self._semaphore.acquire()
-            logger.debug("Acquired semaphore")
             completion_flag = Value(ctypes.c_int, 0)  # For process completion signaling
             self._queues[filename] = Queue(maxsize=self._queue_size)
             process = Process(
