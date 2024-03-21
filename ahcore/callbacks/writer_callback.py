@@ -1,3 +1,4 @@
+import abc
 import ctypes
 import time
 from functools import partial
@@ -13,23 +14,9 @@ from pytorch_lightning import Callback
 
 from ahcore.utils.callbacks import sort_indices_row_major, sort_paths_and_return_both
 from ahcore.utils.io import get_logger
+from ahcore.utils.types import GenericArray, InferencePrecision, NormalizationType
 
 logger = get_logger(__name__)
-
-
-class DebugTileWriter:
-    def __init__(self, filename):
-        self._filename = filename
-        logger.info(f"Created BasicTileWriter for {filename}")
-        self._counter = 0
-
-    def consume(self, generator):
-        for coordinates, item in generator:
-            for coordinates_slice, item_slice in zip(coordinates, item):
-                logger.info(f"{self._counter}: Got coordinates {coordinates_slice} in {self._filename}")
-                self._counter += 1
-
-        logger.info(f"Counter at {self._counter} for {self._filename}")
 
 
 def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
@@ -72,14 +59,15 @@ def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torc
     return all_coordinates, all_data, all_paths
 
 
-class WriterCallback(Callback):
+class WriterCallback(abc.ABC, Callback):
     def __init__(
         self,
         queue_size: int = 16,
         max_concurrent_queues: int = 16,
         requires_gather: bool = True,
         data_key: str = "prediction",
-        writer_class=DebugTileWriter,
+        normalization_type: str = NormalizationType.SOFTMAX,
+        writer_class = None,
     ):
         # TODO: Test predict
 
@@ -89,6 +77,7 @@ class WriterCallback(Callback):
         self._processes: dict[str, Process] = {}
         self._requires_gather = requires_gather
         self._data_key = data_key
+        self._normalization_type = NormalizationType(normalization_type)
         self._writer_class = writer_class
 
         self._dataset_sizes: dict[str, int] = {}  # Keeps track of the total size of a dataset
@@ -211,7 +200,8 @@ class WriterCallback(Callback):
             data = data.cpu()
             row_major_indices = sort_indices_row_major(coordinates)
             coordinates = coordinates[row_major_indices].numpy()
-            data = data[row_major_indices].numpy()
+            data = data[row_major_indices]
+            data = NormalizationType.normalize(self._normalization_type)(data).detach().cpu().numpy()
 
             self._process_batch(
                 coordinates,
@@ -223,9 +213,9 @@ class WriterCallback(Callback):
             )
             self._dataset_index += data.shape[0]
 
+    @abc.abstractmethod
     def build_writer_class(self, pl_module, stage, filename):
-        logger.warning("Building DEBUG writer class for stage %s (filename=%s)", stage, filename)
-        return DebugTileWriter(filename)
+        pass
 
     def _process_batch(
         self, coordinates: torch.Tensor, batch: torch.Tensor, pl_module, stage, filename: str, last_batch: bool
