@@ -191,7 +191,6 @@ class WriterCallback(Callback):
             assert len(set(paths_chunk)) == 1
             curr_filename = paths_chunk[0]
 
-            # logger.info("Chunked batch %s: %s, %s %s", i, coordinates.shape, data.shape, curr_filename)
             # We need to determine if this is the last batch for the current filename, so we can end the generator
             # there This might strictly not be needed if we can estimate the size of the grid, but it's a good safety
             # measure For instance, if we have multiresolution grids, or anything else that might make the standard grid
