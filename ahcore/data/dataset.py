@@ -5,12 +5,13 @@ Utilities to construct datasets and DataModule's from manifests.
 from __future__ import annotations
 
 import uuid as uuid_module
-from typing import Any, Callable, Generator, Iterator, Optional
+from typing import Any, Callable, Generator, Iterable, Iterator, Optional, Union
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from dlup.data.dataset import ConcatDataset, TiledWsiDataset
+from dlup.data.dataset import ConcatDataset as DlupConcatDataset
+from dlup.data.dataset import Dataset, T_co, TiledWsiDataset
 from pytorch_lightning.trainer.states import TrainerFn
 from torch.utils.data import DataLoader, Sampler
 
@@ -19,6 +20,24 @@ from ahcore.utils.data import DataDescription, basemodel_to_uuid
 from ahcore.utils.io import fullname, get_cache_dir, get_logger
 from ahcore.utils.manifest import DataManager, datasets_from_data_description
 from ahcore.utils.types import DlupDatasetSample, _DlupDataset
+
+
+class ConcatDataset(DlupConcatDataset):
+    """A dataset that concatenates multiple datasets."""
+
+    def __init__(self, datasets: Iterable[Dataset[T_co]]) -> None:
+        super().__init__(datasets)
+
+    def __getitem__(self, index: Union[int, slice]) -> T_co | list[T_co]:
+        """Returns the sample at the given index."""
+        if isinstance(index, slice):
+            start, stop, step = index.indices(len(self))
+            return [{**self[i], "global_index": start + i} for i in range(start, stop, step or 1)]
+
+        dataset, sample_idx = self.index_to_dataset(index)
+        sample = dataset[sample_idx]
+        sample["global_index"] = index
+        return sample
 
 
 class DlupDataModule(pl.LightningDataModule):

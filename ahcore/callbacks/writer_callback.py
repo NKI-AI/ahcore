@@ -214,7 +214,9 @@ class WriterCallback(abc.ABC, Callback):
                 filename=curr_filename,
                 last_batch=last_batch,
             )
-            logger.info(f"Incrementing dataset index from {self._dataset_index} to {self._dataset_index + data.shape[0]}")
+            logger.info(
+                f"Incrementing dataset index from {self._dataset_index} to {self._dataset_index + data.shape[0]}"
+            )
             self._dataset_index += data.shape[0]
 
     @abc.abstractmethod
