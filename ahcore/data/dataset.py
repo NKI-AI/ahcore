@@ -15,11 +15,12 @@ from dlup.data.dataset import Dataset, T_co, TiledWsiDataset
 from pytorch_lightning.trainer.states import TrainerFn
 from torch.utils.data import DataLoader, Sampler
 
-import ahcore.data.samplers
 from ahcore.utils.data import DataDescription, basemodel_to_uuid
 from ahcore.utils.io import fullname, get_cache_dir, get_logger
 from ahcore.utils.manifest import DataManager, datasets_from_data_description
 from ahcore.utils.types import DlupDatasetSample, _DlupDataset
+
+logger = get_logger(__name__)
 
 
 class ConcatDataset(DlupConcatDataset):

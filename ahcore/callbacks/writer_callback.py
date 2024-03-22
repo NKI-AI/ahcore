@@ -12,14 +12,35 @@ import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
-from ahcore.utils.callbacks import sort_indices_row_major, sort_paths_and_return_both
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import InferencePrecision, NormalizationType
 
 logger = get_logger(__name__)
 
+def _remove_initial_gap_and_zeros(tensor, gap_threshold: int=1) -> int:
+    if len(tensor) < 2:
+        return 0
 
-def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, list[str]]:
+    start_index = 0
+
+    # Remove leading zeros
+    while start_index < len(tensor) and tensor[start_index] == 0:
+        if len(tensor) == start_index + 1:
+            break
+        if tensor[start_index + 1] == 1:
+            break
+        start_index += 1
+
+    # Now find the gap, if any, after the leading zeros
+    for i in range(start_index, len(tensor) - 1):
+        if tensor[i + 1] - tensor[i] > gap_threshold:
+            start_index = i + 1
+            break
+
+    return start_index
+
+
+def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
     """
     Gather the batch from all processes in a distributed environment.
     This only gathers the coordinates, paths and the data as needed for the writers.
@@ -38,25 +59,33 @@ def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torc
         world_size = dist.get_world_size()
 
         _coordinates = torch.stack(batch["coordinates"], dim=1)
+        _global_index = batch["global_index"]
+        _gathered_global_index = [torch.zeros_like(_global_index) for _ in range(world_size)]
+        dist.all_gather(_gathered_global_index, _global_index)
+        all_global_index = torch.cat(_gathered_global_index, dim=0)
+        all_global_index, sorting_index = torch.sort(all_global_index)
+
         gathered_coords_list = [torch.zeros_like(_coordinates) for _ in range(world_size)]
         dist.all_gather(gathered_coords_list, _coordinates)
-        all_coordinates = torch.cat(gathered_coords_list, dim=0)
+        all_coordinates = torch.cat(gathered_coords_list, dim=0)[sorting_index]
 
         gathered_image_list = [torch.zeros_like(output) for _ in range(world_size)]
         dist.all_gather(gathered_image_list, output)
-        all_data = torch.cat(gathered_image_list, dim=0)
+        all_data = torch.cat(gathered_image_list, dim=0)[sorting_index]
 
         # Gather paths using all_gather_object for non-tensor data
         all_paths = [None] * world_size
         dist.all_gather_object(all_paths, batch["path"])
         all_paths = [path for sublist in all_paths for path in sublist]
+        all_paths = [all_paths[i] for i in sorting_index.cpu().numpy().tolist()]
 
     else:
         all_paths = batch["path"]
         all_coordinates = torch.stack(batch["coordinates"], dim=1)
         all_data = output
+        all_global_index = batch["global_index"]
 
-    return all_coordinates, all_data, all_paths
+    return all_coordinates, all_data, all_global_index, all_paths
 
 
 class WriterCallback(abc.ABC, Callback):
@@ -154,7 +183,7 @@ class WriterCallback(abc.ABC, Callback):
         dataloader_idx: int = 0,
     ) -> None:
         if trainer.world_size > 1 and self._requires_gather:  # Check if running in a distributed environment
-            coordinates, data, paths = _gather_batch(batch, outputs[self._data_key])
+            coordinates, data, global_indices, paths = _gather_batch(batch, outputs[self._data_key])
         else:
             coordinates = torch.stack(batch["coordinates"], dim=1)
             data = outputs[self._data_key]
@@ -164,9 +193,9 @@ class WriterCallback(abc.ABC, Callback):
         if trainer.global_rank != 0 and self._requires_gather:
             return
 
-        paths, sorted_indices = sort_paths_and_return_both(paths)
-        coordinates = coordinates[sorted_indices]
-        data = data[sorted_indices]
+        # paths, sorted_indices = sort_paths_and_return_both(paths)
+        # coordinates = coordinates[sorted_indices]
+        # data = data[sorted_indices]
         indices = [0] + [i for i in range(1, len(paths)) if paths[i] != paths[i - 1]] + [len(paths)]
 
         chunked_batch = [
@@ -201,9 +230,13 @@ class WriterCallback(abc.ABC, Callback):
 
             coordinates = coordinates.cpu()
             data = data.cpu()
-            row_major_indices = sort_indices_row_major(coordinates)
-            coordinates = coordinates[row_major_indices].numpy()
-            data = data[row_major_indices]
+            coordinates = coordinates.numpy()
+            # This is needed to crop the data if the last batch has extra samples because of the DistributedSampler
+            if self._dataset_index + data.shape[0] > len(self._total_dataset):
+                start_index = _remove_initial_gap_and_zeros(global_indices)
+                data = data[start_index:]
+                coordinates = coordinates[start_index:]
+
             data = NormalizationType.normalize(self._normalization_type)(data).detach().cpu().numpy()
 
             self._process_batch(
@@ -213,9 +246,6 @@ class WriterCallback(abc.ABC, Callback):
                 stage="validate",
                 filename=curr_filename,
                 last_batch=last_batch,
-            )
-            logger.info(
-                f"Incrementing dataset index from {self._dataset_index} to {self._dataset_index + data.shape[0]}"
             )
             self._dataset_index += data.shape[0]
 

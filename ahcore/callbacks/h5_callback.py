@@ -76,9 +76,6 @@ class WriteH5Callback(WriterCallback):
             file.write(f"{filename},{output_filename}\n")
 
         current_dataset: TiledWsiDataset
-        logger.info(
-            "Trying to get dataset index %s of dataset with %s elements", self._dataset_index, len(self._total_dataset)
-        )
         current_dataset, _ = self._total_dataset.index_to_dataset(self._dataset_index)  # type: ignore
         slide_image = current_dataset.slide_image
         num_samples = len(current_dataset)

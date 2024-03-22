@@ -230,44 +230,6 @@ def _get_uuid_for_filename(input_path: Path) -> str:
     return hex_dig
 
 
-def sort_indices_row_major(coordinates: torch.Tensor) -> torch.Tensor:
-    """
-    Generates indices to sort a tensor of coordinates in row-major order.
-
-    Parameters:
-    - coordinates: A tensor of shape [N, 2], where N is the number of coordinates
-                   and each coordinate is represented by [x, y].
-
-    Returns:
-    - Indices to sort the coordinates in row-major order.
-    """
-    coords_float = coordinates.float()
-    combined = coords_float[:, 1] * coords_float.max(dim=0)[0][0] + coords_float[:, 0]
-    sorted_indices = combined.argsort()
-    return sorted_indices
-
-
-def sort_paths_and_return_both(paths: list[str]) -> tuple[list[str], list[int]]:
-    path_indices: dict[str, list[int]] = {}
-    for index, path in enumerate(paths):
-        if path in path_indices:
-            path_indices[path].append(index)
-        else:
-            path_indices[path] = [index]
-
-    sorted_groups: list[tuple[int, str, list[int]]] = sorted(
-        (indices[0], path, indices) for path, indices in path_indices.items()
-    )
-
-    sorted_paths: list[str] = []
-    sorted_indices: list[int] = []
-    for _, path, group_indices in sorted_groups:
-        sorted_paths.extend([path] * len(group_indices))
-        sorted_indices.extend(group_indices)
-
-    return sorted_paths, sorted_indices
-
-
 def _get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:
     hex_dig = _get_uuid_for_filename(input_path=input_path)
 
