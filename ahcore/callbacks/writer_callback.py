@@ -184,6 +184,11 @@ class WriterCallback(abc.ABC, Callback):
     ) -> None:
         if trainer.world_size > 1 and self._requires_gather:  # Check if running in a distributed environment
             coordinates, data, global_indices, paths = _gather_batch(batch, outputs[self._data_key])
+            # TODO: Make more efficient
+            start_index = _remove_initial_gap_and_zeros(global_indices)
+            coordinates = coordinates[start_index:]
+            data = data[start_index:]
+            paths = paths[start_index:]
         else:
             coordinates = torch.stack(batch["coordinates"], dim=1)
             data = outputs[self._data_key]
@@ -193,9 +198,6 @@ class WriterCallback(abc.ABC, Callback):
         if trainer.global_rank != 0 and self._requires_gather:
             return
 
-        # paths, sorted_indices = sort_paths_and_return_both(paths)
-        # coordinates = coordinates[sorted_indices]
-        # data = data[sorted_indices]
         indices = [0] + [i for i in range(1, len(paths)) if paths[i] != paths[i - 1]] + [len(paths)]
 
         chunked_batch = [
@@ -231,12 +233,6 @@ class WriterCallback(abc.ABC, Callback):
             coordinates = coordinates.cpu()
             data = data.cpu()
             coordinates = coordinates.numpy()
-            # This is needed to crop the data if the last batch has extra samples because of the DistributedSampler
-            if self._dataset_index + data.shape[0] > len(self._total_dataset):
-                start_index = _remove_initial_gap_and_zeros(global_indices)
-                data = data[start_index:]
-                coordinates = coordinates[start_index:]
-
             data = NormalizationType.normalize(self._normalization_type)(data).detach().cpu().numpy()
 
             self._process_batch(
@@ -273,7 +269,6 @@ class WriterCallback(abc.ABC, Callback):
             self._processes[filename] = process
             self._completion_flags[filename] = completion_flag
             process.start()
-
         self._queues[filename].put((coordinates, batch))
         if last_batch:
             self._queues[filename].put((None, None))
