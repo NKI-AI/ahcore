@@ -22,7 +22,7 @@ import rich.syntax
 import rich.tree
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.errors import InterpolationKeyError
-from pytorch_lightning.utilities import rank_zero_only  # type: ignore[attr-defined]
+from pytorch_lightning.utilities import rank_zero_only
 
 
 def get_logger(name: str = __name__) -> logging.Logger:

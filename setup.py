@@ -18,10 +18,10 @@ with open("README.rst") as readme_file:
 install_requires = [
     "numpy>=1.25.2",
     "torch>=2.0.1",
-    "pillow>=9.5.0",
-    "pytorch-lightning>=2.0.8",
+    "pillow>=10.2.0",
+    "pytorch-lightning>=2.2.1",
     "torchvision>=0.15.2",
-    "pydantic>=2.0.3",
+    "pydantic>=2.6.4",
     "tensorboard>=2.14.0",
     "mlflow>=2.6.0",
     "hydra-core>=1.3.2",
@@ -32,10 +32,10 @@ install_requires = [
     "hydra-optuna-sweeper>=1.3.0.dev0",
     "hydra-colorlog>=1.2.0",
     "dlup>=0.3.34",
-    "kornia>=0.7.0",
+    "kornia>=0.7.2",
     "h5py>=3.8.0",
-    "monai[einops]==1.2.0",
-    "imagecodecs==2023.9.4",
+    "monai[einops]==1.3.0",
+    "imagecodecs==2024.1.1",
 ]
 
 

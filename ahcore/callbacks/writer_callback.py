@@ -15,11 +15,18 @@ from pytorch_lightning import Callback
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import InferencePrecision, NormalizationType
 
+from .h5_callback import Writer
+
 logger = get_logger(__name__)
 
-def _remove_initial_gap_and_zeros(tensor, gap_threshold: int=1) -> int:
+def _remove_initial_gap_and_zeros(tensor: torch.Tensor, gap_threshold: int=1) -> int:
+    """Function to detect if there are initial zeros appended after the gather."""
     if len(tensor) < 2:
         return 0
+
+    # TODO BETTER CHECK!!!!
+    # if (tensor[-1] - tensor[0]) >= len(tensor):
+    #     return 0
 
     start_index = 0
 
@@ -246,7 +253,7 @@ class WriterCallback(abc.ABC, Callback):
             self._dataset_index += data.shape[0]
 
     @abc.abstractmethod
-    def build_writer_class(self, pl_module: "pl.LightningModule", stage: str, filename: pathlib.Path):
+    def build_writer_class(self, pl_module: "pl.LightningModule", stage: str, filename: str) -> Writer:
         pass
 
     def _process_batch(
@@ -329,14 +336,14 @@ def _queue_generator(queue: Queue):
 
 
 def _writer_process(
-    callback_instance,
+    callback_instance: WriterCallback,
     queue: Queue,
     filename: str,
     semaphore: Semaphore,
     completion_flag: Value,
     stage: str,
     pl_module: "pl.LightningModule",
-):
+) -> None:
     """
     Process to consume a queue and write to a writer.
 

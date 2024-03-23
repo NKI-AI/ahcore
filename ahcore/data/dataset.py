@@ -132,7 +132,7 @@ class DlupDataModule(pl.LightningDataModule):
         return self._data_manager
 
     def setup(self, stage: str) -> None:
-        if stage not in (e.value for e in TrainerFn):  # type: ignore
+        if stage not in (e.value for e in TrainerFn):
             raise ValueError(f"Stage should be one of {TrainerFn}")
 
         if stage and self._already_called[stage]:
