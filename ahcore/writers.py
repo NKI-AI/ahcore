@@ -20,7 +20,7 @@ import PIL.Image
 from dlup.tiling import Grid, GridOrder, TilingMode
 
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import GenericArray, InferencePrecision
+from ahcore.utils.types import GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
 
@@ -51,7 +51,7 @@ class Writer(abc.ABC):
     @abc.abstractmethod
     def consume(
         self,
-        batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        batch_generator: Generator[tuple[GenericNumberArray | None, GenericNumberArray | None], None, None],
         connection_to_parent: Optional[Connection] = None,
     ) -> None:
         pass
@@ -99,7 +99,7 @@ class H5FileImageWriter(Writer):
 
         self._tiles_seen = 0
 
-    def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
+    def init_writer(self, first_coordinates: GenericNumberArray, first_batch: GenericNumberArray, h5file: h5py.File) -> None:
         """Initializes the image_dataset based on the first tile."""
         if self._is_compressed_image:
             if self._precision is not None:
@@ -204,7 +204,7 @@ class H5FileImageWriter(Writer):
         metadata_json = json.dumps(metadata)
         h5file.attrs["metadata"] = metadata_json
 
-    def adjust_batch_precision(self, batch: GenericArray) -> GenericArray:
+    def adjust_batch_precision(self, batch: GenericNumberArray) -> GenericNumberArray:
         """Adjusts the batch precision based on the precision set in the writer."""
         if self._precision:
             multiplier = self._precision.get_multiplier()
@@ -230,7 +230,7 @@ class H5FileImageWriter(Writer):
 
     def consume(
         self,
-        batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
         connection_to_parent: Optional[Connection] = None,
     ) -> None:
         """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
@@ -289,8 +289,8 @@ class H5FileImageWriter(Writer):
 
     @staticmethod
     def _batch_generator(
-        first_coordinates_batch: Any, batch_generator: Generator[Any, None, None]
-    ) -> Generator[Any, None, None]:
+        first_coordinates_batch: GenericNumberArray, batch_generator: Generator[GenericNumberArray, None, None]
+    ) -> Generator[GenericNumberArray, None, None]:
         # We yield the first batch too so the progress bar takes the first batch also into account
         yield first_coordinates_batch
         for tile in batch_generator:

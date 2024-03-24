@@ -21,7 +21,7 @@ import PIL.Image
 import PIL.ImageCms
 from dlup import SlideImage
 from dlup.data.dataset import TiledWsiDataset
-from dlup.experimental_backends import ImageBackend
+from dlup.experimental_backends import ImageBackend  # type: ignore
 from dlup.tiling import GridOrder, TilingMode
 from PIL import Image
 from pydantic import BaseModel
@@ -155,7 +155,7 @@ def _save_thumbnail(
         # If the color_profile is not applied, we need to add it to the metadata of the thumbnail
         if slide_image.color_profile:
             to_profile = PIL.ImageCms.createProfile("sRGB")
-            intent = PIL.ImageCms.getDefaultIntent(slide_image.color_profile)
+            intent = PIL.ImageCms.getDefaultIntent(slide_image.color_profile)  # type: ignore
             rgb_color_transform = PIL.ImageCms.buildTransform(
                 slide_image.color_profile, to_profile, "RGB", "RGB", intent, 0
             )
@@ -327,7 +327,7 @@ def _tiling_pipeline(
 
         color_profile = None
         if not dataset_cfg.color_profile_applied and dataset.slide_image.color_profile:
-            color_profile = dataset.slide_image.color_profile.tobytes()
+            color_profile = dataset.slide_image.color_profile.tobytes()  # type: ignore
 
         extra_metadata = {
             "color_profile_applied": dataset_cfg.color_profile_applied,

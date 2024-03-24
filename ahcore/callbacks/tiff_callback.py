@@ -14,9 +14,9 @@ from pytorch_lightning import Callback
 from ahcore.callbacks import WriteH5Callback
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.readers import H5FileImageReader, StitchingMode
-from ahcore.utils.callbacks import _get_h5_output_filename, _ValidationDataset
+from ahcore.utils.callbacks import _ValidationDataset, get_h5_output_filename
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import GenericArray
+from ahcore.utils.types import GenericNumberArray
 
 logger = get_logger(__name__)
 
@@ -91,7 +91,7 @@ class WriteTiffCallback(Callback):
         filenames = set([Path(_) for _ in batch["path"]])
         for filename in filenames:
             if filename not in self._filenames:
-                output_filename = _get_h5_output_filename(
+                output_filename = get_h5_output_filename(
                     dump_dir=self.dump_dir,
                     input_path=filename,
                     model_name=str(pl_module.name),
@@ -166,8 +166,8 @@ class WriteTiffCallback(Callback):
 def _generator_from_reader(
     h5_reader: H5FileImageReader,
     tile_size: tuple[int, int],
-    tile_process_function: Callable[[GenericArray], GenericArray],
-) -> Generator[GenericArray, None, None]:
+    tile_process_function: Callable[[GenericNumberArray], GenericNumberArray],
+) -> Generator[GenericNumberArray, None, None]:
     validation_dataset = _ValidationDataset(
         data_description=None,
         native_mpp=h5_reader.mpp,
@@ -182,17 +182,17 @@ def _generator_from_reader(
         yield region if tile_process_function is None else tile_process_function(region)
 
 
-def _tile_process_function(x: GenericArray) -> GenericArray:
+def _tile_process_function(x: GenericNumberArray) -> GenericNumberArray:
     return np.asarray(np.argmax(x, axis=0).astype(np.uint8))
 
 
 def _write_tiff(
     filename: Path,
     tile_size: tuple[int, int],
-    tile_process_function: Callable[[GenericArray], GenericArray],
+    tile_process_function: Callable[[GenericNumberArray], GenericNumberArray],
     colormap: dict[int, str] | None,
     generator_from_reader: Callable[
-        [H5FileImageReader, tuple[int, int], Callable[[GenericArray], GenericArray]],
+        [H5FileImageReader, tuple[int, int], Callable[[GenericNumberArray], GenericNumberArray]],
         Iterator[npt.NDArray[np.int_]],
     ],
 ) -> None:

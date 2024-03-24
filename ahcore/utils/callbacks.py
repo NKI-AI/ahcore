@@ -229,7 +229,7 @@ def _get_uuid_for_filename(input_path: Path) -> str:
     return hex_dig
 
 
-def _get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:
+def get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:
     hex_dig = _get_uuid_for_filename(input_path=input_path)
 
     # Return the hashed filename with the new extension

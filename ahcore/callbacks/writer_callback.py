@@ -2,14 +2,13 @@ import abc
 import ctypes
 import time
 from multiprocessing import Event, Process, Queue, Semaphore, Value
+from multiprocessing.sharedctypes import SynchronizedBase
 from multiprocessing.synchronize import Event as EventClass
 from multiprocessing.synchronize import Semaphore as SemaphoreClass
 from threading import Thread
-from typing import Any, Tuple, Generator
-from multiprocessing.sharedctypes import SynchronizedBase
+from typing import Any, Generator, Tuple
 
-
-
+import numpy.typing as npt
 import pytorch_lightning as pl
 import torch
 import torch.distributed as dist
@@ -17,9 +16,8 @@ from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import InferencePrecision, NormalizationType
-
-from ahcore.callbacks.h5_callback import Writer
+from ahcore.utils.types import GenericNumberArray, InferencePrecision, NormalizationType
+from ahcore.writers import Writer
 
 logger = get_logger(__name__)
 
@@ -52,7 +50,9 @@ def _remove_initial_gap_and_zeros(tensor: torch.Tensor, gap_threshold: int = 1) 
     return start_index
 
 
-def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
+def _gather_batch(
+    batch: dict[str, Any], output: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
     """
     Gather the batch from all processes in a distributed environment.
     This only gathers the coordinates, paths and the data as needed for the writers.
@@ -86,7 +86,7 @@ def _gather_batch(batch: dict, output: torch.Tensor) -> tuple[torch.Tensor, torc
         all_data = torch.cat(gathered_image_list, dim=0)[sorting_index]
 
         # Gather paths using all_gather_object for non-tensor data
-        all_paths = [None] * world_size
+        all_paths = [""] * world_size
         dist.all_gather_object(all_paths, batch["path"])
         all_paths = [path for sublist in all_paths for path in sublist]
         all_paths = [all_paths[i] for i in sorting_index.cpu().numpy().tolist()]
@@ -109,12 +109,12 @@ class WriterCallback(abc.ABC, Callback):
         data_key: str = "prediction",
         normalization_type: str = NormalizationType.SOFTMAX,
         precision: str = InferencePrecision.FP32,  # This is passed to the writer class
-        writer_class: Writer | None =None,
+        writer_class: Writer | None = None,
     ) -> None:
         # TODO: Test predict
 
         self._queue_size = queue_size
-        self._queues: dict[str, Queue[Tuple[torch.Tensor | None, torch.Tensor | None]]] = {}
+        self._queues: dict[str, Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]] = {}
         self._completion_flags: dict[str, Any] = {}
         self._processes: dict[str, Process] = {}
         self._requires_gather = requires_gather
@@ -129,7 +129,7 @@ class WriterCallback(abc.ABC, Callback):
         self._semaphore = Semaphore(max_concurrent_queues)
         self._cleanup_shutdown_event: EventClass = Event()
 
-        self._total_dataset: ConcatDataset[TiledWsiDataset] | None = None
+        self._total_dataset: ConcatDataset[dict[str, Any]] | None = None
         self._dataset_index = 0
 
     def _on_epoch_start(self, trainer: "pl.Trainer") -> None:
@@ -144,6 +144,7 @@ class WriterCallback(abc.ABC, Callback):
         current_dataset: TiledWsiDataset
         assert self._total_dataset
         for current_dataset in self._total_dataset.datasets:
+            assert current_dataset.slide_image.identifier
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
@@ -244,14 +245,11 @@ class WriterCallback(abc.ABC, Callback):
             if trainer.sanity_checking or trainer.limit_val_batches != 1:
                 last_batch = self._halt_for_val_or_sanity_limit(trainer, batch_idx, last_batch)
 
-            coordinates = coordinates.cpu()
-            data = data.cpu()
-            coordinates = coordinates.numpy()
-            data = NormalizationType.normalize(self._normalization_type)(data).detach().cpu().numpy()
+            data = NormalizationType.normalize(self._normalization_type)(data).detach()
 
             self._process_batch(
-                coordinates,
-                data,
+                coordinates.cpu().numpy(),
+                data.cpu().numpy(),
                 pl_module=pl_module,
                 stage="validate",
                 filename=curr_filename,
@@ -265,8 +263,8 @@ class WriterCallback(abc.ABC, Callback):
 
     def _process_batch(
         self,
-        coordinates: torch.Tensor,
-        batch: torch.Tensor,
+        coordinates: GenericNumberArray,
+        batch: GenericNumberArray,
         pl_module: "pl.LightningModule",
         stage: str,
         filename: str,
@@ -321,8 +319,8 @@ class WriterCallback(abc.ABC, Callback):
 
 
 def _queue_generator(
-    queue: Queue[Tuple[torch.Tensor | None, torch.Tensor | None]]
-) -> Generator[Tuple[torch.Tensor | None, torch.Tensor | None], None, None]:
+    queue: Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]
+) -> Generator[Tuple[GenericNumberArray | None, GenericNumberArray | None], None, None]:
     """
     Generator to yield items from a queue. This is used to consume the queue in the writer process.
 
@@ -346,7 +344,7 @@ def _queue_generator(
 
 def _writer_process(
     callback_instance: WriterCallback,
-    queue: Queue[Tuple[torch.Tensor | None, torch.Tensor | None]],
+    queue: Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]],
     filename: str,
     semaphore: SemaphoreClass,
     completion_flag: SynchronizedBase[ctypes.c_int],
@@ -378,5 +376,5 @@ def _writer_process(
     except Exception as e:
         logger.exception(f"Error in writer_process for {filename}: {e}")
     finally:
-        completion_flag.value = 1
+        completion_flag.value = 1  # type: ignore
         semaphore.release()

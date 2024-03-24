@@ -4,8 +4,9 @@ Utilities to construct datasets and DataModule's from manifests.
 
 from __future__ import annotations
 
+import bisect
 import uuid as uuid_module
-from typing import Any, Callable, Generator, Iterable, Iterator, Optional, Union
+from typing import Any, Callable, Generator, Iterable, Iterator, Optional, Union, overload
 
 import numpy as np
 import pytorch_lightning as pl
@@ -23,13 +24,78 @@ from ahcore.utils.types import DlupDatasetSample, _DlupDataset
 logger = get_logger(__name__)
 
 
-class ConcatDataset(DlupConcatDataset[Dataset[T_co]]):
-    """A dataset that concatenates multiple datasets."""
+class ConcatDataset(Dataset[DlupDatasetSample]):
+    """Dataset as a concatenation of multiple datasets.
 
-    def __init__(self, datasets: Iterable[Dataset[T_co]]) -> None:
-        super().__init__(datasets)
+    This class is useful to assemble different existing datasets.
 
-    def __getitem__(self, index: Union[int, slice]) -> T_co | list[T_co]:
+    Parameters
+    ----------
+    datasets : sequence
+        List of datasets to be concatenated
+
+    Notes
+    -----
+    Taken and adapted from pytorch 1.8.0 torch.utils.data.Dataset under BSD license.
+
+    """
+
+    datasets: list[Dataset[DlupDatasetSample]]
+    cumulative_sizes: list[int]
+    wsi_indices: dict[str, range]
+
+    @staticmethod
+    def cumsum(sequence: list[Dataset[DlupDatasetSample]]) -> list[int]:
+        out_sequence, total = [], 0
+        for item in sequence:
+            length = len(item)
+            out_sequence.append(length + total)
+            total += length
+        return out_sequence
+
+    def __init__(self, datasets: Iterable[Dataset[DlupDatasetSample]]) -> None:
+        super().__init__()
+        # Cannot verify that datasets is Sized
+        assert len(datasets) > 0, "datasets should not be an empty iterable"  # type: ignore
+        self.datasets = list(datasets)
+        for d in self.datasets:
+            if not hasattr(d, "__getitem__"):
+                raise ValueError("ConcatDataset requires datasets to be indexable.")
+        self.cumulative_sizes = self.cumsum(self.datasets)
+
+    def index_to_dataset(self, idx: int) -> tuple[Dataset[DlupDatasetSample], int]:
+        """Returns the dataset and the index of the sample in the dataset.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the sample in the concatenated dataset.
+
+        Returns
+        -------
+        tuple[Dataset, int]
+            Dataset and index of the sample in the dataset.
+        """
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError("Absolute value of index should not exceed dataset length")
+            idx = len(self) + idx
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        sample_idx = idx if dataset_idx == 0 else idx - self.cumulative_sizes[dataset_idx - 1]
+        return self.datasets[dataset_idx], sample_idx
+
+    def __len__(self) -> int:
+        return self.cumulative_sizes[-1]
+
+    @overload
+    def __getitem__(self, index: int) -> DlupDatasetSample:
+        ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[DlupDatasetSample]:
+        ...
+
+    def __getitem__(self, index: Union[int, slice]) -> DlupDatasetSample | list[DlupDatasetSample]:
         """Returns the sample at the given index."""
         if isinstance(index, slice):
             start, stop, step = index.indices(len(self))
@@ -132,8 +198,8 @@ class DlupDataModule(pl.LightningDataModule):
         return self._data_manager
 
     def setup(self, stage: str) -> None:
-        if stage not in (e.value for e in TrainerFn):
-            raise ValueError(f"Stage should be one of {TrainerFn}")
+        if stage not in ("fit", "validate", "test"):
+            raise ValueError(f"Stage should be one of fit, validate or test")
 
         if stage and self._already_called[stage]:
             return
@@ -160,11 +226,11 @@ class DlupDataModule(pl.LightningDataModule):
         if not data_iterator:
             return None
 
-        def construct_dataset() -> ConcatDataset[DlupDatasetSample]:
+        def construct_dataset() -> ConcatDataset:
             datasets = []
             for _, ds in enumerate(data_iterator):
                 datasets.append(ds)
-            return ConcatDataset(datasets)
+            return ConcatDataset(datasets=datasets)
 
         self._logger.info("Constructing dataset for stage %s (this can take a while)", stage)
         dataset = self._load_from_cache(construct_dataset, stage=stage)
@@ -179,7 +245,7 @@ class DlupDataModule(pl.LightningDataModule):
             f" - Max: {lengths.max():.2f}"
         )
 
-        sampler: Sampler[list[int]]
+        sampler: Sampler[int]
         if stage == "fit":
             sampler = torch.utils.data.RandomSampler(data_source=dataset)
 

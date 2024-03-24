@@ -30,7 +30,7 @@ class Manifest(Base):
 
     patients: Mapped[List["Patient"]] = relationship("Patient", back_populates="manifest")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Manifest {self.name}"
 
 

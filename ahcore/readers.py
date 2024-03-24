@@ -21,7 +21,7 @@ import PIL
 from scipy.ndimage import map_coordinates
 
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import BoundingBoxType, GenericArray, InferencePrecision
+from ahcore.utils.types import BoundingBoxType, GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
 
@@ -32,7 +32,7 @@ class StitchingMode(str, Enum):
     MAXIMUM = "maximum"
 
 
-def crop_to_bbox(array: GenericArray, bbox: BoundingBoxType) -> GenericArray:
+def crop_to_bbox(array: GenericNumberArray, bbox: BoundingBoxType) -> GenericNumberArray:
     (start_x, start_y), (width, height) = bbox
     return array[:, start_y : start_y + height, start_x : start_x + width]
 
@@ -42,7 +42,7 @@ class H5FileImageReader:
         self._filename = filename
         self._stitching_mode = stitching_mode
 
-        self.__empty_tile: GenericArray | None = None
+        self.__empty_tile: GenericNumberArray | None = None
 
         self._h5file: Optional[h5py.File] = None
         self._metadata = None
@@ -135,7 +135,7 @@ class H5FileImageReader:
             self._open_file()
         return self
 
-    def _empty_tile(self) -> GenericArray:
+    def _empty_tile(self) -> GenericNumberArray:
         if self.__empty_tile is not None:
             return self.__empty_tile
 
@@ -145,7 +145,7 @@ class H5FileImageReader:
         self.__empty_tile = np.zeros((self._num_channels, *self._tile_size), dtype=self._dtype)
         return self.__empty_tile
 
-    def _decompress_data(self, tile: GenericArray) -> GenericArray:
+    def _decompress_data(self, tile: GenericNumberArray) -> GenericNumberArray:
         if self._is_binary:
             with PIL.Image.open(io.BytesIO(tile)) as img:
                 return np.array(img).transpose(2, 0, 1)
@@ -157,7 +157,7 @@ class H5FileImageReader:
         location: tuple[int, int],
         scaling: float,
         size: tuple[int, int],
-    ) -> GenericArray:
+    ) -> GenericNumberArray:
         """
 
         Parameters
@@ -210,11 +210,11 @@ class H5FileImageReader:
         grid = np.mgrid[: raw_region.shape[0]]
         coordinates = np.concatenate([grid[:, None, None], coordinates], axis=0)
         # scipy doesn't have proper typing yet
-        rescaled_region = cast(GenericArray, map_coordinates(raw_region, coordinates, order=order))
+        rescaled_region = cast(GenericNumberArray, map_coordinates(raw_region, coordinates, order=order))
 
         return rescaled_region
 
-    def read_region_raw(self, location: tuple[int, int], size: tuple[int, int]) -> GenericArray:
+    def read_region_raw(self, location: tuple[int, int], size: tuple[int, int]) -> GenericNumberArray:
         """
         Reads a region in the stored h5 file. This function stitches the regions as saved in the h5 file. Doing this
         it takes into account:

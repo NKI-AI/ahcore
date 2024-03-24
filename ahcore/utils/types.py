@@ -28,7 +28,7 @@ NonNegativeInt = Annotated[int, AfterValidator(is_non_negative)]
 NonNegativeFloat = Annotated[float, AfterValidator(is_non_negative)]
 BoundingBoxType = tuple[tuple[int, int], tuple[int, int]]
 Rois = list[BoundingBoxType]
-GenericArray = npt.NDArray[np.generic]
+GenericNumberArray = npt.NDArray[np.int_ | np.float_]
 
 DlupDatasetSample = dict[str, Any]
 _DlupDataset = Dataset[DlupDatasetSample]

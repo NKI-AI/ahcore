@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pytorch_lightning as pl
+
 from dlup.data.dataset import TiledWsiDataset
 
-from ahcore.utils.callbacks import _get_h5_output_filename
+from ahcore.lit_module import AhCoreLightningModule
+from ahcore.utils.callbacks import get_h5_output_filename
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import InferencePrecision, NormalizationType
@@ -61,8 +62,8 @@ class WriteH5Callback(WriterCallback):
     def dump_dir(self) -> Path:
         return self._dump_dir
 
-    def build_writer_class(self, pl_module: "pl.LightningModule", stage: str, filename: str) -> Writer:
-        output_filename = _get_h5_output_filename(
+    def build_writer_class(self, pl_module: AhCoreLightningModule, stage: str, filename: str) -> Writer:
+        output_filename = get_h5_output_filename(
             self.dump_dir,
             Path(filename),
             model_name=str(pl_module.name),
