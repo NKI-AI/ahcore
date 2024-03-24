@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from functools import partial
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import numpy.typing as npt
@@ -39,7 +39,7 @@ class NormalizationType(str, Enum):
     SOFTMAX = "softmax"
     LOGITS = "logits"
 
-    def normalize(self):
+    def normalize(self) -> Callable[[torch.Tensor], torch.Tensor]:
         if self == NormalizationType.SIGMOID:
             return torch.sigmoid
         elif self == NormalizationType.SOFTMAX:

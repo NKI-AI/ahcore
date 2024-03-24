@@ -23,7 +23,7 @@ from ahcore.utils.types import DlupDatasetSample, _DlupDataset
 logger = get_logger(__name__)
 
 
-class ConcatDataset(DlupConcatDataset):
+class ConcatDataset(DlupConcatDataset[Dataset[T_co]]):
     """A dataset that concatenates multiple datasets."""
 
     def __init__(self, datasets: Iterable[Dataset[T_co]]) -> None:

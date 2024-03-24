@@ -1,10 +1,14 @@
 import abc
 import ctypes
-import pathlib
 import time
 from multiprocessing import Event, Process, Queue, Semaphore, Value
+from multiprocessing.synchronize import Event as EventClass
+from multiprocessing.synchronize import Semaphore as SemaphoreClass
 from threading import Thread
-from typing import Any
+from typing import Any, Tuple, Generator
+from multiprocessing.sharedctypes import SynchronizedBase
+
+
 
 import pytorch_lightning as pl
 import torch
@@ -15,11 +19,12 @@ from pytorch_lightning import Callback
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import InferencePrecision, NormalizationType
 
-from .h5_callback import Writer
+from ahcore.callbacks.h5_callback import Writer
 
 logger = get_logger(__name__)
 
-def _remove_initial_gap_and_zeros(tensor: torch.Tensor, gap_threshold: int=1) -> int:
+
+def _remove_initial_gap_and_zeros(tensor: torch.Tensor, gap_threshold: int = 1) -> int:
     """Function to detect if there are initial zeros appended after the gather."""
     if len(tensor) < 2:
         return 0
@@ -104,13 +109,13 @@ class WriterCallback(abc.ABC, Callback):
         data_key: str = "prediction",
         normalization_type: str = NormalizationType.SOFTMAX,
         precision: str = InferencePrecision.FP32,  # This is passed to the writer class
-        writer_class=None,
-    ):
+        writer_class: Writer | None =None,
+    ) -> None:
         # TODO: Test predict
 
         self._queue_size = queue_size
-        self._queues: dict[str, Queue] = {}
-        self._completion_flags = {}
+        self._queues: dict[str, Queue[Tuple[torch.Tensor | None, torch.Tensor | None]]] = {}
+        self._completion_flags: dict[str, Any] = {}
         self._processes: dict[str, Process] = {}
         self._requires_gather = requires_gather
         self._data_key = data_key
@@ -122,9 +127,9 @@ class WriterCallback(abc.ABC, Callback):
         self._tile_counter: dict[str, int] = {}  # Keeps track of the number of tiles processed for a dataset
 
         self._semaphore = Semaphore(max_concurrent_queues)
-        self._cleanup_shutdown_event = Event()
+        self._cleanup_shutdown_event: EventClass = Event()
 
-        self._total_dataset: ConcatDataset | None = None
+        self._total_dataset: ConcatDataset[TiledWsiDataset] | None = None
         self._dataset_index = 0
 
     def _on_epoch_start(self, trainer: "pl.Trainer") -> None:
@@ -137,6 +142,7 @@ class WriterCallback(abc.ABC, Callback):
             return
 
         current_dataset: TiledWsiDataset
+        assert self._total_dataset
         for current_dataset in self._total_dataset.datasets:
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
 
@@ -144,15 +150,14 @@ class WriterCallback(abc.ABC, Callback):
         logger.info("Validation epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
-
-        self._total_dataset = trainer.datamodule.validate_dataset
+        self._total_dataset = trainer.datamodule.validate_dataset  # type: ignore
         return self._on_epoch_start(trainer)
 
     def on_predict_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         logger.info("Prediction epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
-        self._total_dataset = trainer.predict_dataloaders.dataset
+        self._total_dataset = trainer.predict_dataloaders.dataset  # type: ignore
         return self._on_epoch_start(trainer)
 
     @staticmethod
@@ -166,7 +171,9 @@ class WriterCallback(abc.ABC, Callback):
             if isinstance(trainer.limit_val_batches, int):
                 total_steps = trainer.limit_val_batches
             else:
-                total_steps = int(trainer.limit_val_batches * len(trainer.val_dataloaders))
+                assert trainer.val_dataloaders
+                assert trainer.limit_val_batches
+                total_steps = int(trainer.limit_val_batches) * len(trainer.val_dataloaders)
             is_last_step = batch_idx + 1 == total_steps
         else:
             raise ValueError(
@@ -264,7 +271,7 @@ class WriterCallback(abc.ABC, Callback):
         stage: str,
         filename: str,
         last_batch: bool,
-    ):
+    ) -> None:
         if filename not in self._queues:
             self._semaphore.acquire()
             completion_flag = Value(ctypes.c_int, 0)  # For process completion signaling
@@ -280,7 +287,7 @@ class WriterCallback(abc.ABC, Callback):
         if last_batch:
             self._queues[filename].put((None, None))
 
-    def _cleanup_completed_processes(self):
+    def _cleanup_completed_processes(self) -> None:
         for filename, flag in list(self._completion_flags.items()):
             if flag.value == 1:  # Process has completed
                 logger.debug(f"{filename} is completed. Clearing.")
@@ -291,7 +298,7 @@ class WriterCallback(abc.ABC, Callback):
                 del self._processes[filename]
                 del self._completion_flags[filename]
 
-    def _monitor_and_cleanup(self):
+    def _monitor_and_cleanup(self) -> None:
         """Continuously monitor for completed processes and clean them up."""
         while not self._cleanup_shutdown_event.is_set():
             self._cleanup_completed_processes()
@@ -313,7 +320,9 @@ class WriterCallback(abc.ABC, Callback):
         self._epoch_end(trainer, pl_module)
 
 
-def _queue_generator(queue: Queue):
+def _queue_generator(
+    queue: Queue[Tuple[torch.Tensor | None, torch.Tensor | None]]
+) -> Generator[Tuple[torch.Tensor | None, torch.Tensor | None], None, None]:
     """
     Generator to yield items from a queue. This is used to consume the queue in the writer process.
 
@@ -337,10 +346,10 @@ def _queue_generator(queue: Queue):
 
 def _writer_process(
     callback_instance: WriterCallback,
-    queue: Queue,
+    queue: Queue[Tuple[torch.Tensor | None, torch.Tensor | None]],
     filename: str,
-    semaphore: Semaphore,
-    completion_flag: Value,
+    semaphore: SemaphoreClass,
+    completion_flag: SynchronizedBase[ctypes.c_int],
     stage: str,
     pl_module: "pl.LightningModule",
 ) -> None:

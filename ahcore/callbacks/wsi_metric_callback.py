@@ -68,9 +68,9 @@ class ComputeWsiMetricsCallback(Callback):
         self._model_name = pl_module.name
 
         _callback: Optional[WriteH5Callback] = None
-        for idx, callback in enumerate(trainer.callbacks):
+        for idx, callback in enumerate(trainer.callbacks):  # type: ignore
             if isinstance(callback, WriteH5Callback):
-                _callback = cast(WriteH5Callback, trainer.callbacks[idx])
+                _callback = cast(WriteH5Callback, trainer.callbacks[idx])  # type: ignore
                 break
 
         if _callback is None:

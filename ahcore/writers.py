@@ -6,7 +6,7 @@ This module contains writer classes. Currently implemented:
   h5 files.
 
 """
-
+import abc
 import io
 import json
 from multiprocessing.connection import Connection
@@ -47,8 +47,14 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
     return image
 
 
-class Writer:
-    pass
+class Writer(abc.ABC):
+    @abc.abstractmethod
+    def consume(
+        self,
+        batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        connection_to_parent: Optional[Connection] = None,
+    ) -> None:
+        pass
 
 
 class H5FileImageWriter(Writer):
