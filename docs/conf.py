@@ -77,7 +77,7 @@ master_doc = "index"
 
 # General information about the project.
 project = "ahcore"
-copyright = "2023, ahcore contributors"
+copyright = "2024, ahcore contributors"
 author = "AI for Oncology"
 
 # The version info for the project you're documenting, acts as replacement for
@@ -143,7 +143,8 @@ html_theme = "sphinx_book_theme"
 # documentation.
 #
 html_theme_options = {
-    "repository_url": "https://github.com/NKI-AI/ahcore.git",
+    "repository_url": "https://github.com/NKI-AI/ahcore",
+    "path_to_docs": "/docs",
     "repository_branch": "main",
     "use_issues_button": True,
     "use_edit_page_button": True,
