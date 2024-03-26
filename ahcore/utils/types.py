@@ -55,12 +55,12 @@ class InferencePrecision(str, Enum):
     FP32 = "float32"
     UINT8 = "uint8"
 
-    def get_multiplier(self) -> GenericArray:
+    def get_multiplier(self) -> float:
         if self == InferencePrecision.FP16:
-            return np.array(1.0).astype(np.float16)
+            return 1.0
         elif self == InferencePrecision.FP32:
-            return np.array(1.0).astype(np.float32)
+            return 1.0
         elif self == InferencePrecision.UINT8:
-            return np.array(255.0).astype(np.uint8)
+            return 255.0
         else:
             raise NotImplementedError(f"Precision {self} is not supported for {self.__class__.__name__}.")
