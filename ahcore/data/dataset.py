@@ -12,7 +12,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from dlup.data.dataset import Dataset, TiledWsiDataset
-from torch.utils.data import DataLoader, Sampler
+from torch.utils.data import DataLoader, DistributedSampler, Sampler
 
 from ahcore.utils.data import DataDescription, basemodel_to_uuid
 from ahcore.utils.io import fullname, get_cache_dir, get_logger
@@ -196,7 +196,7 @@ class DlupDataModule(pl.LightningDataModule):
         return self._data_manager
 
     def setup(self, stage: str) -> None:
-        if stage not in ("fit", "validate", "test"):
+        if stage not in ("fit", "validate", "test", "predict"):
             raise ValueError(f"Stage should be one of fit, validate or test, found {stage}.")
 
         if stage and self._already_called[stage]:
@@ -219,7 +219,7 @@ class DlupDataModule(pl.LightningDataModule):
         setattr(self, f"_{stage}_data_iterator", dataset_iterator())
 
     def _construct_concatenated_dataloader(
-        self, data_iterator: Iterator[_DlupDataset], batch_size: int, stage: str
+        self, data_iterator: Iterator[_DlupDataset], batch_size: int, stage: str, distributed: bool = False
     ) -> Optional[DataLoader[DlupDatasetSample]]:
         if not data_iterator:
             return None
@@ -246,6 +246,14 @@ class DlupDataModule(pl.LightningDataModule):
         sampler: Sampler[int]
         if stage == "fit":
             sampler = torch.utils.data.RandomSampler(data_source=dataset)
+
+        elif stage == "predict" and distributed:
+            # this is necessary because Lightning changes backend logic for predict
+            # in particular, it will always return a non-repeating distributed sampler, causing deadlocks for callbacks
+            sampler = DistributedSampler(
+                dataset=dataset,
+                shuffle=False,
+            )
 
         else:
             sampler = torch.utils.data.SequentialSampler(data_source=dataset)
@@ -317,8 +325,9 @@ class DlupDataModule(pl.LightningDataModule):
             self.setup("predict")
         batch_size = self._validate_batch_size if self._validate_batch_size else self._batch_size
         assert self._predict_data_iterator
+        distributed = self.trainer.world_size > 1 if self.trainer else False
         return self._construct_concatenated_dataloader(
-            self._predict_data_iterator, batch_size=batch_size, stage="predict"
+            self._predict_data_iterator, batch_size=batch_size, stage="predict", distributed=distributed
         )
 
     def teardown(self, stage: str | None = None) -> None:

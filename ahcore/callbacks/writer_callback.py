@@ -121,6 +121,7 @@ class WriterCallback(abc.ABC, Callback):
         self._normalization_type = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)
         self._writer_class = writer_class
+        self._max_concurrent_queues = max_concurrent_queues
 
         self._dataset_sizes: dict[str, int] = {}  # Keeps track of the total size of a dataset
         self._tile_counter: dict[str, int] = {}  # Keeps track of the number of tiles processed for a dataset
@@ -130,6 +131,13 @@ class WriterCallback(abc.ABC, Callback):
 
         self._total_dataset: ConcatDataset[dict[str, Any]] | None = None
         self._dataset_index = 0
+
+    def setup(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
+        if trainer.world_size > 1:
+            if self._max_concurrent_queues < trainer.world_size:
+                raise ValueError(
+                    "max_concurrent_queues should be greater than or equal to the world size to avoid deadlock."
+                )
 
     def _on_epoch_start(self, trainer: "pl.Trainer") -> None:
         self._cleanup_shutdown_event.clear()
@@ -142,7 +150,7 @@ class WriterCallback(abc.ABC, Callback):
 
         current_dataset: TiledWsiDataset
         assert self._total_dataset
-        for current_dataset in self._total_dataset.datasets:
+        for current_dataset in self._total_dataset.datasets:  # type: ignore
             assert current_dataset.slide_image.identifier
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
 
@@ -194,6 +202,29 @@ class WriterCallback(abc.ABC, Callback):
         outputs: Any,
         batch: Any,
         batch_idx: int,
+        dataloader_idx: int = 0,
+    ) -> None:
+        self._batch_end(trainer, pl_module, outputs, batch, batch_idx, "validate", dataloader_idx)
+
+    def on_predict_batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        outputs: Any,
+        batch: Any,
+        batch_idx: int,
+        dataloader_idx: int = 0,
+    ) -> None:
+        self._batch_end(trainer, pl_module, outputs, batch, batch_idx, "predict", dataloader_idx)
+
+    def _batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        outputs: Any,
+        batch: Any,
+        batch_idx: int,
+        stage: str,
         dataloader_idx: int = 0,
     ) -> None:
         if trainer.world_size > 1 and self._requires_gather:  # Check if running in a distributed environment
@@ -250,7 +281,7 @@ class WriterCallback(abc.ABC, Callback):
                 coordinates.cpu().numpy(),
                 data.cpu().numpy(),
                 pl_module=pl_module,
-                stage="validate",
+                stage=stage,
                 filename=curr_filename,
                 last_batch=last_batch,
             )

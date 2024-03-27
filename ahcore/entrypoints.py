@@ -263,6 +263,7 @@ def inference(config: DictConfig) -> None:
             config.trainer,
             callbacks=callbacks,
             logger=lightning_loggers,
+            use_distributed_sampler=False,
             _convert_="partial",
         )
     else:

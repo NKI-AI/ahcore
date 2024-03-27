@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import time
 from pathlib import Path
 from typing import Any, Callable, Generator, Iterator, Optional, cast
 
@@ -27,6 +28,7 @@ class WriteTiffCallback(Callback):
         max_concurrent_writers: int,
         tile_size: tuple[int, int] = (1024, 1024),
         colormap: dict[int, str] | None = None,
+        max_patience_on_unfinished_files: int = 100,
     ):
         self._pool = multiprocessing.Pool(max_concurrent_writers)
         self._logger = get_logger(type(self).__name__)
@@ -35,6 +37,7 @@ class WriteTiffCallback(Callback):
         self._model_name: str | None = None
         self._tile_size = tile_size
         self._colormap = colormap
+        self._patience_on_unfinished_files = max_patience_on_unfinished_files
 
         # TODO: Handle tile operation such that we avoid repetitions.
 
@@ -104,19 +107,21 @@ class WriteTiffCallback(Callback):
             return
         assert self.dump_dir, "dump_dir should never be None here."
         self._logger.info("Writing TIFF files to %s", self.dump_dir / "outputs" / f"{pl_module.name}")
+
         results = []
+        unfinished_files = []  # Store partial files for retry
+
         for image_filename, h5_filename in self._filenames.items():
+            if not h5_filename.exists():
+                unfinished_files.append((image_filename, h5_filename))
+                continue
+
             self._logger.debug(
-                "Writing image output %s to %s",
-                Path(image_filename),
-                Path(image_filename).with_suffix(".tiff"),
+                "Writing image output %s to %s", Path(image_filename), Path(image_filename).with_suffix(".tiff")
             )
             output_path = self.dump_dir / "outputs" / f"{pl_module.name}" / f"step_{pl_module.global_step}"
             with open(output_path / "image_tiff_link.txt", "a") as file:
                 file.write(f"{image_filename},{h5_filename.with_suffix('.tiff')}\n")
-            if not h5_filename.exists():
-                self._logger.warning("H5 file %s does not exist. Skipping", h5_filename)
-                continue
 
             result = self._pool.apply_async(
                 _write_tiff,
@@ -130,9 +135,38 @@ class WriteTiffCallback(Callback):
             )
             results.append(result)
 
+        # Retry mechanism for unfinished files
+        iterations = 0
+        while unfinished_files:
+            retry_files = []
+            for image_filename, h5_filename in unfinished_files:
+                if h5_filename.exists():  # Check if ready
+                    logger.debug("Retrying to write TIFF %s", h5_filename.with_suffix(".tiff"))
+                    result = self._pool.apply_async(
+                        _write_tiff,
+                        (
+                            h5_filename,
+                            self._tile_size,
+                            self._tile_process_function,
+                            self._colormap,
+                            _generator_from_reader,
+                        ),
+                    )
+                    results.append(result)
+                else:
+                    logger.debug("H5 file %s is still unfinished. Placing back in queue", h5_filename)
+                    retry_files.append((image_filename, h5_filename))
+            unfinished_files = retry_files
+            if unfinished_files:
+                iterations += 1
+                if iterations > self._patience_on_unfinished_files:
+                    raise ValueError(f"Failed to write TIFF files {unfinished_files} after {iterations} iterations.")
+                time.sleep(2.0)  # Wait a bit before retrying
+
         for result in results:
-            result.get()  # Wait for the process to complete.
-        self._filenames = {}  # Reset the filenames
+            result.get()  # Ensure all retry tasks are also completed
+
+        self._filenames = {}  # Reset the filenames for the next epoch
 
     def on_validation_batch_end(
         self,
