@@ -128,7 +128,9 @@ class H5FileImageReader:
 
         if self._metadata["has_color_profile"]:
             _color_profile = self._h5file["color_profile"][()].tobytes()
-            raise NotImplementedError(f"Color profiles are not yet implemented, and are present in {self._filename}.")
+            raise NotImplementedError(
+                f"Color profiles are not yet implemented, but {_color_profile} is present in {self._filename}."
+            )
 
     def __enter__(self) -> "H5FileImageReader":
         if self._h5file is None:

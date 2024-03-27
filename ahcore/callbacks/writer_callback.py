@@ -8,7 +8,6 @@ from multiprocessing.synchronize import Semaphore as SemaphoreClass
 from threading import Thread
 from typing import Any, Generator, Tuple
 
-import numpy.typing as npt
 import pytorch_lightning as pl
 import torch
 import torch.distributed as dist

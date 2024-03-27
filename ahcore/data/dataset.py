@@ -11,9 +11,7 @@ from typing import Any, Callable, Generator, Iterable, Iterator, Optional, Union
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from dlup.data.dataset import ConcatDataset as DlupConcatDataset
-from dlup.data.dataset import Dataset, T_co, TiledWsiDataset
-from pytorch_lightning.trainer.states import TrainerFn
+from dlup.data.dataset import Dataset, TiledWsiDataset
 from torch.utils.data import DataLoader, Sampler
 
 from ahcore.utils.data import DataDescription, basemodel_to_uuid
@@ -199,7 +197,7 @@ class DlupDataModule(pl.LightningDataModule):
 
     def setup(self, stage: str) -> None:
         if stage not in ("fit", "validate", "test"):
-            raise ValueError(f"Stage should be one of fit, validate or test")
+            raise ValueError(f"Stage should be one of fit, validate or test, found {stage}.")
 
         if stage and self._already_called[stage]:
             return

@@ -265,7 +265,7 @@ def _generator(
         if compression in ["JPEG", "PNG"]:  # This is JPG
             buffered = io.BytesIO()
             _quality = None if compression == "PNG" else quality
-            output.convert("RGB").save(buffered, format=compression, quality=quality)
+            output.convert("RGB").save(buffered, format=compression, quality=_quality)
             array = np.frombuffer(buffered.getvalue(), dtype="uint8")
         else:  # No compression
             array = np.asarray(tile)
