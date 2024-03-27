@@ -319,8 +319,8 @@ class WriterCallback(abc.ABC, Callback):
 
 
 def _queue_generator(
-    queue: Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]
-) -> Generator[Tuple[GenericNumberArray | None, GenericNumberArray | None], None, None]:
+    queue: "Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]",
+) -> Generator[Tuple[GenericNumberArray, GenericNumberArray], None, None]:
     """
     Generator to yield items from a queue. This is used to consume the queue in the writer process.
 
@@ -337,17 +337,17 @@ def _queue_generator(
     """
     while True:
         coordinates, item = queue.get()
-        if item is None:
+        if item is None or coordinates is None:
             break
         yield coordinates, item
 
 
 def _writer_process(
     callback_instance: WriterCallback,
-    queue: Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]],
+    queue: "Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]",
     filename: str,
     semaphore: SemaphoreClass,
-    completion_flag: SynchronizedBase[ctypes.c_int],
+    completion_flag: "SynchronizedBase[ctypes.c_int]",
     stage: str,
     pl_module: "pl.LightningModule",
 ) -> None:

@@ -185,7 +185,7 @@ class DataManager:
         except RecordNotFoundError as e:
             raise RecordNotFoundError(
                 f"Manifest with name {manifest_name} not found. "
-                f"Available manifest names: {', '.join([m.name for m in self._session.query(Manifest).all()])}"
+                f"Available manifest names: {', '.join([str(m.name) for m in self._session.query(Manifest).all()])}"
             ) from e
 
         split_definition = self._session.query(SplitDefinitions).filter_by(version=split_version).first()
