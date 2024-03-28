@@ -11,3 +11,4 @@
 datamodule:
   num_workers: 1
   batch_size: 16
+  validate_batch_size: 3

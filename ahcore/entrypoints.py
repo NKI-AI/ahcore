@@ -1,6 +1,7 @@
 """
 Entrypoints
 """
+
 from __future__ import annotations
 
 import os
@@ -178,8 +179,9 @@ def train(config: DictConfig) -> torch.Tensor | None:
     # Print path to best checkpoint
     if trainer.checkpoint_callback:
         if not config.trainer.get("fast_dev_run") and config.get("train"):
-            logger.info(f"Best model checkpoint at {trainer.checkpoint_callback.best_model_path}")  # type: ignore
-
+            best_model_path = getattr(trainer.checkpoint_callback, "best_model_path", None)
+            if best_model_path:
+                logger.info(f"Best model checkpoint at {trainer.checkpoint_callback.best_model_path}")  # type: ignore
     # Return metric score for hyperparameter optimization
     return score
 
@@ -261,6 +263,7 @@ def inference(config: DictConfig) -> None:
             config.trainer,
             callbacks=callbacks,
             logger=lightning_loggers,
+            use_distributed_sampler=False,
             _convert_="partial",
         )
     else:

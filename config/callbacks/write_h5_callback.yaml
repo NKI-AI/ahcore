@@ -1,3 +1,5 @@
 write_h5_callback:
   _target_: ahcore.callbacks.WriteH5Callback
   dump_dir: ${oc.env:SCRATCH}/${task_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+  queue_size: 16
+  max_concurrent_queues: 3

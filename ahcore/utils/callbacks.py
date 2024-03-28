@@ -48,7 +48,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         reader : H5FileImageReader
         annotations : WsiAnnotations
         mask : WsiAnnotations
-        region_size : Tuple[int, int]
+        region_size : tuple[int, int]
             The region size to use to split up the image into regions.
         """
         super().__init__()
@@ -96,7 +96,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
 
         Returns
         -------
-        List[Tuple[int, int]]
+        list[tuple[int, int]]
             The list of regions.
         """
         regions = []
@@ -113,7 +113,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
 
         Parameters
         ----------
-        coordinates : Tuple[int, int]
+        coordinates : tuple[int, int]
             The coordinates of the region to check.
 
         Returns
@@ -229,7 +229,7 @@ def _get_uuid_for_filename(input_path: Path) -> str:
     return hex_dig
 
 
-def _get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:
+def get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:
     hex_dig = _get_uuid_for_filename(input_path=input_path)
 
     # Return the hashed filename with the new extension

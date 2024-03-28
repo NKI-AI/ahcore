@@ -5,5 +5,5 @@ losses:
   - cross_entropy:
       _target_: ahcore.losses.cross_entropy
       _partial_: true
-      ignore_index: 0
+      ignore_index: null
       topk: null

@@ -6,6 +6,7 @@ This module contains writer classes. Currently implemented:
   h5 files.
 
 """
+import abc
 import io
 import json
 from multiprocessing.connection import Connection
@@ -19,7 +20,7 @@ import PIL.Image
 from dlup.tiling import Grid, GridOrder, TilingMode
 
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import GenericArray, InferencePrecision
+from ahcore.utils.types import GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
 
@@ -46,74 +47,17 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
     return image
 
 
-class H5TileFeatureWriter:
-    """Feature writer that writes tile-by-tile feature representation to h5."""
-
-    def __init__(self, filename: Path, size: tuple[int, int]) -> None:
-        self._filename = filename
-        # The size corresponds to number of tiles along each coordinate axis.
-        self._size = size
-        self._tile_feature_dataset: Optional[h5py.Dataset] = None
-        self._feature_dim: Optional[int] = None
-        self._logger = logger
-
-    def init_writer(self, first_features: GenericArray, h5file: h5py.File) -> None:
-        self._feature_dim = first_features.shape[0]
-        self._tile_feature_dataset = h5file.create_dataset(
-            "tile_feature_vectors",
-            shape=(self._size[0], self._size[1], self._feature_dim),
-            dtype=first_features.dtype,
-            compression="gzip",
-            chunks=(1, 1, self._feature_dim),  # Chunking for each tile feature vector
-        )
-
-    def consume_features(
+class Writer(abc.ABC):
+    @abc.abstractmethod
+    def consume(
         self,
-        feature_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
         connection_to_parent: Optional[Connection] = None,
     ) -> None:
-        """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
-        try:
-            with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
-                first_coordinates, first_features = next(feature_generator)
-                self.init_writer(first_features, h5file)
-
-                assert self._tile_feature_dataset, "Tile feature dataset is not initialized"
-
-                _feature_generator = self._feature_generator(first_coordinates, first_features, feature_generator)
-
-                for tile_coordinates, feature in _feature_generator:
-                    # The spatial organisation of feature vectors corresponds to the spatial organisation of the tiles.
-                    self._tile_feature_dataset[tile_coordinates[0], tile_coordinates[1], :] = feature
-
-        except Exception as e:
-            self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
-            if connection_to_parent:
-                connection_to_parent.send((False, self._filename, e))
-        else:
-            self._filename.with_suffix(".h5.partial").rename(self._filename)
-
-        finally:
-            if connection_to_parent:
-                connection_to_parent.send((True, None, None))
-                connection_to_parent.close()
-
-    @staticmethod
-    def _feature_generator(
-        first_feature_coordinates: GenericArray,
-        first_features: GenericArray,
-        feature_generator: Generator[Any, None, None],
-    ) -> Generator[Any, None, None]:
-        # We plug the first coordinates and the first features back into the generator
-        # That way, we can yield them while h5 writing.
-        yield first_feature_coordinates, first_features
-        for coordinates, feature in feature_generator:
-            if feature is None:
-                break
-            yield coordinates, feature
+        pass
 
 
-class H5FileImageWriter:
+class H5FileImageWriter(Writer):
     """Image writer that writes tile-by-tile to h5."""
 
     def __init__(
@@ -153,7 +97,11 @@ class H5FileImageWriter:
         self._logger = logger  # maybe not the best way, think about it
         self._logger.debug("Writing h5 to %s", self._filename)
 
-    def init_writer(self, first_coordinates: GenericArray, first_batch: GenericArray, h5file: h5py.File) -> None:
+        self._tiles_seen = 0
+
+    def init_writer(
+        self, first_coordinates: GenericNumberArray, first_batch: GenericNumberArray, h5file: h5py.File
+    ) -> None:
         """Initializes the image_dataset based on the first tile."""
         if self._is_compressed_image:
             if self._precision is not None:
@@ -186,7 +134,7 @@ class H5FileImageWriter:
         # TODO: One would need to collect the coordinates and based on the first and the last
         # TODO: of a single grid, one can determine the grid, and the empty indices.
         if self._grid is None:  # During validation, the grid is passed as a parameter
-            self._grid = Grid.from_tiling(
+            grid = Grid.from_tiling(
                 self._grid_offset,
                 size=self._size,
                 tile_size=self._tile_size,
@@ -194,8 +142,11 @@ class H5FileImageWriter:
                 mode=TilingMode.overflow,
                 order=GridOrder.C,
             )
+            self._grid = grid
+        else:
+            grid = self._grid
 
-        num_tiles = len(self._grid)
+        num_tiles = len(grid)
         self._tile_indices = h5file.create_dataset(
             "tile_indices",
             shape=(num_tiles,),
@@ -244,9 +195,9 @@ class H5FileImageWriter:
             "dtype": str(first_batch.dtype),
             "is_binary": self._is_compressed_image,
             "precision": self._precision.value if self._precision else str(InferencePrecision.FP32),
-            "multiplier": self._precision.get_multiplier()
-            if self._precision
-            else InferencePrecision.FP32.get_multiplier(),
+            "multiplier": (
+                self._precision.get_multiplier() if self._precision else InferencePrecision.FP32.get_multiplier()
+            ),
             "has_color_profile": self._color_profile is not None,
         }
 
@@ -255,11 +206,11 @@ class H5FileImageWriter:
         metadata_json = json.dumps(metadata)
         h5file.attrs["metadata"] = metadata_json
 
-    def adjust_batch_precision(self, batch: GenericArray) -> GenericArray:
+    def adjust_batch_precision(self, batch: GenericNumberArray) -> GenericNumberArray:
         """Adjusts the batch precision based on the precision set in the writer."""
         if self._precision:
             multiplier = self._precision.get_multiplier()
-            batch = np.multiply(batch, multiplier)
+            batch = batch * multiplier
             batch = batch.astype(self._precision.value)
         return batch
 
@@ -281,7 +232,7 @@ class H5FileImageWriter:
 
     def consume(
         self,
-        batch_generator: Generator[tuple[GenericArray, GenericArray], None, None],
+        batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
         connection_to_parent: Optional[Connection] = None,
     ) -> None:
         """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
@@ -305,18 +256,19 @@ class H5FileImageWriter:
                 if self._progress:
                     batch_generator = self._progress(batch_generator, total=self._num_samples)
 
-                for coordinates, batch in batch_generator:
+                for idx, (coordinates, batch) in enumerate(batch_generator):
+                    self._tiles_seen += batch.shape[0]
                     batch = self.adjust_batch_precision(batch)
                     # We take a coordinate, and step through the grid until we find it.
                     # Note that this assumes that the coordinates come in C-order, so we will always hit it
-                    for idx, curr_coordinates in enumerate(coordinates):
+                    for curr_idx, curr_coordinates in enumerate(coordinates):
                         # As long as our current coordinates are not equal to the grid coordinates, we make a step
                         while not np.all(curr_coordinates == self._grid[grid_counter]):
                             grid_counter += 1
                         # If we find it, we set it to the index, so we can find it later on
                         # This can be tested by comparing the grid evaluated at a grid index with the tile index
                         # mapped to its coordinates
-                        self._tile_indices[grid_counter] = self._current_index + idx
+                        self._tile_indices[grid_counter] = self._current_index + curr_idx
                         grid_counter += 1
 
                     batch_size = batch.shape[0]
@@ -328,6 +280,7 @@ class H5FileImageWriter:
             self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
             if connection_to_parent:
                 connection_to_parent.send((False, self._filename, e))  # Send a message to the parent
+
         else:
             # When done writing rename the file.
             self._filename.with_suffix(".h5.partial").rename(self._filename)
@@ -338,8 +291,9 @@ class H5FileImageWriter:
 
     @staticmethod
     def _batch_generator(
-        first_coordinates_batch: Any, batch_generator: Generator[Any, None, None]
-    ) -> Generator[Any, None, None]:
+        first_coordinates_batch: tuple[GenericNumberArray, GenericNumberArray],
+        batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
+    ) -> Generator[tuple[GenericNumberArray, GenericNumberArray], None, None]:
         # We yield the first batch too so the progress bar takes the first batch also into account
         yield first_coordinates_batch
         for tile in batch_generator:

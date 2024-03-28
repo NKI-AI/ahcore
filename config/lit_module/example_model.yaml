@@ -1,6 +1,0 @@
-# _target_: here_should_be_some_Lit_module
-lr: 0.1
-
-net:
-  # _target_: some_model
-  input_size: 200

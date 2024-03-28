@@ -1,4 +1,5 @@
 """Utilities to describe the dataset to be used and the way it should be parsed."""
+
 from __future__ import annotations
 
 import hashlib

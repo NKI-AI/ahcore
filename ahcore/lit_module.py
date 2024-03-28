@@ -3,6 +3,7 @@ This module contains the core Lightning module for ahcore. This module is respon
 - Training, Validation and Inference
 - Wrapping models
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -178,11 +179,6 @@ class AhCoreLightningModule(pl.LightningModule):
 
     def validation_step(self, batch: dict[str, Any], batch_idx: int) -> dict[str, Any]:
         output = self.do_step(batch, batch_idx, stage="validate")
-
-        # This is a sanity check. We expect the filenames to be constant across the batch.
-        filename = batch["path"][0]
-        if any([filename != f for f in batch["path"]]):
-            raise ValueError("Filenames are not constant across the batch.")
         return output
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
@@ -193,11 +189,6 @@ class AhCoreLightningModule(pl.LightningModule):
         batch = {**batch, **self._get_inference_prediction(batch["image"])}
         _prediction = batch["prediction"]
         output = {"prediction": _prediction, **_relevant_dict}
-
-        # This is a sanity check. We expect the filenames to be constant across the batch.
-        filename = batch["path"][0]
-        if any([filename != f for f in batch["path"]]):
-            raise ValueError("Filenames are not constant across the batch.")
         return output
 
     def configure_optimizers(self) -> Any:

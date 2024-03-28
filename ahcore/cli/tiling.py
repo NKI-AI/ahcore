@@ -2,6 +2,7 @@
 
 Many models uses 0.5um/pixel at 224 x 224 size.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -20,7 +21,7 @@ import PIL.Image
 import PIL.ImageCms
 from dlup import SlideImage
 from dlup.data.dataset import TiledWsiDataset
-from dlup.experimental_backends import ImageBackend
+from dlup.experimental_backends import ImageBackend  # type: ignore
 from dlup.tiling import GridOrder, TilingMode
 from PIL import Image
 from pydantic import BaseModel
@@ -264,7 +265,7 @@ def _generator(
         if compression in ["JPEG", "PNG"]:  # This is JPG
             buffered = io.BytesIO()
             _quality = None if compression == "PNG" else quality
-            output.convert("RGB").save(buffered, format=compression, quality=quality)
+            output.convert("RGB").save(buffered, format=compression, quality=_quality)
             array = np.frombuffer(buffered.getvalue(), dtype="uint8")
         else:  # No compression
             array = np.asarray(tile)
@@ -279,7 +280,7 @@ def save_tiles(
     dataset: TiledWsiDataset,
     h5_writer: H5FileImageWriter,
     compression: Literal["jpg", "png", "none"],
-    quality: int | None = 80,
+    quality: int | None = 85,
 ) -> None:
     """
     Saves the tiles in the given image slide dataset to disk.
@@ -526,7 +527,7 @@ def register_parser(parser: argparse._SubParsersAction[Any]) -> None:
     _parser.add_argument(
         "--quality",
         type=int,
-        default=80,
+        default=85,
         help="Quality of the saved tiles in jpg (default: 80)",
     )
 

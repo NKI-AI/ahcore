@@ -9,7 +9,6 @@ precision: 32
 
 gradient_clip_val: null
 gradient_clip_algorithm: null
-track_grad_norm: -1
 
 # number of validation steps to execute at the beginning of the training
 num_sanity_val_steps: 0

@@ -1,4 +1,5 @@
 """Database models for ahcore's manifest database."""
+
 from enum import Enum as PyEnum
 from typing import List
 
@@ -28,6 +29,9 @@ class Manifest(Base):
     name = Column(String, unique=True)
 
     patients: Mapped[List["Patient"]] = relationship("Patient", back_populates="manifest")
+
+    def __str__(self) -> str:
+        return f"Manifest {self.name}"
 
 
 class Patient(Base):

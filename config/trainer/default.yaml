@@ -6,7 +6,7 @@ max_epochs: 1000
 num_nodes: 1
 
 # number of validation steps to execute at the beginning of the training
-num_sanity_val_steps: 0
+num_sanity_val_steps: -1
 #log_every_n_steps: 2
 
 # if a smaller grid is used, the val check interval should be smaller

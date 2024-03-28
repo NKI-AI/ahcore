@@ -5,6 +5,7 @@ https://github.com/ashleve/lightning-hydra-template
 This template is licensed under the MIT License.
 
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,7 +22,7 @@ import rich.syntax
 import rich.tree
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.errors import InterpolationKeyError
-from pytorch_lightning.utilities import rank_zero_only  # type: ignore[attr-defined]
+from pytorch_lightning.utilities import rank_zero_only  # type: ignore
 
 
 def get_logger(name: str = __name__) -> logging.Logger:

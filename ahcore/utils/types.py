@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from functools import partial
 from typing import Any, Callable
 
 import numpy as np
@@ -27,7 +28,7 @@ NonNegativeInt = Annotated[int, AfterValidator(is_non_negative)]
 NonNegativeFloat = Annotated[float, AfterValidator(is_non_negative)]
 BoundingBoxType = tuple[tuple[int, int], tuple[int, int]]
 Rois = list[BoundingBoxType]
-GenericArray = npt.NDArray[np.generic]
+GenericNumberArray = npt.NDArray[np.int_ | np.float_]
 
 DlupDatasetSample = dict[str, Any]
 _DlupDataset = Dataset[DlupDatasetSample]
@@ -38,11 +39,11 @@ class NormalizationType(str, Enum):
     SOFTMAX = "softmax"
     LOGITS = "logits"
 
-    def normalize(self) -> Callable[..., Any]:
+    def normalize(self) -> Callable[[torch.Tensor], torch.Tensor]:
         if self == NormalizationType.SIGMOID:
             return torch.sigmoid
         elif self == NormalizationType.SOFTMAX:
-            return torch.softmax
+            return partial(torch.softmax, dim=0)
         elif self == NormalizationType.LOGITS:
             return lambda x: x
         else:
@@ -54,12 +55,12 @@ class InferencePrecision(str, Enum):
     FP32 = "float32"
     UINT8 = "uint8"
 
-    def get_multiplier(self) -> GenericArray:
+    def get_multiplier(self) -> float:
         if self == InferencePrecision.FP16:
-            return np.array(1.0).astype(np.float16)
+            return 1.0
         elif self == InferencePrecision.FP32:
-            return np.array(1.0).astype(np.float32)
+            return 1.0
         elif self == InferencePrecision.UINT8:
-            return np.array(255.0).astype(np.uint8)
+            return 255.0
         else:
             raise NotImplementedError(f"Precision {self} is not supported for {self.__class__.__name__}.")

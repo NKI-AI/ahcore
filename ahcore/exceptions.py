@@ -1,6 +1,7 @@
 """
 Exceptions for ahcore
 """
+
 from __future__ import annotations
 
 

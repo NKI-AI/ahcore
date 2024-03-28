@@ -4,9 +4,10 @@ defaults:
   - early_stopping.yaml
   - model_summary.yaml
   - rich_progress_bar.yaml
+#  - writer_callback.yaml
   - write_h5_callback.yaml
-#  - write_tiff_callback.yaml
-  - compute_wsi_metrics_callback.yaml # This needs to follow write_h5_callback as it requires the outputs
+  - write_tiff_callback.yaml
+#  - compute_wsi_metrics_callback.yaml # This needs to follow write_h5_callback as it requires the outputs
   - _self_
 
 learningrate_monitor:
@@ -22,23 +23,23 @@ model_checkpoint:
   auto_insert_metric_name: False
 
 early_stopping:
-  monitor: "validate/wsi_dice/stroma"
+  monitor: "validate/loss"
   patience: 1000
   mode: "min"
 
 model_summary:
   max_depth: -1
+#
+#write_h5_callback:
+#  max_queue_size: 100
+#  max_concurrent_writers: 4
+#  normalization_type: "logits" # Make sure to use the appropriate normalization for your use case.
+#  precision: "float32" # Make sure to use the appropriate precision for your use case.
 
-write_h5_callback:
-  max_queue_size: 100
-  max_concurrent_writers: 4
-  normalization_type: "logits" # Make sure to use the appropriate normalization for your use case.
-  precision: "float32" # Make sure to use the appropriate precision for your use case.
-
-write_tiff_callback:
-  max_concurrent_writers: 4
-  colormap: ${data_description.color_map}
-
-compute_wsi_metrics_callback:
-  max_processes: 4
-  save_per_image: true
+#write_tiff_callback:
+#  max_concurrent_writers: 4
+#  colormap: ${data_description.color_map}
+#
+#compute_wsi_metrics_callback:
+#  max_processes: 4
+#  save_per_image: true

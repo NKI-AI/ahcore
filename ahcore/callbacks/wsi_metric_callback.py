@@ -17,7 +17,7 @@ from ahcore.callbacks import WriteH5Callback
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.metrics import WSIMetricFactory
 from ahcore.readers import H5FileImageReader, StitchingMode
-from ahcore.utils.callbacks import _get_h5_output_filename, _ValidationDataset
+from ahcore.utils.callbacks import _ValidationDataset, get_h5_output_filename
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.manifest import DataManager, ImageMetadata, fetch_image_metadata, get_mask_and_annotations_from_record
@@ -256,7 +256,7 @@ def prepare_task_data(
     data_description: DataDescription,
     data_manager: DataManager,
 ) -> TaskData:
-    h5_filename = _get_h5_output_filename(
+    h5_filename = get_h5_output_filename(
         dump_dir=dump_dir,
         input_path=data_description.data_dir / filename,
         model_name=str(pl_module.name),

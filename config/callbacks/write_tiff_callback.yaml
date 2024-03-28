@@ -1,2 +1,3 @@
 write_tiff_callback:
   _target_: ahcore.callbacks.WriteTiffCallback
+  max_concurrent_writers: 2

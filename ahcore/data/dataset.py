@@ -1,23 +1,108 @@
 """
 Utilities to construct datasets and DataModule's from manifests.
 """
+
 from __future__ import annotations
 
+import bisect
 import uuid as uuid_module
-from typing import Any, Callable, Generator, Iterator, Optional
+from typing import Any, Callable, Generator, Iterable, Iterator, Optional, Union, overload
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from dlup.data.dataset import ConcatDataset, TiledWsiDataset
-from pytorch_lightning.trainer.states import TrainerFn
-from torch.utils.data import DataLoader, Sampler
+from dlup.data.dataset import Dataset, TiledWsiDataset
+from torch.utils.data import DataLoader, DistributedSampler, Sampler
 
-import ahcore.data.samplers
 from ahcore.utils.data import DataDescription, basemodel_to_uuid
 from ahcore.utils.io import fullname, get_cache_dir, get_logger
 from ahcore.utils.manifest import DataManager, datasets_from_data_description
 from ahcore.utils.types import DlupDatasetSample, _DlupDataset
+
+logger = get_logger(__name__)
+
+
+class ConcatDataset(Dataset[DlupDatasetSample]):
+    """Dataset as a concatenation of multiple datasets.
+
+    This class is useful to assemble different existing datasets.
+
+    Parameters
+    ----------
+    datasets : sequence
+        List of datasets to be concatenated
+
+    Notes
+    -----
+    Taken and adapted from pytorch 1.8.0 torch.utils.data.Dataset under BSD license.
+
+    """
+
+    datasets: list[Dataset[DlupDatasetSample]]
+    cumulative_sizes: list[int]
+    wsi_indices: dict[str, range]
+
+    @staticmethod
+    def cumsum(sequence: list[Dataset[DlupDatasetSample]]) -> list[int]:
+        out_sequence, total = [], 0
+        for item in sequence:
+            length = len(item)
+            out_sequence.append(length + total)
+            total += length
+        return out_sequence
+
+    def __init__(self, datasets: Iterable[Dataset[DlupDatasetSample]]) -> None:
+        super().__init__()
+        # Cannot verify that datasets is Sized
+        assert len(datasets) > 0, "datasets should not be an empty iterable"  # type: ignore
+        self.datasets = list(datasets)
+        for d in self.datasets:
+            if not hasattr(d, "__getitem__"):
+                raise ValueError("ConcatDataset requires datasets to be indexable.")
+        self.cumulative_sizes = self.cumsum(self.datasets)
+
+    def index_to_dataset(self, idx: int) -> tuple[Dataset[DlupDatasetSample], int]:
+        """Returns the dataset and the index of the sample in the dataset.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the sample in the concatenated dataset.
+
+        Returns
+        -------
+        tuple[Dataset, int]
+            Dataset and index of the sample in the dataset.
+        """
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError("Absolute value of index should not exceed dataset length")
+            idx = len(self) + idx
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        sample_idx = idx if dataset_idx == 0 else idx - self.cumulative_sizes[dataset_idx - 1]
+        return self.datasets[dataset_idx], sample_idx
+
+    def __len__(self) -> int:
+        return self.cumulative_sizes[-1]
+
+    @overload
+    def __getitem__(self, index: int) -> DlupDatasetSample:
+        ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[DlupDatasetSample]:
+        ...
+
+    def __getitem__(self, index: Union[int, slice]) -> DlupDatasetSample | list[DlupDatasetSample]:
+        """Returns the sample at the given index."""
+        if isinstance(index, slice):
+            start, stop, step = index.indices(len(self))
+            return [{**self[i], "global_index": start + i} for i in range(start, stop, step or 1)]
+
+        dataset, sample_idx = self.index_to_dataset(index)
+        sample = dataset[sample_idx]
+        sample["global_index"] = index
+        return sample
 
 
 class DlupDataModule(pl.LightningDataModule):
@@ -111,8 +196,8 @@ class DlupDataModule(pl.LightningDataModule):
         return self._data_manager
 
     def setup(self, stage: str) -> None:
-        if stage not in (e.value for e in TrainerFn):  # type: ignore
-            raise ValueError(f"Stage should be one of {TrainerFn}")
+        if stage not in ("fit", "validate", "test", "predict"):
+            raise ValueError(f"Stage should be one of fit, validate or test, found {stage}.")
 
         if stage and self._already_called[stage]:
             return
@@ -134,16 +219,16 @@ class DlupDataModule(pl.LightningDataModule):
         setattr(self, f"_{stage}_data_iterator", dataset_iterator())
 
     def _construct_concatenated_dataloader(
-        self, data_iterator: Iterator[_DlupDataset], batch_size: int, stage: str
+        self, data_iterator: Iterator[_DlupDataset], batch_size: int, stage: str, distributed: bool = False
     ) -> Optional[DataLoader[DlupDatasetSample]]:
         if not data_iterator:
             return None
 
-        def construct_dataset() -> ConcatDataset[DlupDatasetSample]:
+        def construct_dataset() -> ConcatDataset:
             datasets = []
             for _, ds in enumerate(data_iterator):
                 datasets.append(ds)
-            return ConcatDataset(datasets)
+            return ConcatDataset(datasets=datasets)
 
         self._logger.info("Constructing dataset for stage %s (this can take a while)", stage)
         dataset = self._load_from_cache(construct_dataset, stage=stage)
@@ -158,30 +243,27 @@ class DlupDataModule(pl.LightningDataModule):
             f" - Max: {lengths.max():.2f}"
         )
 
-        batch_sampler: Sampler[list[int]]
+        sampler: Sampler[int]
         if stage == "fit":
-            batch_sampler = torch.utils.data.BatchSampler(
-                torch.utils.data.RandomSampler(data_source=dataset, replacement=True),
-                batch_size=batch_size,
-                drop_last=True,
-            )
+            sampler = torch.utils.data.RandomSampler(data_source=dataset)
 
-        elif stage == "predict":
-            batch_sampler = ahcore.data.samplers.WsiBatchSamplerPredict(
+        elif stage == "predict" and distributed:
+            # this is necessary because Lightning changes backend logic for predict
+            # in particular, it will always return a non-repeating distributed sampler, causing deadlocks for callbacks
+            sampler = DistributedSampler(
                 dataset=dataset,
-                batch_size=batch_size,
+                shuffle=False,
             )
 
         else:
-            batch_sampler = ahcore.data.samplers.WsiBatchSampler(
-                dataset=dataset,
-                batch_size=batch_size,
-            )
+            sampler = torch.utils.data.SequentialSampler(data_source=dataset)
 
         return DataLoader(
             dataset,
             num_workers=self._num_workers,
-            batch_sampler=batch_sampler,
+            sampler=sampler,
+            batch_size=batch_size,
+            drop_last=True if stage == "fit" else False,
             persistent_workers=self._persistent_workers,
             pin_memory=self._pin_memory,
         )
@@ -226,10 +308,7 @@ class DlupDataModule(pl.LightningDataModule):
             batch_size=batch_size,
             stage="validate",
         )
-        if val_dataloader:
-            setattr(self, "val_concat_dataset", val_dataloader.dataset)
-        else:
-            setattr(self, "val_concat_dataset", None)
+        setattr(self, "val_concat_dataset", val_dataloader.dataset if val_dataloader else None)
         return val_dataloader
 
     def test_dataloader(self) -> Optional[DataLoader[DlupDatasetSample]]:
@@ -246,8 +325,9 @@ class DlupDataModule(pl.LightningDataModule):
             self.setup("predict")
         batch_size = self._validate_batch_size if self._validate_batch_size else self._batch_size
         assert self._predict_data_iterator
+        distributed = self.trainer.world_size > 1 if self.trainer else False
         return self._construct_concatenated_dataloader(
-            self._predict_data_iterator, batch_size=batch_size, stage="predict"
+            self._predict_data_iterator, batch_size=batch_size, stage="predict", distributed=distributed
         )
 
     def teardown(self, stage: str | None = None) -> None:

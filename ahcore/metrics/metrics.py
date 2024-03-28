@@ -1,6 +1,7 @@
 """
 Metrics module, including factory.
 """
+
 from __future__ import annotations
 
 import abc

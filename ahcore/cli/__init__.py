@@ -1,4 +1,5 @@
 """Ahcore Command-line interface. This is the file which builds the main parser."""
+
 from __future__ import annotations
 
 import argparse

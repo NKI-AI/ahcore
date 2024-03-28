@@ -9,8 +9,10 @@ model_summary:
   max_depth: -1
 
 write_h5_callback:
-  max_queue_size: 100
-  max_concurrent_writers: 4
+  dump_dir: ${oc.env:SCRATCH}/${task_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+  queue_size: 16
+  max_concurrent_queues: 3
 
 write_tiff_callback:
-  max_concurrent_writers: 4
+  max_concurrent_writers: 2
+  max_patience_on_unfinished_files: 100
