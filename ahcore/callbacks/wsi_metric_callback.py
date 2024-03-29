@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 
 
 # Filter out a warning which is not relevant here
-warnings.filterwarnings("ignore", message="*It is recommended to use `sync_dist=True`*")
+warnings.filterwarnings("ignore", message="It is recommended to use `sync_dist=True`*")
 
 
 class ComputeWsiMetricsCallback(Callback):
