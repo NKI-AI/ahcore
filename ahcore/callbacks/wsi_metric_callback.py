@@ -66,6 +66,9 @@ class ComputeWsiMetricsCallback(Callback):
         pl_module: pl.LightningModule,
         stage: Optional[str] = None,
     ) -> None:
+        if trainer.global_rank != 0:
+            return
+
         if not isinstance(pl_module, AhCoreLightningModule):
             # TODO: Make a AhCoreCallback with these features
             raise ValueError("AhCoreLightningModule required for WriteTiffCallback.")
@@ -124,6 +127,9 @@ class ComputeWsiMetricsCallback(Callback):
         return self._validate_metadata_gen
 
     def on_validation_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        if trainer.global_rank != 0:
+            return
+
         self._validate_metadata_gen = self._create_validate_image_metadata_gen()
 
     def on_validation_batch_end(
@@ -135,6 +141,9 @@ class ComputeWsiMetricsCallback(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:
+        if trainer.global_rank != 0:
+            return
+
         if not self._dump_dir:
             raise ValueError("Dump directory is not set.")
 
@@ -217,6 +226,9 @@ class ComputeWsiMetricsCallback(Callback):
         return metrics
 
     def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        if trainer.global_rank != 0:
+            return
+
         if not self._dump_dir:
             raise ValueError("Dump directory is not set.")
         if not self._wsi_metrics:
