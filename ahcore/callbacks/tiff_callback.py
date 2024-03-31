@@ -31,7 +31,6 @@ class WriteTiffCallback(Callback):
         max_patience_on_unfinished_files: int = 100,
     ):
         self._pool = multiprocessing.Pool(max_concurrent_writers)
-        self._logger = get_logger(type(self).__name__)
         self._dump_dir: Optional[Path] = None
 
         self._model_name: str | None = None
@@ -106,7 +105,7 @@ class WriteTiffCallback(Callback):
         if trainer.global_rank != 0:
             return
         assert self.dump_dir, "dump_dir should never be None here."
-        self._logger.info("Writing TIFF files to %s", self.dump_dir / "outputs" / f"{pl_module.name}")
+        logger.info("Writing TIFF files to %s", self.dump_dir / "outputs" / f"{pl_module.name}")
 
         results = []
         unfinished_files = []  # Store partial files for retry
@@ -116,7 +115,7 @@ class WriteTiffCallback(Callback):
                 unfinished_files.append((image_filename, h5_filename))
                 continue
 
-            self._logger.debug(
+            logger.debug(
                 "Writing image output %s to %s", Path(image_filename), Path(image_filename).with_suffix(".tiff")
             )
             output_path = self.dump_dir / "outputs" / f"{pl_module.name}" / f"step_{pl_module.global_step}"
