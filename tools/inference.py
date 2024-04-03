@@ -1,5 +1,6 @@
 import dotenv
 import hydra
+import torch
 from omegaconf import DictConfig
 
 dotenv.load_dotenv(override=True)
@@ -14,7 +15,7 @@ register_additional_config_search_path()
     config_name="inference.yaml",
     version_base="1.3",
 )
-def main(config: DictConfig):
+def main(config: DictConfig) -> None:
     # Imports can be nested inside @hydra.main to optimize tab completion
     # https://github.com/facebookresearch/hydra/issues/934
     from ahcore.entrypoints import inference
