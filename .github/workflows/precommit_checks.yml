@@ -29,7 +29,7 @@ jobs:
             - name: Setup Python Environment
               uses: actions/setup-python@v4
               with:
-                python-version: '3.10.13'
+                python-version: '3.11'
                 cache: 'pip'
 
             # Install the required dependencies for local repos in the precommit hooks
