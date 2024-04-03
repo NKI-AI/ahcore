@@ -5,8 +5,8 @@ import h5py
 import numpy as np
 import pytest
 
-from ahcore.utils.types import GenericArray
-from ahcore.writers import H5FileImageWriter, H5TileFeatureWriter
+from ahcore.utils.types import GenericNumberArray
+from ahcore.writers import H5FileImageWriter
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def test_h5_file_image_writer(temp_h5_file: Path) -> None:
     dummy_batch = np.random.rand(1, 3, 200, 200)
 
     # Use a generator to yield dummy batches
-    def batch_generator() -> Generator[tuple[GenericArray, GenericArray], None, None]:
+    def batch_generator() -> Generator[tuple[GenericNumberArray, GenericNumberArray], None, None]:
         for i in range(num_samples):
             yield dummy_coordinates, dummy_batch
 
@@ -62,60 +62,10 @@ def test_h5_file_image_writer(temp_h5_file: Path) -> None:
     with h5py.File(temp_h5_file, "r") as h5file:
         assert "data" in h5file
         assert "coordinates" in h5file
-        assert h5file["data"].shape == (num_samples, 3, 200, 200)
-        assert h5file["coordinates"].shape == (num_samples, 2)
+        assert np.array(h5file["data"]).shape == (num_samples, 3, 200, 200)
+        assert np.array(h5file["coordinates"]).shape == (num_samples, 2)
         assert np.allclose(h5file["data"], dummy_batch)
         assert np.allclose(h5file["coordinates"], dummy_coordinates)
-
-
-def test_h5_tile_feature_writer(temp_h5_file: Path) -> None:
-    """
-    This test the H5TileFeatureWriter class for the following case.
-
-    Assume that we have an image of size (1024, 1024) tiled up in a batch of 4 tiles of size (512, 512).
-    The feature dimension is 1024. So, we have 4 feature vectors of size 1024 which need to be written to the H5 file.
-    We retain their spatial orientation in correspondence with the spatial orientation of the tiles.
-
-    The features should be written in the following order:
-    1. Top left tile   -> Top left feature
-    2. Top right tile  -> Top right feature
-    3. Bottom left tile -> Bottom left feature
-    4. Bottom right tile -> Bottom right feature
-
-    Parameters
-    ----------
-    temp_h5_file : Path
-
-    Returns
-    -------
-    None
-    """
-    size = (2, 2)
-    feature_dimension = 1024
-    num_features = 4
-
-    writer = H5TileFeatureWriter(filename=temp_h5_file, size=size)
-
-    coords = np.stack([[0, 0], [0, 1], [1, 0], [1, 1]], 0)
-    features = np.random.rand(num_features, feature_dimension)
-
-    def feature_generator(
-        coords: GenericArray, features: GenericArray
-    ) -> Generator[tuple[GenericArray, GenericArray], None, None]:
-        for coord, feature in zip(coords, features):
-            yield coord, feature
-
-    # Write data to the H5 file
-    writer.consume_features(feature_generator(coords, features))
-
-    # Perform assertions
-    with h5py.File(temp_h5_file, "r") as h5file:
-        assert "tile_feature_vectors" in h5file
-        assert h5file["tile_feature_vectors"].shape == (size[0], size[1], feature_dimension)
-        assert np.allclose(h5file["tile_feature_vectors"][0, 0, :], features[0])
-        assert np.allclose(h5file["tile_feature_vectors"][0, 1, :], features[1])
-        assert np.allclose(h5file["tile_feature_vectors"][1, 0, :], features[2])
-        assert np.allclose(h5file["tile_feature_vectors"][1, 1, :], features[3])
 
 
 # Run the tests

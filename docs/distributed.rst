@@ -50,4 +50,4 @@ More commonly, Ahcore distributed can be called using SLURM by sbatch files, for
         trainer=default_ddp
 
 A few subtleties here: the ``--tasks-per-node`` is introduced for proper communication between Lightning and SLURM, we need to set it equal to the number of gpus. See `here <https://github.com/Lightning-AI/pytorch-lightning/blob/1d04c10e2d26c6097794379f44426cfd78bbd1f1/src/lightning/fabric/plugins/environments/slurm.py#L165/>`_.
-Furthermore, the python command is preceded by 'srun', which ensures that environments are properly setup; if we don't add this, the code may hang on initializing the different processes (deadlocked). 
+Furthermore, the python command is preceded by 'srun', which ensures that environments are properly setup; if we don't add this, the code may hang on initializing the different processes (deadlocked).

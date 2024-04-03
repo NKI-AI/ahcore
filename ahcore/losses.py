@@ -162,7 +162,7 @@ def cross_entropy(
 
     k = int(round(float(roi_sum.cpu()) * topk))
     # top-k returns Any
-    return cast(
+    return cast(  # type: ignore
         torch.Tensor,
         torch.topk(_cross_entropy.view(input.shape[0], -1), k).values.sum(dim=1),
     ) / (roi_sum * topk)
