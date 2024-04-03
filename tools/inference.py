@@ -1,6 +1,5 @@
 import dotenv
 import hydra
-import torch
 from omegaconf import DictConfig
 
 dotenv.load_dotenv(override=True)
