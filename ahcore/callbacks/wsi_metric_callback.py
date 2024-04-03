@@ -4,6 +4,7 @@ import itertools
 import json
 import multiprocessing
 import time
+import warnings
 from collections import namedtuple
 from multiprocessing.pool import Pool
 from pathlib import Path
@@ -23,6 +24,10 @@ from ahcore.utils.io import get_logger
 from ahcore.utils.manifest import DataManager, ImageMetadata, fetch_image_metadata, get_mask_and_annotations_from_record
 
 logger = get_logger(__name__)
+
+
+# Filter out a warning which is not relevant here
+warnings.filterwarnings("ignore", message="It is recommended to use `sync_dist=True`*")
 
 
 class ComputeWsiMetricsCallback(Callback):
@@ -61,6 +66,9 @@ class ComputeWsiMetricsCallback(Callback):
         pl_module: pl.LightningModule,
         stage: Optional[str] = None,
     ) -> None:
+        if trainer.global_rank != 0:
+            return
+
         if not isinstance(pl_module, AhCoreLightningModule):
             # TODO: Make a AhCoreCallback with these features
             raise ValueError("AhCoreLightningModule required for WriteTiffCallback.")
@@ -119,6 +127,9 @@ class ComputeWsiMetricsCallback(Callback):
         return self._validate_metadata_gen
 
     def on_validation_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        if trainer.global_rank != 0:
+            return
+
         self._validate_metadata_gen = self._create_validate_image_metadata_gen()
 
     def on_validation_batch_end(
@@ -130,15 +141,11 @@ class ComputeWsiMetricsCallback(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:
+        if trainer.global_rank != 0:
+            return
+
         if not self._dump_dir:
             raise ValueError("Dump directory is not set.")
-
-        filenames = batch["path"]  # Filenames are constant across the batch.
-        if len(set(filenames)) != 1:
-            raise ValueError(
-                "All paths in a batch must be the same. "
-                "Either use batch_size=1 or ahcore.data.samplers.WsiBatchSampler."
-            )
 
     def compute_metrics(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule
@@ -219,6 +226,9 @@ class ComputeWsiMetricsCallback(Callback):
         return metrics
 
     def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        if trainer.global_rank != 0:
+            return
+
         if not self._dump_dir:
             raise ValueError("Dump directory is not set.")
         if not self._wsi_metrics:
@@ -294,7 +304,6 @@ def compute_metrics_for_case(
 ) -> list[dict[str, Any]]:
     # Extract the data from the namedtuple
     filename, h5_filename, metadata, mask, annotations = task_data
-
     dump_list = []
 
     logger.info("Computing metrics for %s", filename)

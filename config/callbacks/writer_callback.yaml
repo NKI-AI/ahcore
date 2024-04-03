@@ -1,2 +1,0 @@
-writer_callback:
-  _target_: ahcore.callbacks.WriterCallback

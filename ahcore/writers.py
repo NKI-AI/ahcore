@@ -6,6 +6,7 @@ This module contains writer classes. Currently implemented:
   h5 files.
 
 """
+
 import abc
 import io
 import json
