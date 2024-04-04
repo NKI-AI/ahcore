@@ -15,10 +15,36 @@ from pytorch_lightning import Callback, LightningDataModule, LightningModule, Tr
 from pytorch_lightning.loggers import Logger
 from torch import nn
 
+from ahcore.models.jit_model import AhcoreJitModel
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger, log_hyperparameters
 
 logger = get_logger(__name__)
+
+
+def load_weights(model: LightningModule, config: DictConfig) -> LightningModule:
+    """Load a model from a checkpoint file.
+
+    Parameters
+    ----------
+    model: LightningModule
+        The model to load the weights into.
+    config : DictConfig
+        Configuration composed by Hydra.
+
+    Returns
+    -------
+    LightningModule
+        The model loaded from the checkpoint file.
+    """
+    _model = getattr(model, "_model")
+    if isinstance(_model, AhcoreJitModel):
+        return model
+    else:
+        # Load checkpoint weights
+        lit_ckpt = torch.load(config.ckpt_path)
+        model.load_state_dict(lit_ckpt["state_dict"], strict=True)
+    return model
 
 
 def create_datamodule(
@@ -204,8 +230,11 @@ def inference(config: DictConfig) -> None:
 
     # Convert relative ckpt path to absolute path if necessary
     checkpoint_path = config.get("ckpt_path")
-    if not checkpoint_path:
-        raise RuntimeError("No checkpoint inputted in config.ckpt_path")
+    jit_path = config.get("lit_module").model.get("jit_path", None)
+    if not (checkpoint_path or jit_path):
+        raise RuntimeError("No checkpoint or jit path inputted in config")
+    if checkpoint_path and jit_path:
+        raise RuntimeError("Checkpoint path and jit path cannot be defined simultaneously.")
     if checkpoint_path and not os.path.isabs(checkpoint_path):
         config.trainer.resume_from_checkpoint = pathlib.Path(hydra.utils.get_original_cwd()) / checkpoint_path
 
@@ -237,8 +266,7 @@ def inference(config: DictConfig) -> None:
     )
 
     # Load checkpoint weights
-    lit_ckpt = torch.load(config.ckpt_path)
-    model.load_state_dict(lit_ckpt["state_dict"], strict=True)
+    model = load_weights(model, config)
 
     # Init lightning callbacks
     callbacks: list[Callback] = []

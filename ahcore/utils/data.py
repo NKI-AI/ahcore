@@ -53,7 +53,7 @@ class DataDescription(BaseModel):
     mask_label: Optional[str] = None
     mask_threshold: Optional[float] = None  # This is only used for training
     roi_name: Optional[str] = None
-    num_classes: PositiveInt
+    num_classes: Optional[PositiveInt] = None  # This is set to None during feature extraction
     data_dir: Path
     manifest_database_uri: str
     manifest_name: str
