@@ -10,19 +10,25 @@ from __future__ import annotations
 
 import logging
 import os
+import pathlib
 import warnings
 from enum import Enum
 from pathlib import Path
 from types import FunctionType
 from typing import Any, Optional, Sequence, Type
 
+import hydra
 import pytorch_lightning as pl
 import rich
 import rich.syntax
 import rich.tree
+import torch
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.errors import InterpolationKeyError
+from pytorch_lightning import LightningModule
 from pytorch_lightning.utilities import rank_zero_only
+
+from ahcore.models.jit_model import AhcoreJitModel
 
 
 def get_logger(name: str = __name__) -> logging.Logger:
@@ -213,3 +219,57 @@ def get_enum_key_from_value(value: str, enum_class: Type[Enum]) -> Optional[str]
 
 def get_cache_dir() -> Path:
     return Path(os.environ.get("SCRATCH", "/tmp")) / "ahcore_cache"
+
+
+def load_weights(model: LightningModule, config: DictConfig) -> LightningModule:
+    """Load a model from a checkpoint file.
+
+    Parameters
+    ----------
+    model: LightningModule
+        The model to load the weights into.
+    config : DictConfig
+        Configuration composed by Hydra.
+
+    Returns
+    -------
+    LightningModule
+        The model loaded from the checkpoint file.
+    """
+    _model = getattr(model, "_model")
+    if isinstance(_model, AhcoreJitModel):
+        return model
+    else:
+        # Load checkpoint weights
+        lit_ckpt = torch.load(config.ckpt_path)
+        model.load_state_dict(lit_ckpt["state_dict"], strict=True)
+    return model
+
+
+def validate_checkpoint_paths(config: DictConfig) -> DictConfig:
+    """
+    Validate the checkpoint paths provided in the configuration files.
+
+    Parameters
+    ----------
+    config: DictConfig
+        Run configuration
+
+    Returns
+    -------
+    DictConfig
+    """
+    # Extract paths with clear fallbacks
+    checkpoint_path = config.get("ckpt_path")
+    jit_path = config.get("lit_module", {}).get("model", {}).get("jit_path")
+    # Validate configuration
+    paths_defined = [path for path in [checkpoint_path, jit_path] if path]
+    if len(paths_defined) == 0:
+        raise RuntimeError("No checkpoint or jit path provided in config.")
+    elif len(paths_defined) > 1:
+        raise RuntimeError("Checkpoint path and jit path cannot be defined simultaneously.")
+    else:
+        # Convert relative ckpt path to absolute path if necessary
+        if checkpoint_path and not os.path.isabs(checkpoint_path):
+            config.trainer.resume_from_checkpoint = pathlib.Path(hydra.utils.get_original_cwd()) / checkpoint_path
+        return config
