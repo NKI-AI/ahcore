@@ -16,7 +16,7 @@ from pytorch_lightning.loggers import Logger
 from torch import nn
 
 from ahcore.utils.data import DataDescription
-from ahcore.utils.io import get_logger, log_hyperparameters
+from ahcore.utils.io import get_logger, load_weights, log_hyperparameters, validate_checkpoint_paths
 
 logger = get_logger(__name__)
 
@@ -202,12 +202,7 @@ def inference(config: DictConfig) -> None:
     if config.get("seed"):
         seed_everything(config.seed, workers=True)
 
-    # Convert relative ckpt path to absolute path if necessary
-    checkpoint_path = config.get("ckpt_path")
-    if not checkpoint_path:
-        raise RuntimeError("No checkpoint inputted in config.ckpt_path")
-    if checkpoint_path and not os.path.isabs(checkpoint_path):
-        config.trainer.resume_from_checkpoint = pathlib.Path(hydra.utils.get_original_cwd()) / checkpoint_path
+    config = validate_checkpoint_paths(config)
 
     data_description, datamodule = create_datamodule(config)
 
@@ -237,8 +232,7 @@ def inference(config: DictConfig) -> None:
     )
 
     # Load checkpoint weights
-    lit_ckpt = torch.load(config.ckpt_path)
-    model.load_state_dict(lit_ckpt["state_dict"], strict=True)
+    model = load_weights(model, config)
 
     # Init lightning callbacks
     callbacks: list[Callback] = []
