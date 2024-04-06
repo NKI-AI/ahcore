@@ -36,6 +36,7 @@ install_requires = [
     "h5py>=3.8.0",
     "monai[einops]==1.3.0",
     "imagecodecs==2024.1.1",
+    "zarr==2.17.2",
 ]
 
 
