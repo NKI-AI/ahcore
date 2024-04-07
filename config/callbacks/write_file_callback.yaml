@@ -3,5 +3,6 @@ write_file_callback:
   dump_dir: ${oc.env:SCRATCH}/${task_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
   queue_size: 16
   writer_class:
-    _target_: ahcore.writers.ZarrFileWriter
+    _target_: ahcore.writers.ZarrFileImageWriter
+    _partial_: true
   max_concurrent_queues: 3

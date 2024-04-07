@@ -17,7 +17,7 @@ from pytorch_lightning import Callback
 from ahcore.callbacks import WriteFileCallback
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.metrics import WSIMetricFactory
-from ahcore.readers import FileImageReader, H5FileImageReader, StitchingMode
+from ahcore.readers import FileImageReader, StitchingMode
 from ahcore.utils.callbacks import _ValidationDataset, get_output_filename
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
@@ -31,18 +31,20 @@ warnings.filterwarnings("ignore", message="It is recommended to use `sync_dist=T
 
 
 class ComputeWsiMetricsCallback(Callback):
-    def __init__(self, max_processes: int = 10, save_per_image: bool = True) -> None:
+    def __init__(self, file_reader: FileImageReader, max_processes: int = 10, save_per_image: bool = True) -> None:
         """
         Callback to compute metrics on whole-slide images. This callback is used to compute metrics on whole-slide
         images in separate processes.
 
         Parameters
         ----------
+        file_reader : FileImageReader
+            The reader class to use to read the images, e.g H5FileImageReader or ZarrFileImageReader.
         max_processes : int
             The maximum number of concurrent processes.
         """
         self._data_description: Optional[DataDescription] = None
-        self._reader: FileImageReader = H5FileImageReader
+        self._file_reader: FileImageReader = file_reader
         self._max_processes: int = max_processes
         self._dump_dir: Optional[Path] = None
         self._save_per_image = save_per_image

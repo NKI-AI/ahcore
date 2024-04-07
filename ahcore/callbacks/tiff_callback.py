@@ -18,7 +18,6 @@ from ahcore.readers import FileImageReader, StitchingMode
 from ahcore.utils.callbacks import _ValidationDataset, get_output_filename
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericNumberArray
-from ahcore.readers import H5FileImageReader, ZarrFileImageReader, FileImageReader
 
 logger = get_logger(__name__)
 
@@ -26,11 +25,13 @@ logger = get_logger(__name__)
 class WriteTiffCallback(Callback):
     def __init__(
         self,
+        reader_class: FileImageReader,
         max_concurrent_writers: int,
         tile_size: tuple[int, int] = (1024, 1024),
         colormap: dict[int, str] | None = None,
         max_patience_on_unfinished_files: int = 100,
     ):
+        self._reader_class = reader_class
         self._pool = multiprocessing.Pool(max_concurrent_writers)
         self._dump_dir: Optional[Path] = None
 
@@ -130,7 +131,7 @@ class WriteTiffCallback(Callback):
                     self._tile_size,
                     self._tile_process_function,
                     self._colormap,
-                    H5FileImageReader,
+                    self._reader_class,
                     _generator_from_reader,
                 ),
             )
@@ -150,7 +151,7 @@ class WriteTiffCallback(Callback):
                             self._tile_size,
                             self._tile_process_function,
                             self._colormap,
-                            H5FileImageReader,
+                            self._reader_class,
                             _generator_from_reader,
                         ),
                     )

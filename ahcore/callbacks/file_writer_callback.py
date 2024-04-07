@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dlup.data.dataset import TiledWsiDataset
+
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.utils.callbacks import get_output_filename
 from ahcore.utils.data import DataDescription, GridDescription
@@ -46,7 +47,7 @@ class WriteFileCallback(WriterCallback):
         self._dump_dir = Path(dump_dir)
 
         self._writer_class = writer_class
-        self._suffix = writer_class.preferred_suffix if writer_class.preferred_suffix else ".tmp"
+        self._suffix = ".cache"
         self._normalization_type: NormalizationType = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)
 

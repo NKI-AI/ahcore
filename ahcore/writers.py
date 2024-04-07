@@ -108,10 +108,6 @@ class Writer(abc.ABC):
         self._coordinates_dataset: Any
 
         self._partial_suffix: str = f"{self._filename.suffix}.partial"
-        self._preferred_suffix: Optional[str] = None
-
-    def preferred_suffix(self) -> Optional[str]:
-        return self._preferred_suffix
 
     @abc.abstractmethod
     def open_file(self, mode: str = "w") -> Any:
@@ -373,7 +369,6 @@ class H5FileImageWriter(Writer):
         self._data: h5py.Dataset
         self._coordinates_dataset: Optional[h5py.Dataset] = None
         self._tile_indices: Optional[h5py.Dataset] = None
-        self._preferred_suffix = ".h5"
 
     def open_file(self, mode: str = "w") -> Any:
         return h5py.File(self._filename.with_suffix(self._partial_suffix), mode)
@@ -439,7 +434,6 @@ class H5FileImageWriter(Writer):
 class ZarrFileImageWriter(Writer):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._preferred_suffix = ".zarr"
 
     def open_file(self, mode: str = "w") -> zarr.Group:
         store = zarr.ZipStore(str(self._filename.with_suffix(self._partial_suffix)), mode=mode)
