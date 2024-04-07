@@ -411,7 +411,6 @@ class H5FileImageWriter(Writer):
         chunks: Optional[Optional[tuple[int, ...]] | bool] = None,
         data: Optional[GenericNumberArray] = None,
     ) -> Any:
-
         dt = h5py.vlen_dtype(np.dtype("uint8"))  # Variable-length uint8 data type
         return self.create_dataset(h5file, name, shape=shape, dtype=dt, compression=compression, chunks=chunks)
 
@@ -476,7 +475,6 @@ class ZarrFileImageWriter(Writer):
         compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=2) if compression == "gzip" else None
 
         assert shape
-        # Create the dataset
         dataset = file.create_dataset(
             name,
             shape=shape[0],

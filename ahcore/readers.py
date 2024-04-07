@@ -5,6 +5,7 @@ Reader classes.
 
 """
 
+import abc
 import errno
 import io
 import json
@@ -13,12 +14,14 @@ import os
 from enum import Enum
 from pathlib import Path
 from types import TracebackType
-from typing import Literal, Optional, Type, cast
+from typing import Any, Literal, Optional, Type, cast
 
 import h5py
 import numpy as np
 import PIL
+import zarr
 from scipy.ndimage import map_coordinates
+from zarr.storage import ZipStore
 
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import BoundingBoxType, GenericNumberArray, InferencePrecision
@@ -37,14 +40,14 @@ def crop_to_bbox(array: GenericNumberArray, bbox: BoundingBoxType) -> GenericNum
     return array[:, start_y : start_y + height, start_x : start_x + width]
 
 
-class H5FileImageReader:
+class FileImageReader(abc.ABC):
     def __init__(self, filename: Path, stitching_mode: StitchingMode) -> None:
         self._filename = filename
         self._stitching_mode = stitching_mode
 
         self.__empty_tile: GenericNumberArray | None = None
 
-        self._h5file: Optional[h5py.File] = None
+        self._file: Optional[Any] = None
         self._metadata = None
         self._mpp = None
         self._tile_size = None
@@ -58,7 +61,7 @@ class H5FileImageReader:
         self._is_binary = None
 
     @classmethod
-    def from_file_path(cls, filename: Path, stitching_mode: StitchingMode = StitchingMode.CROP) -> "H5FileImageReader":
+    def from_file_path(cls, filename: Path, stitching_mode: StitchingMode = StitchingMode.CROP) -> "FileImageReader":
         return cls(filename=filename, stitching_mode=stitching_mode)
 
     @property
@@ -93,18 +96,18 @@ class H5FileImageReader:
             return 1.0
         return self._mpp / mpp
 
+    @abc.abstractmethod
+    def _open_file_handle(self, filename: Path) -> Any:
+        pass
+
     def _open_file(self) -> None:
         if not self._filename.is_file():
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(self._filename))
 
-        try:
-            self._h5file = h5py.File(self._filename, "r")
-        except OSError as e:
-            logger.error(f"Could not open file {self._filename}: {e}")
-            raise e
+        self._file = self._open_file_handle(self._filename)
 
         try:
-            self._metadata = json.loads(self._h5file.attrs["metadata"])
+            self._metadata = json.loads(self._file.attrs["metadata"])
         except KeyError as e:
             logger.error(f"Could not read metadata from file {self._filename}: {e}")
             raise e
@@ -127,13 +130,13 @@ class H5FileImageReader:
         )
 
         if self._metadata["has_color_profile"]:
-            _color_profile = self._h5file["color_profile"][()].tobytes()
+            _color_profile = self._file["color_profile"][()].tobytes()
             raise NotImplementedError(
                 f"Color profiles are not yet implemented, but {_color_profile} is present in {self._filename}."
             )
 
-    def __enter__(self) -> "H5FileImageReader":
-        if self._h5file is None:
+    def __enter__(self) -> "FileImageReader":
+        if self._file is None:
             self._open_file()
         return self
 
@@ -236,15 +239,15 @@ class H5FileImageReader:
         np.ndarray
             Extracted region
         """
-        if self._h5file is None:
+        if self._file is None:
             self._open_file()
-        assert self._h5file, "File is not open. Should not happen"
+        assert self._file, "File is not open. Should not happen"
         assert self._tile_size
         assert self._tile_overlap
 
-        image_dataset = self._h5file["data"]
+        image_dataset = self._file["data"]
         num_tiles = self._metadata["num_tiles"]
-        tile_indices = self._h5file["tile_indices"]
+        tile_indices = self._file["tile_indices"]
 
         total_rows = math.ceil((self._size[1] - self._tile_overlap[1]) / self._stride[1])
         total_cols = math.ceil((self._size[0] - self._tile_overlap[0]) / self._stride[0])
@@ -322,10 +325,9 @@ class H5FileImageReader:
 
         return stitched_image
 
+    @abc.abstractmethod
     def close(self) -> None:
-        if self._h5file is not None:
-            self._h5file.close()  # Close the file in close
-        del self._h5file  # Reset the h5file attribute
+        pass
 
     def __exit__(
         self,
@@ -335,3 +337,40 @@ class H5FileImageReader:
     ) -> Literal[False]:
         self.close()
         return False
+
+
+class H5FileImageReader(FileImageReader):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._file: Optional[h5py.File] = None
+
+    def _open_file_handle(self, filename: Path) -> h5py.File:
+        try:
+            file = h5py.File(self._filename, "r")
+        except OSError as e:
+            logger.error(f"Could not open file {self._filename}: {e}")
+            raise e
+        return file
+
+    def close(self) -> None:
+        if self._file is not None:
+            self._file.close()  # Close the file in close
+        del self._file  # Reset the file attribute
+
+
+class ZarrFileImageReader(FileImageReader):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._file: Optional[zarr.Group] = None
+
+    def _open_file_handle(self, filename: Path) -> zarr.Group:
+        try:
+            zip_store = ZipStore(str(self._filename), mode="r")
+            file = zarr.open_group(store=zip_store, mode="r")
+        except OSError as e:
+            logger.error(f"Could not open file {self._filename}: {e}")
+            raise e
+        return file
+
+    def close(self) -> None:
+        del self._file  # Reset the file attribute
