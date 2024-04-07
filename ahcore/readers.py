@@ -100,17 +100,17 @@ class FileImageReader(abc.ABC):
     def _open_file_handle(self, filename: Path) -> Any:
         pass
 
+    @abc.abstractmethod
+    def _read_metadata(self) -> None:
+        pass
+
     def _open_file(self) -> None:
         if not self._filename.is_file():
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(self._filename))
 
         self._file = self._open_file_handle(self._filename)
 
-        try:
-            self._metadata = json.loads(self._file.attrs["metadata"])
-        except KeyError as e:
-            logger.error(f"Could not read metadata from file {self._filename}: {e}")
-            raise e
+        self._read_metadata()
 
         if not self._metadata:
             raise ValueError("Metadata of h5 file is empty.")
@@ -352,6 +352,13 @@ class H5FileImageReader(FileImageReader):
             raise e
         return file
 
+    def _read_metadata(self) -> None:
+        try:
+            self._metadata = json.loads(self._file.attrs["metadata"])
+        except KeyError as e:
+            logger.error(f"Could not read metadata from file {self._filename}: {e}")
+            raise e
+
     def close(self) -> None:
         if self._file is not None:
             self._file.close()  # Close the file in close
@@ -371,6 +378,13 @@ class ZarrFileImageReader(FileImageReader):
             logger.error(f"Could not open file {self._filename}: {e}")
             raise e
         return file
+
+    def _read_metadata(self) -> None:
+        try:
+            self._metadata = self._file.attrs.asdict()
+        except KeyError as e:
+            logger.error(f"Could not read metadata from file {self._filename}: {e}")
+            raise e
 
     def close(self) -> None:
         del self._file  # Reset the file attribute
