@@ -102,13 +102,13 @@ def _gather_batch(
 class WriterCallback(abc.ABC, Callback):
     def __init__(
         self,
+        writer_class: Writer,
         queue_size: int = 16,
         max_concurrent_queues: int = 16,
         requires_gather: bool = True,
         data_key: str = "prediction",
         normalization_type: str = NormalizationType.SOFTMAX,
         precision: str = InferencePrecision.FP32,  # This is passed to the writer class
-        writer_class: Writer | None = None,
     ) -> None:
         # TODO: Test predict
 

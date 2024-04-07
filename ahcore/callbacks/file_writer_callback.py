@@ -19,10 +19,10 @@ logger = get_logger(__name__)
 class WriteFileCallback(WriterCallback):
     def __init__(
         self,
+        writer_class: Writer,
         queue_size: int,
         max_concurrent_queues: int,
         dump_dir: Path,
-        writer_class: Writer,
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
     ):
@@ -32,6 +32,8 @@ class WriteFileCallback(WriterCallback):
 
         Parameters
         ----------
+        writer_class : Writer
+            The writer class to use to write the predictions to e.g. H5 files.
         queue_size : int
             The maximum number of items to store in the queue (i.e. tiles).
         max_concurrent_queues : int
@@ -52,6 +54,7 @@ class WriteFileCallback(WriterCallback):
         self._precision: InferencePrecision = InferencePrecision(precision)
 
         super().__init__(
+            writer_class=writer_class,
             queue_size=queue_size,
             max_concurrent_queues=max_concurrent_queues,
             data_key="prediction",

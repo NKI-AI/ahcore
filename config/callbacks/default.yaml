@@ -5,8 +5,8 @@ defaults:
   - model_summary.yaml
   - rich_progress_bar.yaml
   - write_file_callback.yaml
-  - write_tiff_callback.yaml
-  - compute_wsi_metrics_callback.yaml # This needs to follow write_h5_callback as it requires the outputs
+#  - write_tiff_callback.yaml
+#  - compute_wsi_metrics_callback.yaml # This needs to follow write_file_callback as it requires the outputs
   - _self_
 
 learningrate_monitor:

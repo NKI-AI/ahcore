@@ -11,6 +11,7 @@ Two writer classes that can write files based on iterators, for instance, the ou
 import abc
 import io
 import json
+import warnings
 from contextlib import contextmanager
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -28,6 +29,7 @@ from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
+warnings.filterwarnings("ignore", message="Duplicate name:*")
 
 
 @contextmanager
@@ -118,7 +120,7 @@ class Writer(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def insert_data(self, batch: GenericNumberArray, index: int) -> None:
+    def insert_data(self, batch: GenericNumberArray) -> None:
         """Insert a batch into a dataset."""
 
     @abc.abstractmethod
@@ -233,14 +235,14 @@ class Writer(abc.ABC):
 
     @abc.abstractmethod
     def write_metadata(self, metadata: dict[str, Any], file: Any) -> None:
-        """"""
+        """Write metadata to the file"""
 
     def consume(
         self,
         batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
         connection_to_parent: Optional[Connection] = None,
     ) -> None:
-        """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
+        """Consumes tiles one-by-one from a generator and writes them to the file."""
         grid_counter = 0
 
         try:
@@ -278,11 +280,16 @@ class Writer(abc.ABC):
                         grid_counter += 1
 
                     batch_size = batch.shape[0]
-
-                    self.insert_data(batch, self._current_index)
-
                     self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
-                    self._current_index += batch_size
+
+                    if self._is_compressed_image:
+                        # When the batch has variable lengths, we need to insert each sample separately
+                        for sample in batch:
+                            self.insert_data(sample[np.newaxis, ...])
+                            self._current_index += 1
+                    else:
+                        self.insert_data(batch)
+                        self._current_index += batch_size
 
         except Exception as e:
             logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
@@ -380,10 +387,10 @@ class H5FileImageWriter(Writer):
         metadata_json = json.dumps(metadata)
         file.attrs["metadata"] = metadata_json
 
-    def insert_data(self, batch: GenericNumberArray, index: int) -> None:
+    def insert_data(self, batch: GenericNumberArray) -> None:
         """Insert a batch into a Zarr dataset."""
-        if not batch.shape[0] == 1:
-            raise ValueError("Batch should have a single element when writing zarr")
+        if not batch.shape[0] == 1 and self._is_compressed_image:
+            raise ValueError(f"Batch should have a single element when writing h5. Got batch shape {batch.shape}.")
         batch_size = batch.shape[0]
         self._data[self._current_index : self._current_index + batch_size] = (
             batch.flatten() if self._is_compressed_image else batch
@@ -485,12 +492,17 @@ class ZarrFileImageWriter(Writer):
         )
         return dataset
 
-    def insert_data(self, batch: GenericNumberArray, index: int) -> None:
+    def insert_data(self, batch: GenericNumberArray) -> None:
         """Insert a batch into a Zarr dataset."""
-        if not batch.shape[0] == 1:
-            raise ValueError("Batch should have a single element when writing zarr")
+        if not batch.shape[0] == 1 and self._is_compressed_image:
+            raise ValueError(f"Batch should have a single element when writing zarr. Got batch shape {batch.shape}.")
 
-        self._data[index] = batch.reshape(-1)
+        if self._is_compressed_image:
+            self._data[self._current_index] = batch.reshape(-1)
+        else:
+            self._data[self._current_index : self._current_index + batch.shape[0]] = (
+                batch.flatten() if self._is_compressed_image else batch
+            )
 
     def write_metadata(self, metadata: dict[str, Any], file: Any) -> None:
         """Write metadata to Zarr group attributes."""
