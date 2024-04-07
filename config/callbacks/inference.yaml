@@ -1,7 +1,7 @@
 defaults:
   - model_summary.yaml
   - rich_progress_bar.yaml
-  - write_h5_callback.yaml
+  - write_file_callback.yaml
   - write_tiff_callback.yaml
   - _self_
 

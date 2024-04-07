@@ -14,11 +14,11 @@ import pytorch_lightning as pl
 import torch
 from pytorch_lightning import Callback
 
-from ahcore.callbacks import WriteH5Callback
+from ahcore.callbacks import WriteFileCallback
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.metrics import WSIMetricFactory
-from ahcore.readers import H5FileImageReader, StitchingMode
-from ahcore.utils.callbacks import _ValidationDataset, get_h5_output_filename
+from ahcore.readers import FileImageReader, H5FileImageReader, StitchingMode
+from ahcore.utils.callbacks import _ValidationDataset, get_output_filename
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.manifest import DataManager, ImageMetadata, fetch_image_metadata, get_mask_and_annotations_from_record
@@ -42,7 +42,7 @@ class ComputeWsiMetricsCallback(Callback):
             The maximum number of concurrent processes.
         """
         self._data_description: Optional[DataDescription] = None
-        self._reader = H5FileImageReader
+        self._reader: FileImageReader = H5FileImageReader
         self._max_processes: int = max_processes
         self._dump_dir: Optional[Path] = None
         self._save_per_image = save_per_image
@@ -75,10 +75,10 @@ class ComputeWsiMetricsCallback(Callback):
 
         self._model_name = pl_module.name
 
-        _callback: Optional[WriteH5Callback] = None
+        _callback: Optional[WriteFileCallback] = None
         for idx, callback in enumerate(trainer.callbacks):  # type: ignore
-            if isinstance(callback, WriteH5Callback):
-                _callback = cast(WriteH5Callback, trainer.callbacks[idx])  # type: ignore
+            if isinstance(callback, WriteFileCallback):
+                _callback = cast(WriteFileCallback, trainer.callbacks[idx])  # type: ignore
                 break
 
         if _callback is None:
@@ -235,7 +235,7 @@ class ComputeWsiMetricsCallback(Callback):
             raise ValueError("WSI metrics are not set.")
         assert self._model_name  # This should be set in the setup()
 
-        # Ensure that all h5 files have been written
+        # Ensure that all cache files have been written
         self._logger.debug("Computing metrics for %s predictions", len(self._filenames))
         computed_metrics = self.compute_metrics(trainer, pl_module)
         metrics = self._wsi_metrics.get_average_score(computed_metrics)
@@ -266,7 +266,7 @@ def prepare_task_data(
     data_description: DataDescription,
     data_manager: DataManager,
 ) -> TaskData:
-    h5_filename = get_h5_output_filename(
+    h5_filename = get_output_filename(
         dump_dir=dump_dir,
         input_path=data_description.data_dir / filename,
         model_name=str(pl_module.name),

@@ -3,25 +3,25 @@ from __future__ import annotations
 from pathlib import Path
 
 from dlup.data.dataset import TiledWsiDataset
-
 from ahcore.lit_module import AhCoreLightningModule
-from ahcore.utils.callbacks import get_h5_output_filename
+from ahcore.utils.callbacks import get_output_filename
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import InferencePrecision, NormalizationType
-from ahcore.writers import H5FileImageWriter, Writer
+from ahcore.writers import Writer
 
 from .writer_callback import WriterCallback
 
 logger = get_logger(__name__)
 
 
-class WriteH5Callback(WriterCallback):
+class WriteFileCallback(WriterCallback):
     def __init__(
         self,
         queue_size: int,
         max_concurrent_queues: int,
         dump_dir: Path,
+        writer_class: Writer,
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
     ):
@@ -45,6 +45,8 @@ class WriteH5Callback(WriterCallback):
         self._current_filename = None
         self._dump_dir = Path(dump_dir)
 
+        self._writer_class = writer_class
+        self._suffix = writer_class.preferred_suffix if writer_class.preferred_suffix else ".tmp"
         self._normalization_type: NormalizationType = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)
 
@@ -63,7 +65,7 @@ class WriteH5Callback(WriterCallback):
         return self._dump_dir
 
     def build_writer_class(self, pl_module: AhCoreLightningModule, stage: str, filename: str) -> Writer:
-        output_filename = get_h5_output_filename(
+        output_filename = get_output_filename(
             self.dump_dir,
             Path(filename),
             model_name=str(pl_module.name),
@@ -99,7 +101,7 @@ class WriteH5Callback(WriterCallback):
         else:
             grid = None  # During inference we don't have a grid around ROI
 
-        writer = H5FileImageWriter(
+        writer = self._writer_class(
             output_filename,
             size=size,
             mpp=mpp,

@@ -1,0 +1,7 @@
+write_file_callback:
+  _target_: ahcore.callbacks.WriteFileCallback
+  dump_dir: ${oc.env:SCRATCH}/${task_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+  queue_size: 16
+  writer_class:
+    _target_: ahcore.writers.ZarrFileWriter
+  max_concurrent_queues: 3

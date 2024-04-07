@@ -12,12 +12,13 @@ from dlup.writers import TiffCompression, TifffileImageWriter
 from numpy import typing as npt
 from pytorch_lightning import Callback
 
-from ahcore.callbacks import WriteH5Callback
+from ahcore.callbacks import WriteFileCallback
 from ahcore.lit_module import AhCoreLightningModule
-from ahcore.readers import H5FileImageReader, StitchingMode
-from ahcore.utils.callbacks import _ValidationDataset, get_h5_output_filename
+from ahcore.readers import FileImageReader, StitchingMode
+from ahcore.utils.callbacks import _ValidationDataset, get_output_filename
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericNumberArray
+from ahcore.readers import H5FileImageReader, ZarrFileImageReader, FileImageReader
 
 logger = get_logger(__name__)
 
@@ -41,7 +42,7 @@ class WriteTiffCallback(Callback):
         # TODO: Handle tile operation such that we avoid repetitions.
 
         self._tile_process_function = _tile_process_function  # function that is applied to the tile.
-        self._filenames: dict[Path, Path] = {}  # This has all the h5 files
+        self._filenames: dict[Path, Path] = {}  # This has all the cache files
 
     @property
     def dump_dir(self) -> Optional[Path]:
@@ -64,13 +65,13 @@ class WriteTiffCallback(Callback):
 
         self._model_name = pl_module.name
 
-        _callback: Optional[WriteH5Callback] = None
+        _callback: Optional[WriteFileCallback] = None
         for idx, callback in enumerate(trainer.callbacks):  # type: ignore
-            if isinstance(callback, WriteH5Callback):
-                _callback = cast(WriteH5Callback, trainer.callbacks[idx])  # type: ignore
+            if isinstance(callback, WriteFileCallback):
+                _callback = cast(WriteFileCallback, trainer.callbacks[idx])  # type: ignore
                 break
         if _callback is None:
-            raise ValueError("WriteH5Callback required before tiff images can be written using this Callback.")
+            raise ValueError("WriteFileCallback required before tiff images can be written using this Callback.")
 
         # This is needed for mypy
         assert _callback, "_callback should never be None after the setup."
@@ -93,7 +94,7 @@ class WriteTiffCallback(Callback):
         filenames = set([Path(_) for _ in batch["path"]])
         for filename in filenames:
             if filename not in self._filenames:
-                output_filename = get_h5_output_filename(
+                output_filename = get_output_filename(
                     dump_dir=self.dump_dir,
                     input_path=filename,
                     model_name=str(pl_module.name),
@@ -110,9 +111,9 @@ class WriteTiffCallback(Callback):
         results = []
         unfinished_files = []  # Store partial files for retry
 
-        for image_filename, h5_filename in self._filenames.items():
-            if not h5_filename.exists():
-                unfinished_files.append((image_filename, h5_filename))
+        for image_filename, cache_filename in self._filenames.items():
+            if not cache_filename.exists():
+                unfinished_files.append((image_filename, cache_filename))
                 continue
 
             logger.debug(
@@ -120,15 +121,16 @@ class WriteTiffCallback(Callback):
             )
             output_path = self.dump_dir / "outputs" / f"{pl_module.name}" / f"step_{pl_module.global_step}"
             with open(output_path / "image_tiff_link.txt", "a") as file:
-                file.write(f"{image_filename},{h5_filename.with_suffix('.tiff')}\n")
+                file.write(f"{image_filename},{cache_filename.with_suffix('.tiff')}\n")
 
             result = self._pool.apply_async(
                 _write_tiff,
                 (
-                    h5_filename,
+                    cache_filename,
                     self._tile_size,
                     self._tile_process_function,
                     self._colormap,
+                    H5FileImageReader,
                     _generator_from_reader,
                 ),
             )
@@ -138,23 +140,24 @@ class WriteTiffCallback(Callback):
         iterations = 0
         while unfinished_files:
             retry_files = []
-            for image_filename, h5_filename in unfinished_files:
-                if h5_filename.exists():  # Check if ready
-                    logger.debug("Retrying to write TIFF %s", h5_filename.with_suffix(".tiff"))
+            for image_filename, cache_filename in unfinished_files:
+                if cache_filename.exists():  # Check if ready
+                    logger.debug("Retrying to write TIFF %s", cache_filename.with_suffix(".tiff"))
                     result = self._pool.apply_async(
                         _write_tiff,
                         (
-                            h5_filename,
+                            cache_filename,
                             self._tile_size,
                             self._tile_process_function,
                             self._colormap,
+                            H5FileImageReader,
                             _generator_from_reader,
                         ),
                     )
                     results.append(result)
                 else:
-                    logger.debug("H5 file %s is still unfinished. Placing back in queue", h5_filename)
-                    retry_files.append((image_filename, h5_filename))
+                    logger.debug("Cache file %s is still unfinished. Placing back in queue", cache_filename)
+                    retry_files.append((image_filename, cache_filename))
             unfinished_files = retry_files
             if unfinished_files:
                 iterations += 1
@@ -197,14 +200,14 @@ class WriteTiffCallback(Callback):
 
 
 def _generator_from_reader(
-    h5_reader: H5FileImageReader,
+    cache_reader: FileImageReader,
     tile_size: tuple[int, int],
     tile_process_function: Callable[[GenericNumberArray], GenericNumberArray],
 ) -> Generator[GenericNumberArray, None, None]:
     validation_dataset = _ValidationDataset(
         data_description=None,
-        native_mpp=h5_reader.mpp,
-        reader=h5_reader,
+        native_mpp=cache_reader.mpp,
+        reader=cache_reader,
         annotations=None,
         mask=None,
         region_size=(1024, 1024),
@@ -224,17 +227,18 @@ def _write_tiff(
     tile_size: tuple[int, int],
     tile_process_function: Callable[[GenericNumberArray], GenericNumberArray],
     colormap: dict[int, str] | None,
+    file_reader: FileImageReader,
     generator_from_reader: Callable[
-        [H5FileImageReader, tuple[int, int], Callable[[GenericNumberArray], GenericNumberArray]],
+        [FileImageReader, tuple[int, int], Callable[[GenericNumberArray], GenericNumberArray]],
         Iterator[npt.NDArray[np.int_]],
     ],
 ) -> None:
     logger.debug("Writing TIFF %s", filename.with_suffix(".tiff"))
-    with H5FileImageReader(filename, stitching_mode=StitchingMode.CROP) as h5_reader:
+    with file_reader(filename, stitching_mode=StitchingMode.CROP) as cache_reader:
         writer = TifffileImageWriter(
             filename.with_suffix(".tiff"),
-            size=h5_reader.size,
-            mpp=h5_reader.mpp,
+            size=cache_reader.size,
+            mpp=cache_reader.mpp,
             tile_size=tile_size,
             pyramid=True,
             compression=TiffCompression.ZSTD,
@@ -242,4 +246,4 @@ def _write_tiff(
             interpolator=Resampling.NEAREST,
             colormap=colormap,
         )
-        writer.from_tiles_iterator(generator_from_reader(h5_reader, tile_size, tile_process_function))
+        writer.from_tiles_iterator(generator_from_reader(cache_reader, tile_size, tile_process_function))
