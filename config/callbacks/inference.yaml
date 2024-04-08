@@ -8,11 +8,17 @@ defaults:
 model_summary:
   max_depth: -1
 
-write_h5_callback:
+write_file_callback:
   dump_dir: ${oc.env:SCRATCH}/${task_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
   queue_size: 16
+  writer_class:
+    _target_: ahcore.writers.ZarrFileImageWriter
+    _partial_: true
   max_concurrent_queues: 3
 
 write_tiff_callback:
   max_concurrent_writers: 2
   max_patience_on_unfinished_files: 100
+  reader_class:
+    _target_: ahcore.readers.ZarrFileImageReader
+    _partial_: true
