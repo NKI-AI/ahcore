@@ -155,7 +155,7 @@ class WriterCallback(abc.ABC, Callback):
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        logger.info("Validation epoch start")
+        logger.debug("Validation epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
         self._total_dataset = trainer.datamodule.validate_dataset  # type: ignore

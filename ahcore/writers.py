@@ -11,7 +11,6 @@ Two writer classes that can write files based on iterators, for instance, the ou
 import abc
 import io
 import json
-import warnings
 from contextlib import contextmanager
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -29,23 +28,7 @@ from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
-warnings.filterwarnings("ignore", message="Duplicate name:*")
 
-
-@contextmanager
-def generic_file_manager(writer: Any, mode: str = "w") -> Any:
-    file = writer.open_file(mode=mode)
-    try:
-        yield file
-    finally:
-        writer.close_file(file)
-
-
-class WriterMetadata(NamedTuple):
-    mode: str
-    format: str | None
-    num_channels: int
-    dtype: str
 
 
 def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
@@ -68,6 +51,23 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
         # Any explicit copy copies the image into memory as a standard PIL.Image.Image, losing the format information.
         image.load()
     return image
+
+
+
+@contextmanager
+def generic_file_manager(writer: Any, mode: str = "w") -> Any:
+    file = writer.open_file(mode=mode)
+    try:
+        yield file
+    finally:
+        writer.close_file(file)
+
+
+class WriterMetadata(NamedTuple):
+    mode: str
+    format: str | None
+    num_channels: int
+    dtype: str
 
 
 class Writer(abc.ABC):
@@ -259,6 +259,11 @@ class Writer(abc.ABC):
                 assert self._data, "Dataset is not initialized"
                 assert self._coordinates_dataset, "Coordinates dataset is not initialized"
 
+                # Need to predeclare them to make sure they are correctly written, we found this could cause issues with
+                # zarr if we don't do it this way and write directly to self._tile_indices.
+                tile_indices = np.full((len(self._grid),), -1, dtype=int)
+                coordinates_dataset = np.full((self._num_samples, 2), -1, dtype=int)
+
                 batch_generator = self._batch_generator((first_coordinates, first_batch), batch_generator)
                 # progress bar will be used if self._progress is not None
                 if self._progress:
@@ -276,11 +281,11 @@ class Writer(abc.ABC):
                         # If we find it, we set it to the index, so we can find it later on
                         # This can be tested by comparing the grid evaluated at a grid index with the tile index
                         # mapped to its coordinates
-                        self._tile_indices[grid_counter] = self._current_index + curr_idx
+                        tile_indices[grid_counter] = self._current_index + curr_idx
                         grid_counter += 1
 
                     batch_size = batch.shape[0]
-                    self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
+                    coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
 
                     if self._is_compressed_image:
                         # When the batch has variable lengths, we need to insert each sample separately
@@ -290,6 +295,9 @@ class Writer(abc.ABC):
                     else:
                         self.insert_data(batch)
                         self._current_index += batch_size
+
+                self._tile_indices = tile_indices
+                self._coordinates_dataset = coordinates_dataset
 
         except Exception as e:
             logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
@@ -327,6 +335,7 @@ class Writer(abc.ABC):
             name="tile_indices",
             shape=(num_tiles,),
             dtype=int,
+            chunks=(num_tiles,),
             compression="gzip",
         )
         # Initialize to -1, which is the default value
@@ -365,6 +374,85 @@ class Writer(abc.ABC):
         metadata = self.construct_metadata(writer_metadata)
 
         return metadata
+
+
+
+
+class ZarrFileImageWriter(Writer):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._store = zarr.ZipStore(str(self._filename.with_suffix(self._partial_suffix)), mode="w")
+
+    def open_file(self, mode: str = "w") -> zarr.Group:
+        if mode == "w":
+            zarr_group = zarr.group(store=self._store, overwrite=True)
+        else:
+            zarr_group = zarr.open_group(store=self._store, mode=mode)
+        return zarr_group
+
+    def close_file(self, file: Any) -> None:
+        # file.close()
+        self._store.close()
+
+    def create_dataset(
+        self,
+        file: Any,
+        name: str,
+        shape: tuple[int, ...],
+        dtype: Any,
+        compression: str,
+        chunks: Optional[tuple[int, ...]] = None,
+    ) -> Any:
+        """Create a Zarr dataset."""
+        compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=2) if compression == "gzip" else None
+        dataset = file.create_dataset(name, shape=shape, dtype=dtype, chunks=chunks, compressor=compressor)
+        return dataset
+
+    def create_variable_length_dataset(
+        self,
+        file: Any,
+        name: str,
+        shape: tuple[int, ...],
+        compression: str,
+        chunks: Optional[tuple[int, ...] | bool] = None,
+    ) -> Any:
+        """Create a dataset with the given specifications."""
+
+        compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=2) if compression == "gzip" else None
+
+        assert shape
+        dataset = file.create_dataset(
+            name,
+            shape=shape[0],
+            dtype=object,
+            object_codec=numcodecs.vlen.VLenArray(dtype="uint8"),
+            compressor=compressor,
+            chunks=chunks,
+        )
+        return dataset
+
+    def insert_data(self, batch: GenericNumberArray) -> None:
+        """Insert a batch into a Zarr dataset."""
+        if not batch.shape[0] == 1 and self._is_compressed_image:
+            raise ValueError(f"Batch should have a single element when writing zarr. Got batch shape {batch.shape}.")
+
+        if self._is_compressed_image:
+            self._data[self._current_index] = batch.reshape(-1)
+        else:
+            self._data[self._current_index : self._current_index + batch.shape[0]] = (
+                batch.flatten() if self._is_compressed_image else batch
+            )
+
+    def write_metadata(self, metadata: dict[str, Any], file: Any) -> None:
+        """Write metadata to Zarr group attributes."""
+        file.attrs.update(metadata)
+
+    def add_associated_images(
+        self,
+        images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
+        description: Optional[str] = None,
+    ) -> None:
+        raise NotImplementedError("Associated images are not yet supported for Zarr files.")
 
 
 class H5FileImageWriter(Writer):
@@ -436,82 +524,3 @@ class H5FileImageWriter(Writer):
 
             if description:
                 associated_images.attrs["description"] = description
-
-
-class ZarrFileImageWriter(Writer):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-
-    def open_file(self, mode: str = "w") -> zarr.Group:
-        store = zarr.ZipStore(str(self._filename.with_suffix(self._partial_suffix)), mode=mode)
-        # Depending on whether you're creating or reading, you might adjust 'mode'.
-        if mode == "w":
-            zarr_group = zarr.group(store=store, overwrite=True)
-        else:
-            zarr_group = zarr.open_group(store=store, mode=mode)
-        return zarr_group
-
-    def close_file(self, file: Any) -> None:
-        # No explicit close needed for Zarr
-        pass
-
-    def create_dataset(
-        self,
-        file: Any,
-        name: str,
-        shape: tuple[int, ...],
-        dtype: Any,
-        compression: str,
-        chunks: Optional[tuple[int, ...]] = None,
-    ) -> Any:
-        """Create a Zarr dataset."""
-        compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=2) if compression == "gzip" else None
-        dataset = file.create_dataset(name, shape=shape, dtype=dtype, chunks=chunks, compressor=compressor)
-        return dataset
-
-    def create_variable_length_dataset(
-        self,
-        file: Any,
-        name: str,
-        shape: tuple[int, ...],
-        compression: str,
-        chunks: Optional[tuple[int, ...] | bool] = None,
-    ) -> Any:
-        """Create a dataset with the given specifications."""
-
-        compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=2) if compression == "gzip" else None
-
-        assert shape
-        dataset = file.create_dataset(
-            name,
-            shape=shape[0],
-            dtype=object,
-            object_codec=numcodecs.vlen.VLenArray(dtype="uint8"),
-            compressor=compressor,
-            chunks=chunks,
-        )
-        return dataset
-
-    def insert_data(self, batch: GenericNumberArray) -> None:
-        """Insert a batch into a Zarr dataset."""
-        if not batch.shape[0] == 1 and self._is_compressed_image:
-            raise ValueError(f"Batch should have a single element when writing zarr. Got batch shape {batch.shape}.")
-
-        if self._is_compressed_image:
-            self._data[self._current_index] = batch.reshape(-1)
-        else:
-            self._data[self._current_index : self._current_index + batch.shape[0]] = (
-                batch.flatten() if self._is_compressed_image else batch
-            )
-
-    def write_metadata(self, metadata: dict[str, Any], file: Any) -> None:
-        """Write metadata to Zarr group attributes."""
-        for key, value in metadata.items():
-            file.attrs[key] = value
-
-    def add_associated_images(
-        self,
-        images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
-        description: Optional[str] = None,
-    ) -> None:
-        raise NotImplementedError("Associated images are not yet supported for Zarr files.")
