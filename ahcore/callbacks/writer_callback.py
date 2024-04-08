@@ -162,7 +162,7 @@ class WriterCallback(abc.ABC, Callback):
         return self._on_epoch_start(trainer)
 
     def on_predict_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        logger.info("Prediction epoch start")
+        logger.debug("Prediction epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
         self._total_dataset = trainer.predict_dataloaders.dataset  # type: ignore
@@ -286,6 +286,9 @@ class WriterCallback(abc.ABC, Callback):
                 last_batch=last_batch,
             )
             self._dataset_index += data.shape[0]
+
+            if last_batch:
+                logger.info(f"Processed {curr_filename}, now dumping.")
 
     @abc.abstractmethod
     def build_writer_class(self, pl_module: "pl.LightningModule", stage: str, filename: str) -> Writer:
