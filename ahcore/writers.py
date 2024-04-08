@@ -30,7 +30,6 @@ from ahcore.utils.types import GenericNumberArray, InferencePrecision
 logger = get_logger(__name__)
 
 
-
 def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
     """Convert encoded array to PIL image
 
@@ -51,7 +50,6 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
         # Any explicit copy copies the image into memory as a standard PIL.Image.Image, losing the format information.
         image.load()
     return image
-
 
 
 @contextmanager
@@ -296,8 +294,8 @@ class Writer(abc.ABC):
                         self.insert_data(batch)
                         self._current_index += batch_size
 
-                self._tile_indices = tile_indices
-                self._coordinates_dataset = coordinates_dataset
+                self._tile_indices[:] = tile_indices
+                self._coordinates_dataset[:] = coordinates_dataset
 
         except Exception as e:
             logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
@@ -374,8 +372,6 @@ class Writer(abc.ABC):
         metadata = self.construct_metadata(writer_metadata)
 
         return metadata
-
-
 
 
 class ZarrFileImageWriter(Writer):
@@ -476,7 +472,7 @@ class H5FileImageWriter(Writer):
         file.attrs["metadata"] = metadata_json
 
     def insert_data(self, batch: GenericNumberArray) -> None:
-        """Insert a batch into a Zarr dataset."""
+        """Insert a batch into a H5 dataset."""
         if not batch.shape[0] == 1 and self._is_compressed_image:
             raise ValueError(f"Batch should have a single element when writing h5. Got batch shape {batch.shape}.")
         batch_size = batch.shape[0]

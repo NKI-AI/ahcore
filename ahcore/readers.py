@@ -221,7 +221,7 @@ class FileImageReader(abc.ABC):
 
     def read_region_raw(self, location: tuple[int, int], size: tuple[int, int]) -> GenericNumberArray:
         """
-        Reads a region in the stored h5 file. This function stitches the regions as saved in the h5 file. Doing this
+        Reads a region in the stored h5 file. This function stitches the regions as saved in the cache file. Doing this
         it takes into account:
         1) The region overlap, several region merging strategies are implemented: cropping, averaging across borders
           and taking the maximum across borders.
