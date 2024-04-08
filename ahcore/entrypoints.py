@@ -202,6 +202,9 @@ def inference(config: DictConfig) -> None:
     if config.get("seed"):
         seed_everything(config.seed, workers=True)
 
+    # TODO: Make Configurable
+    torch.set_float32_matmul_precision("high")
+
     config = validate_checkpoint_paths(config)
 
     data_description, datamodule = create_datamodule(config)
