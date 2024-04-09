@@ -246,9 +246,9 @@ class Writer(abc.ABC):
         try:
             with generic_file_manager(self) as file:
                 first_coordinates, first_batch = next(batch_generator)
-                first_batch = self.adjust_batch_precision(first_batch)
+                init_writer_batch = self.adjust_batch_precision(first_batch)
 
-                metadata = self.init_writer(first_coordinates, first_batch, file)
+                metadata = self.init_writer(first_coordinates, init_writer_batch, file)
                 self.write_metadata(metadata, file)
 
                 # Mostly for mypy
