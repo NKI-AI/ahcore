@@ -12,7 +12,7 @@ from ahcore.utils.types import InferencePrecision, NormalizationType
 from ahcore.writers import Writer
 
 from .writer_callback import WriterCallback
-
+from .writer_callback import ConvertCallbacks
 logger = get_logger(__name__)
 
 
@@ -25,6 +25,8 @@ class WriteFileCallback(WriterCallback):
         dump_dir: Path,
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
+        callbacks: list[ConvertCallbacks] | None = None,
+
     ):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
@@ -60,6 +62,7 @@ class WriteFileCallback(WriterCallback):
             data_key="prediction",
             normalization_type=normalization_type,
             precision=precision,
+            callbacks=callbacks,
         )
 
         self._dataset_index = 0

@@ -149,6 +149,9 @@ class ComputeWsiMetricsCallback(Callback):
         if not self._dump_dir:
             raise ValueError("Dump directory is not set.")
 
+        # Here we can check if certain files already exist.
+
+
     def compute_metrics(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule
     ) -> list[list[dict[str, dict[str, float]]]]:
@@ -231,31 +234,33 @@ class ComputeWsiMetricsCallback(Callback):
         if trainer.global_rank != 0:
             return
 
-        if not self._dump_dir:
-            raise ValueError("Dump directory is not set.")
-        if not self._wsi_metrics:
-            raise ValueError("WSI metrics are not set.")
-        assert self._model_name  # This should be set in the setup()
+        # Here we can check if everything is completed
 
-        # Ensure that all cache files have been written
-        self._logger.debug("Computing metrics for %s predictions", len(self._filenames))
-        computed_metrics = self.compute_metrics(trainer, pl_module)
-        metrics = self._wsi_metrics.get_average_score(computed_metrics)
-        results_json_fn = (
-            self._dump_dir / "outputs" / self._model_name / f"step_{pl_module.global_step}" / "results.json"
-        )
-        with open(results_json_fn, "w", encoding="utf-8") as json_file:
-            json.dump(self._dump_list, json_file, indent=2)
-        self._wsi_metrics.reset()
-        # Reset stuff
-        self._dump_list = []
-        self._filenames = {}
-
-        self._logger.debug("Metrics: %s", metrics)
-
-        # TODO: Maybe put this elsewhere?
-        metrics = {f"validate/{k}": v for k, v in metrics.items()}
-        pl_module.log_dict(metrics, prog_bar=True)
+        # if not self._dump_dir:
+        #     raise ValueError("Dump directory is not set.")
+        # if not self._wsi_metrics:
+        #     raise ValueError("WSI metrics are not set.")
+        # assert self._model_name  # This should be set in the setup()
+        #
+        # # Ensure that all cache files have been written
+        # self._logger.debug("Computing metrics for %s predictions", len(self._filenames))
+        # computed_metrics = self.compute_metrics(trainer, pl_module)
+        # metrics = self._wsi_metrics.get_average_score(computed_metrics)
+        # results_json_fn = (
+        #     self._dump_dir / "outputs" / self._model_name / f"step_{pl_module.global_step}" / "results.json"
+        # )
+        # with open(results_json_fn, "w", encoding="utf-8") as json_file:
+        #     json.dump(self._dump_list, json_file, indent=2)
+        # self._wsi_metrics.reset()
+        # # Reset stuff
+        # self._dump_list = []
+        # self._filenames = {}
+        #
+        # self._logger.debug("Metrics: %s", metrics)
+        #
+        # # TODO: Maybe put this elsewhere?
+        # metrics = {f"validate/{k}": v for k, v in metrics.items()}
+        # pl_module.log_dict(metrics, prog_bar=True)
 
 
 TaskData = namedtuple("TaskData", ["filename", "h5_filename", "metadata", "mask", "annotations"])

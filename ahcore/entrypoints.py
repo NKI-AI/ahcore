@@ -202,7 +202,7 @@ def inference(config: DictConfig) -> None:
     if config.get("seed"):
         seed_everything(config.seed, workers=True)
 
-    # TODO: Make Configurable
+    # TODO: Make ja Configurable
     torch.set_float32_matmul_precision("high")
 
     config = validate_checkpoint_paths(config)

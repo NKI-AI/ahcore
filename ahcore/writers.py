@@ -130,6 +130,7 @@ class Writer(abc.ABC):
         dtype: Any,
         compression: str,
         chunks: Optional[tuple[int, ...]] = None,
+        data: Optional[GenericNumberArray] = None,
     ) -> Any:
         """Create a dataset with the given specifications."""
 
@@ -333,11 +334,10 @@ class Writer(abc.ABC):
             name="tile_indices",
             shape=(num_tiles,),
             dtype=int,
-            chunks=(num_tiles,),
+            # chunks=(num_tiles,),
             compression="gzip",
+            data=np.full((num_tiles,), -1),
         )
-        # Initialize to -1, which is the default value
-        self._tile_indices[:] = -1
 
         if not self._is_compressed_image:
             shape = first_batch.shape[1:]
@@ -398,10 +398,11 @@ class ZarrFileImageWriter(Writer):
         dtype: Any,
         compression: str,
         chunks: Optional[tuple[int, ...]] = None,
+        data: Optional[GenericNumberArray] = None,
     ) -> Any:
         """Create a Zarr dataset."""
         compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=2) if compression == "gzip" else None
-        dataset = file.create_dataset(name, shape=shape, dtype=dtype, chunks=chunks, compressor=compressor)
+        dataset = file.create_dataset(name, data=data, shape=shape, dtype=dtype, chunks=chunks, compressor=compressor)
         return dataset
 
     def create_variable_length_dataset(
@@ -488,10 +489,12 @@ class H5FileImageWriter(Writer):
         dtype: Any,
         compression: str | None,
         chunks: Optional[Optional[tuple[int, ...]] | bool] = None,
+        data: Optional[GenericNumberArray] = None,
     ) -> Any:
         if chunks is None:
             chunks = True  # Use HDF5's auto-chunking
-        return h5file.create_dataset(name, shape=shape, dtype=dtype, compression=compression, chunks=chunks)
+
+        return h5file.create_dataset(name, data=data, shape=shape, dtype=dtype, compression=compression, chunks=chunks)
 
     def create_variable_length_dataset(
         self,

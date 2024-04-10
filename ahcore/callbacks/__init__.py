@@ -2,7 +2,7 @@
 
 from .file_writer_callback import WriteFileCallback
 from .tiff_callback import WriteTiffCallback
-from .writer_callback import WriterCallback
+from .writer_callback import WriterCallback, DummyCallback
 from .wsi_metric_callback import ComputeWsiMetricsCallback
 
-__all__ = ("WriteFileCallback", "WriteTiffCallback", "ComputeWsiMetricsCallback", "WriterCallback")
+__all__ = ("WriteFileCallback", "WriteTiffCallback", "ComputeWsiMetricsCallback", "WriterCallback", "DummyCallback")

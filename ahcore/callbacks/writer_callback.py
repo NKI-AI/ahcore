@@ -1,12 +1,15 @@
 import abc
 import ctypes
 import time
+import pathlib
+from ahcore.utils.callbacks import get_output_filename
+
 from multiprocessing import Event, Process, Queue, Semaphore, Value
 from multiprocessing.sharedctypes import SynchronizedBase
 from multiprocessing.synchronize import Event as EventClass
 from multiprocessing.synchronize import Semaphore as SemaphoreClass
 from threading import Thread
-from typing import Any, Generator, Tuple
+from typing import Any, Generator, Tuple, NamedTuple
 
 import pytorch_lightning as pl
 import torch
@@ -98,6 +101,30 @@ def _gather_batch(
 
     return all_coordinates, all_data, all_global_index, all_paths
 
+class ConvertCallbacks(abc.ABC):
+    pass
+
+class CallbackOutput(NamedTuple):
+    metrics: Any
+
+class DummyCallback(ConvertCallbacks):
+    def __init__(self):
+        self._trainer = None
+        self._pl_module = None
+        self._stage = None
+
+        self._storage = {}
+
+    def setup(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
+        self._trainer = trainer
+        self._pl_module = pl_module
+        self._stage = stage
+
+    def start(self, filename: str) -> None:
+        _filename = get_output_filename(
+        logger.info(f"Dummy callback for {filename}. File exists: {pathlib.Path(filename).exists()}")
+
+
 
 class WriterCallback(abc.ABC, Callback):
     def __init__(
@@ -109,6 +136,7 @@ class WriterCallback(abc.ABC, Callback):
         data_key: str = "prediction",
         normalization_type: str = NormalizationType.SOFTMAX,
         precision: str = InferencePrecision.FP32,  # This is passed to the writer class
+        callbacks: list[ConvertCallbacks] | None = None,
     ) -> None:
         # TODO: Test predict
 
@@ -122,6 +150,7 @@ class WriterCallback(abc.ABC, Callback):
         self._precision: InferencePrecision = InferencePrecision(precision)
         self._writer_class = writer_class
         self._max_concurrent_queues = max_concurrent_queues
+        self._callbacks = callbacks or []
 
         self._dataset_sizes: dict[str, int] = {}  # Keeps track of the total size of a dataset
         self._tile_counter: dict[str, int] = {}  # Keeps track of the number of tiles processed for a dataset
@@ -138,6 +167,10 @@ class WriterCallback(abc.ABC, Callback):
                 raise ValueError(
                     "max_concurrent_queues should be greater than or equal to the world size to avoid deadlock."
                 )
+
+        # TODO: is this only required in rank 0?
+        for callback in self._callbacks:
+            callback.setup(trainer, pl_module, stage)
 
     def _on_epoch_start(self, trainer: "pl.Trainer") -> None:
         self._cleanup_shutdown_event.clear()
@@ -162,7 +195,7 @@ class WriterCallback(abc.ABC, Callback):
         return self._on_epoch_start(trainer)
 
     def on_predict_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        logger.debug("Prediction epoch start")
+        logger.info("Prediction epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
         self._total_dataset = trainer.predict_dataloaders.dataset  # type: ignore
@@ -350,6 +383,9 @@ class WriterCallback(abc.ABC, Callback):
     def on_predict_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._epoch_end(trainer, pl_module)
 
+    def start_callbacks(self, filename: str) -> None:
+        for callback in self._callbacks:
+            callback.start(filename)
 
 def _queue_generator(
     queue: "Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]",
@@ -406,6 +442,8 @@ def _writer_process(
         writer = callback_instance.build_writer_class(pl_module, stage, filename)
         writer.consume(_queue_generator(queue))
         logger.debug(f"Stopped writing for {filename}")
+        callback_instance.start_callbacks(filename)
+
     except Exception as e:
         logger.exception(f"Error in writer_process for {filename}: {e}")
     finally:
