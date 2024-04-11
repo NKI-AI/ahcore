@@ -5,14 +5,15 @@ from pathlib import Path
 from dlup.data.dataset import TiledWsiDataset
 
 from ahcore.lit_module import AhCoreLightningModule
-from ahcore.utils.callbacks import get_output_filename
+from ahcore.utils.callbacks import get_output_filename as get_output_filename_
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import InferencePrecision, NormalizationType
 from ahcore.writers import Writer
 
 from .writer_callback import WriterCallback
-from .writer_callback import ConvertCallbacks
+from .converters.tiff_callback import ConvertCallbacks
+
 logger = get_logger(__name__)
 
 
@@ -26,7 +27,6 @@ class WriteFileCallback(WriterCallback):
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
         callbacks: list[ConvertCallbacks] | None = None,
-
     ):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
@@ -57,6 +57,7 @@ class WriteFileCallback(WriterCallback):
 
         super().__init__(
             writer_class=writer_class,
+            dump_dir=self._dump_dir,
             queue_size=queue_size,
             max_concurrent_queues=max_concurrent_queues,
             data_key="prediction",
@@ -71,17 +72,23 @@ class WriteFileCallback(WriterCallback):
     def dump_dir(self) -> Path:
         return self._dump_dir
 
-    def build_writer_class(self, pl_module: AhCoreLightningModule, stage: str, filename: str) -> Writer:
-        output_filename = get_output_filename(
+    def get_output_filename(self, pl_module: AhCoreLightningModule, filename: str) -> Path:
+        output_filename = get_output_filename_(
             self.dump_dir,
             Path(filename),
             model_name=str(pl_module.name),
             step=pl_module.global_step,
         )
         output_filename.parent.mkdir(parents=True, exist_ok=True)
+        return output_filename
+
+    def build_writer_class(self, pl_module: AhCoreLightningModule, stage: str, filename: str) -> Writer:
+        output_filename = self.get_output_filename(pl_module, filename)
         link_fn = (
             self.dump_dir / "outputs" / f"{pl_module.name}" / f"step_{pl_module.global_step}" / "image_cache_link.txt"
         )
+        link_fn.parent.mkdir(parents=True, exist_ok=True)
+
         with open(link_fn, "a" if link_fn.is_file() else "w") as file:
             file.write(f"{filename},{output_filename}\n")
 

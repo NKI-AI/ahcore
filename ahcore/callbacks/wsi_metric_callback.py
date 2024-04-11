@@ -149,8 +149,6 @@ class ComputeWsiMetricsCallback(Callback):
         if not self._dump_dir:
             raise ValueError("Dump directory is not set.")
 
-        # Here we can check if certain files already exist.
-
 
     def compute_metrics(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule
@@ -273,7 +271,7 @@ def prepare_task_data(
     data_description: DataDescription,
     data_manager: DataManager,
 ) -> TaskData:
-    h5_filename = get_output_filename(
+    cache_filename = get_output_filename(
         dump_dir=dump_dir,
         input_path=data_description.data_dir / filename,
         model_name=str(pl_module.name),
@@ -283,7 +281,7 @@ def prepare_task_data(
     metadata = fetch_image_metadata(image)
     mask, annotations = get_mask_and_annotations_from_record(data_description.annotations_dir, image)
 
-    return TaskData(filename, h5_filename, metadata, mask, annotations)
+    return TaskData(filename, cache_filename, metadata, mask, annotations)
 
 
 def schedule_task(

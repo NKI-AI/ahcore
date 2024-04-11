@@ -3,21 +3,17 @@ from __future__ import annotations
 import multiprocessing
 import time
 from pathlib import Path
-from typing import Any, Callable, Generator, Iterator, Optional, cast
+from typing import Any, Optional, cast
 
-import numpy as np
 import pytorch_lightning as pl
-from dlup._image import Resampling
-from dlup.writers import TiffCompression, TifffileImageWriter
-from numpy import typing as npt
 from pytorch_lightning import Callback
 
 from ahcore.callbacks import WriteFileCallback
+from ahcore.callbacks.converters.tiff_callback import _generator_from_reader, _tile_process_function, _write_tiff
 from ahcore.lit_module import AhCoreLightningModule
-from ahcore.readers import FileImageReader, StitchingMode
-from ahcore.utils.callbacks import _ValidationDataset, get_output_filename
+from ahcore.readers import FileImageReader
+from ahcore.utils.callbacks import get_output_filename
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import GenericNumberArray
 
 logger = get_logger(__name__)
 
@@ -200,51 +196,3 @@ class WriteTiffCallback(Callback):
         self._epoch_end(trainer, pl_module)
 
 
-def _generator_from_reader(
-    cache_reader: FileImageReader,
-    tile_size: tuple[int, int],
-    tile_process_function: Callable[[GenericNumberArray], GenericNumberArray],
-) -> Generator[GenericNumberArray, None, None]:
-    validation_dataset = _ValidationDataset(
-        data_description=None,
-        native_mpp=cache_reader.mpp,
-        reader=cache_reader,
-        annotations=None,
-        mask=None,
-        region_size=(1024, 1024),
-    )
-
-    for sample in validation_dataset:
-        region = sample["prediction"]
-        yield region if tile_process_function is None else tile_process_function(region)
-
-
-def _tile_process_function(x: GenericNumberArray) -> GenericNumberArray:
-    return np.asarray(np.argmax(x, axis=0).astype(np.uint8))
-
-
-def _write_tiff(
-    filename: Path,
-    tile_size: tuple[int, int],
-    tile_process_function: Callable[[GenericNumberArray], GenericNumberArray],
-    colormap: dict[int, str] | None,
-    file_reader: FileImageReader,
-    generator_from_reader: Callable[
-        [FileImageReader, tuple[int, int], Callable[[GenericNumberArray], GenericNumberArray]],
-        Iterator[npt.NDArray[np.int_]],
-    ],
-) -> None:
-    logger.debug("Writing TIFF %s", filename.with_suffix(".tiff"))
-    with file_reader(filename, stitching_mode=StitchingMode.CROP) as cache_reader:
-        writer = TifffileImageWriter(
-            filename.with_suffix(".tiff"),
-            size=cache_reader.size,
-            mpp=cache_reader.mpp,
-            tile_size=tile_size,
-            pyramid=True,
-            compression=TiffCompression.ZSTD,
-            quality=100,
-            interpolator=Resampling.NEAREST,
-            colormap=colormap,
-        )
-        writer.from_tiles_iterator(generator_from_reader(cache_reader, tile_size, tile_process_function))

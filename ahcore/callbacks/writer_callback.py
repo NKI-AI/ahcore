@@ -1,15 +1,13 @@
 import abc
 import ctypes
-import time
 import pathlib
-from ahcore.utils.callbacks import get_output_filename
-
+import time
 from multiprocessing import Event, Process, Queue, Semaphore, Value
 from multiprocessing.sharedctypes import SynchronizedBase
 from multiprocessing.synchronize import Event as EventClass
 from multiprocessing.synchronize import Semaphore as SemaphoreClass
 from threading import Thread
-from typing import Any, Generator, Tuple, NamedTuple
+from typing import Any, Generator, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -17,6 +15,8 @@ import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
+from ahcore.callbacks.converters.tiff_callback import ConvertCallbacks
+from ahcore.lit_module import AhCoreLightningModule
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericNumberArray, InferencePrecision, NormalizationType
 from ahcore.writers import Writer
@@ -101,35 +101,12 @@ def _gather_batch(
 
     return all_coordinates, all_data, all_global_index, all_paths
 
-class ConvertCallbacks(abc.ABC):
-    pass
-
-class CallbackOutput(NamedTuple):
-    metrics: Any
-
-class DummyCallback(ConvertCallbacks):
-    def __init__(self):
-        self._trainer = None
-        self._pl_module = None
-        self._stage = None
-
-        self._storage = {}
-
-    def setup(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
-        self._trainer = trainer
-        self._pl_module = pl_module
-        self._stage = stage
-
-    def start(self, filename: str) -> None:
-        _filename = get_output_filename(
-        logger.info(f"Dummy callback for {filename}. File exists: {pathlib.Path(filename).exists()}")
-
-
 
 class WriterCallback(abc.ABC, Callback):
     def __init__(
         self,
         writer_class: Writer,
+        dump_dir: pathlib.Path,
         queue_size: int = 16,
         max_concurrent_queues: int = 16,
         requires_gather: bool = True,
@@ -139,7 +116,7 @@ class WriterCallback(abc.ABC, Callback):
         callbacks: list[ConvertCallbacks] | None = None,
     ) -> None:
         # TODO: Test predict
-
+        self._dump_dir = dump_dir
         self._queue_size = queue_size
         self._queues: dict[str, Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]] = {}
         self._completion_flags: dict[str, Any] = {}
@@ -161,6 +138,10 @@ class WriterCallback(abc.ABC, Callback):
         self._total_dataset: ConcatDataset[dict[str, Any]] | None = None
         self._dataset_index = 0
 
+    @property
+    def dump_dir(self) -> pathlib.Path:
+        return self._dump_dir
+
     def setup(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
         if trainer.world_size > 1:
             if self._max_concurrent_queues < trainer.world_size:
@@ -170,7 +151,11 @@ class WriterCallback(abc.ABC, Callback):
 
         # TODO: is this only required in rank 0?
         for callback in self._callbacks:
-            callback.setup(trainer, pl_module, stage)
+            callback.setup(self, trainer, pl_module, stage)
+
+    @abc.abstractmethod
+    def get_output_filename(self, pl_module: AhCoreLightningModule, filename: str) -> pathlib.Path:
+        pass
 
     def _on_epoch_start(self, trainer: "pl.Trainer") -> None:
         self._cleanup_shutdown_event.clear()
@@ -386,6 +371,7 @@ class WriterCallback(abc.ABC, Callback):
     def start_callbacks(self, filename: str) -> None:
         for callback in self._callbacks:
             callback.start(filename)
+
 
 def _queue_generator(
     queue: "Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]",
