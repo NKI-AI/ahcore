@@ -3,25 +3,26 @@ from __future__ import annotations
 import abc
 import pathlib
 from pathlib import Path
-from typing import NamedTuple, Any, Callable, Generator, Iterator
 from threading import Semaphore
+from typing import Any, Callable, Generator, Iterator, NamedTuple
 
 import numpy as np
 import pytorch_lightning as pl
 from dlup._image import Resampling
-from dlup.writers import TifffileImageWriter, TiffCompression
+from dlup.writers import TiffCompression, TifffileImageWriter
 from numpy import typing as npt
 from pytorch_lightning import Callback
 
 from ahcore.readers import FileImageReader, StitchingMode
+from ahcore.utils.callbacks import _ValidationDataset, get_output_filename
 from ahcore.utils.io import get_logger
-from ahcore.utils.callbacks import get_output_filename, _ValidationDataset
 from ahcore.utils.types import GenericNumberArray
 
 logger = get_logger(__name__)
 
+
 class ConvertCallbacks(abc.ABC):
-    def __init__(self, max_concurrent_tasks: int=1):
+    def __init__(self, max_concurrent_tasks: int = 1):
         self._max_concurrent_tasks = max_concurrent_tasks
         self._semaphore = Semaphore(max_concurrent_tasks)
         self._callback = None
@@ -64,16 +65,14 @@ class ConvertCallbacks(abc.ABC):
 
 
 class TiffConverterCallback(ConvertCallbacks):
-    def __init__(self, reader_class, colormap, max_concurrent_tasks: int=1):
+    def __init__(self, reader_class, colormap, max_concurrent_tasks: int = 1):
         self._reader_class = reader_class
         self._colormap = colormap
         self._tile_size = (1024, 1024)
-        self._tile_process_function = None
+        self._tile_process_function = _tile_process_function  # function that is a
         super().__init__(max_concurrent_tasks=max_concurrent_tasks)
 
     def schedule_task(self, filename: pathlib.Path, cache_filename: pathlib.Path) -> None:
-        logger.info("Scheduling task for %s, using cache %s and writing to %s", filename, cache_filename, output_filename)
-
         self._semaphore.acquire()
         # Start the task
         _write_tiff(
@@ -89,6 +88,7 @@ class TiffConverterCallback(ConvertCallbacks):
 
 class CallbackOutput(NamedTuple):
     metrics: Any
+
 
 def _generator_from_reader(
     cache_reader: FileImageReader,
@@ -124,7 +124,6 @@ def _write_tiff(
         Iterator[npt.NDArray[np.int_]],
     ],
 ) -> None:
-    logger.info("Writing TIFF %s", filename.with_suffix(".tiff"))
     with file_reader(filename, stitching_mode=StitchingMode.CROP) as cache_reader:
         writer = TifffileImageWriter(
             filename.with_suffix(".tiff"),
@@ -138,4 +137,3 @@ def _write_tiff(
             colormap=colormap,
         )
         writer.from_tiles_iterator(generator_from_reader(cache_reader, tile_size, tile_process_function))
-    logger.info("Done writing TIFF %s", filename.with_suffix(".tiff"))

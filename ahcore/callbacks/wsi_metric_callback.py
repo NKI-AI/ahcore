@@ -149,7 +149,6 @@ class ComputeWsiMetricsCallback(Callback):
         if not self._dump_dir:
             raise ValueError("Dump directory is not set.")
 
-
     def compute_metrics(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule
     ) -> list[list[dict[str, dict[str, float]]]]:

@@ -1,3 +1,3 @@
-from .tiff_callback import DummyCallback
+from .tiff_callback import TiffConverterCallback
 
-__all__ = ("DummyCallback",)
+__all__ = ("TiffConverterCallback",)

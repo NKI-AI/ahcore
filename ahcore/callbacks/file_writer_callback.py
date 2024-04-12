@@ -11,8 +11,8 @@ from ahcore.utils.io import get_logger
 from ahcore.utils.types import InferencePrecision, NormalizationType
 from ahcore.writers import Writer
 
-from .writer_callback import WriterCallback
 from .converters.tiff_callback import ConvertCallbacks
+from .writer_callback import WriterCallback
 
 logger = get_logger(__name__)
 
