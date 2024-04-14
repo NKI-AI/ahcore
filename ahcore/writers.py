@@ -333,10 +333,8 @@ class Writer(abc.ABC):
             file,
             name="tile_indices",
             shape=(num_tiles,),
-            dtype=int,
-            # chunks=(num_tiles,),
+            dtype=np.int_,
             compression="gzip",
-            data=np.full((num_tiles,), -1),
         )
 
         if not self._is_compressed_image:
@@ -400,7 +398,11 @@ class ZarrFileImageWriter(Writer):
         chunks: Optional[tuple[int, ...]] = None,
         data: Optional[GenericNumberArray] = None,
     ) -> Any:
-        """Create a Zarr dataset."""
+        """Create a Zarr dataset.
+
+        Note: Do not use the `data` parameter when you're going to overwrite it later on, that will give warnings that
+        files are overwritten in the zip.
+        """
         compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=2) if compression == "gzip" else None
         dataset = file.create_dataset(name, data=data, shape=shape, dtype=dtype, chunks=chunks, compressor=compressor)
         return dataset

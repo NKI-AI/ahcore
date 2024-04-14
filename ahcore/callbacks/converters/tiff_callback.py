@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import abc
 import pathlib
+from multiprocessing import Pool, Process, Queue
 from pathlib import Path
-from threading import Semaphore
 from typing import Any, Callable, Generator, Iterator, NamedTuple
 
 import numpy as np
@@ -24,13 +24,14 @@ logger = get_logger(__name__)
 class ConvertCallbacks(abc.ABC):
     def __init__(self, max_concurrent_tasks: int = 1):
         self._max_concurrent_tasks = max_concurrent_tasks
-        self._semaphore = Semaphore(max_concurrent_tasks)
+        self._pool = Pool(max_concurrent_tasks)  # Pool for asynchronous task execution
+        self._queue = Queue()  # Queue for tasks
         self._callback = None
         self._trainer = None
         self._pl_module = None
         self._stage = None
         self._dump_dir = None
-
+        self._workers = []
         self._storage = {}
 
     def setup(self, callback: Callback, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
@@ -40,6 +41,21 @@ class ConvertCallbacks(abc.ABC):
         self._stage = stage
 
         self._dump_dir = self._callback.dump_dir
+
+        # Start worker processes
+        for _ in range(self._max_concurrent_tasks):
+            process = Process(target=self.worker)
+            process.start()
+            self._workers.append(process)
+
+    def worker(self):
+        """Worker function to process tasks from the queue."""
+        while True:
+            task = self._queue.get()
+            if task is None:  # Allow for a shutdown signal
+                break
+            filename, cache_filename = task
+            self.process_task(filename, cache_filename)
 
     @property
     def dump_dir(self) -> pathlib.Path:
@@ -72,9 +88,10 @@ class TiffConverterCallback(ConvertCallbacks):
         self._tile_process_function = _tile_process_function  # function that is a
         super().__init__(max_concurrent_tasks=max_concurrent_tasks)
 
-    def schedule_task(self, filename: pathlib.Path, cache_filename: pathlib.Path) -> None:
-        self._semaphore.acquire()
-        # Start the task
+    def schedule_task(self, filename: pathlib.Path, cache_filename: pathlib.Path):
+        self._queue.put((filename, cache_filename))  # Put task into the queue for asynchronous processing
+
+    def process_task(self, filename, cache_filename):
         _write_tiff(
             cache_filename,
             self._tile_size,
@@ -83,7 +100,6 @@ class TiffConverterCallback(ConvertCallbacks):
             self._reader_class,
             _generator_from_reader,
         )
-        self._semaphore.release()
 
 
 class CallbackOutput(NamedTuple):

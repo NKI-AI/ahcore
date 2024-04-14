@@ -306,7 +306,7 @@ class WriterCallback(abc.ABC, Callback):
             self._dataset_index += data.shape[0]
 
             if last_batch:
-                logger.info(f"Processed {curr_filename}, now dumping.")
+                logger.debug(f"Processed {curr_filename}, now dumping.")
 
     @abc.abstractmethod
     def build_writer_class(self, pl_module: "pl.LightningModule", stage: str, filename: str) -> Writer:
