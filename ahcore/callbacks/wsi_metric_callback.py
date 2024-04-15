@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import itertools
-import json
 import multiprocessing
 import time
 import warnings
 from collections import namedtuple
 from multiprocessing.pool import Pool
 from pathlib import Path
-from typing import Any, Generator, Optional, cast
+from typing import Any, Generator, Optional, Type, cast
 
 import pytorch_lightning as pl
 import torch
@@ -301,6 +300,7 @@ def schedule_task(
 
 def compute_metrics_for_case(
     task_data: TaskData,
+    image_reader: Type[FileImageReader],
     class_names: dict[int, str],
     data_description: DataDescription,
     wsi_metrics: WSIMetricFactory,
@@ -312,7 +312,7 @@ def compute_metrics_for_case(
 
     logger.info("Computing metrics for %s", filename)
 
-    with H5FileImageReader(h5_filename, stitching_mode=StitchingMode.CROP) as h5reader:
+    with image_reader(h5_filename, stitching_mode=StitchingMode.CROP) as h5reader:
         dataset_of_validation_image = _ValidationDataset(
             data_description=data_description,
             native_mpp=metadata.mpp,

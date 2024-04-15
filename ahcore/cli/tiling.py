@@ -12,7 +12,7 @@ from logging import getLogger
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pformat
-from typing import Any, Generator, Literal, NamedTuple
+from typing import Any, Generator, Literal, NamedTuple, Type
 
 import imageio.v3 as iio
 import numpy as np
@@ -315,7 +315,7 @@ def _tiling_pipeline(
     save_thumbnail: bool = False,
 ) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
-
+    _writer_class: Type[H5FileImageWriter | ZarrFileImageWriter]
     if writer_class == "h5":
         _writer_class = H5FileImageWriter
     elif writer_class == "zarr":

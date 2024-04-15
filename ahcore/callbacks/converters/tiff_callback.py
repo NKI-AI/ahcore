@@ -11,8 +11,8 @@ import pytorch_lightning as pl
 from dlup._image import Resampling
 from dlup.writers import TiffCompression, TifffileImageWriter
 from numpy import typing as npt
-from pytorch_lightning import Callback
 
+from ahcore.callbacks import WriterCallback
 from ahcore.readers import FileImageReader, StitchingMode
 from ahcore.utils.callbacks import _ValidationDataset, get_output_filename
 from ahcore.utils.io import get_logger
@@ -24,17 +24,16 @@ logger = get_logger(__name__)
 class ConvertCallbacks(abc.ABC):
     def __init__(self, max_concurrent_tasks: int = 1):
         self._max_concurrent_tasks = max_concurrent_tasks
-        self._pool = Pool(max_concurrent_tasks)  # Pool for asynchronous task execution
-        self._queue = Queue()  # Queue for tasks
-        self._callback = None
-        self._trainer = None
-        self._pl_module = None
-        self._stage = None
-        self._dump_dir = None
-        self._workers = []
-        self._storage = {}
+        self._pool = Pool(max_concurrent_tasks)
+        self._queue: Queue = Queue()
+        self._callback: WriterCallback
+        self._trainer: pl.Trainer
+        self._pl_module: pl.LightningModule
+        self._stage: str
+        self._dump_dir: Path
+        self._workers: list[Process] = []
 
-    def setup(self, callback: Callback, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
+    def setup(self, callback: WriterCallback, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
         self._callback = callback
         self._trainer = trainer
         self._pl_module = pl_module
@@ -48,7 +47,11 @@ class ConvertCallbacks(abc.ABC):
             process.start()
             self._workers.append(process)
 
-    def worker(self):
+    @abc.abstractmethod
+    def process_task(self, filename: Path, cache_filename: Path) -> None:
+        """Abstract method to process the task"""
+
+    def worker(self) -> None:
         """Worker function to process tasks from the queue."""
         while True:
             task = self._queue.get()
@@ -58,11 +61,11 @@ class ConvertCallbacks(abc.ABC):
             self.process_task(filename, cache_filename)
 
     @property
-    def dump_dir(self) -> pathlib.Path:
+    def dump_dir(self) -> Path:
         return self._dump_dir
 
     @abc.abstractmethod
-    def schedule_task(self, filename: pathlib.Path, cache_filename: pathlib.Path) -> None:
+    def schedule_task(self, filename: Path, cache_filename: Path) -> None:
         """Abstract method to schedule the task"""
 
     def start(self, filename: str) -> None:
@@ -91,7 +94,7 @@ class TiffConverterCallback(ConvertCallbacks):
     def schedule_task(self, filename: pathlib.Path, cache_filename: pathlib.Path):
         self._queue.put((filename, cache_filename))  # Put task into the queue for asynchronous processing
 
-    def process_task(self, filename, cache_filename):
+    def process_task(self, filename: pathlib.Path, cache_filename: pathlib.Path) -> None:
         _write_tiff(
             cache_filename,
             self._tile_size,
@@ -117,7 +120,7 @@ def _generator_from_reader(
         reader=cache_reader,
         annotations=None,
         mask=None,
-        region_size=(1024, 1024),
+        region_size=tile_size,
     )
 
     for sample in validation_dataset:

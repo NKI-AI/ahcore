@@ -16,7 +16,7 @@ from dlup.tiling import Grid, GridOrder, TilingMode
 from shapely.geometry import MultiPoint, Point
 from torch.utils.data import Dataset
 
-from ahcore.readers import H5FileImageReader
+from ahcore.readers import FileImageReader
 from ahcore.transforms.pre_transforms import one_hot_encoding
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
@@ -34,7 +34,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         self,
         data_description: Optional[DataDescription],
         native_mpp: float,
-        reader: H5FileImageReader,
+        reader: FileImageReader,
         annotations: Optional[WsiAnnotations] = None,
         mask: Optional[WsiAnnotations] = None,
         region_size: tuple[int, int] = (1024, 1024),

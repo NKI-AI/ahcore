@@ -14,7 +14,7 @@ import json
 from contextlib import contextmanager
 from multiprocessing.connection import Connection
 from pathlib import Path
-from typing import Any, Generator, NamedTuple, Optional
+from typing import Any, Generator, NamedTuple, Optional, Type
 
 import h5py
 import numcodecs

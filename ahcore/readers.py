@@ -353,6 +353,9 @@ class H5FileImageReader(FileImageReader):
         return file
 
     def _read_metadata(self) -> None:
+        if not self._file:
+            raise ValueError("File is not open.")
+
         try:
             self._metadata = json.loads(self._file.attrs["metadata"])
         except KeyError as e:
@@ -380,6 +383,8 @@ class ZarrFileImageReader(FileImageReader):
         return file
 
     def _read_metadata(self) -> None:
+        if not self._file:
+            raise ValueError("File is not open.")
         try:
             self._metadata = self._file.attrs.asdict()
         except KeyError as e:
