@@ -62,3 +62,7 @@ test_after_training: False
 
 # seed for random number generators in pytorch, numpy and python.random
 seed: 42
+
+hydra:
+  searchpath:
+    - ${oc.env:HYDRA_ADDITIONAL_SEARCHPATH}

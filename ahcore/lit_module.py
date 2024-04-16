@@ -19,6 +19,8 @@ from ahcore.exceptions import ConfigurationError
 from ahcore.metrics import MetricFactory, WSIMetricFactory
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
+
+# from ahcore.utils.plotting import plot_batch
 from ahcore.utils.types import DlupDatasetSample
 
 logger = get_logger(__name__)
@@ -157,6 +159,8 @@ class AhCoreLightningModule(pl.LightningModule):
                 metric_fn=self._detection_metric,
             )
             _metrics.update(_detection_metrics)
+        else:
+            _detection_prediction = None
 
         _loss = loss.mean()
         # TODO: This can be a TypedDict
@@ -170,6 +174,18 @@ class AhCoreLightningModule(pl.LightningModule):
             output["prediction"] = _prediction
 
         _stage = stage.value if isinstance(stage, TrainerFn) else stage
+        # if batch_idx in [0, 1, 2]:
+        #     # Plot batch, target, prediction (optionally point annotations)
+        #     batch_example = plot_batch(
+        #         batch["image"], batch["target"], _detection_target, index_map=self.data_description.index_map
+        #     )
+        #     output_example = plot_batch(
+        #         batch["image"], _prediction, _detection_prediction, index_map=self.data_description.index_map
+        #     )
+        #     for logger in self.trainer.loggers:
+        #         if isinstance(logger, pl.loggers.TensorBoardLogger):
+        #             logger.experiment.add_image(f"{_stage}/{batch_idx}_target", batch_example, self.global_step)
+        #             logger.experiment.add_image(f"{_stage}/{batch_idx}_prediction", output_example, self.global_step)
 
         self.log(
             f"{_stage}/loss",
@@ -246,8 +262,8 @@ def _process_point_predictions(
     roi: Optional[torch.Tensor] = None,
     kernel_size: Optional[tuple[int, int] | int] = (5, 5),
     sigma: Optional[tuple[float, float]] = (1.0, 1.0),
-    min_threshold: Optional[float] = 0.5,
-    apply_act_fn: bool = True,
+    min_threshold: Optional[float] = 0.3,
+    apply_act_fn: bool = False,
 ) -> dict[str, torch.Tensor]:
     """Post-process segementation maps into point annotations.
 
