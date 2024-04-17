@@ -143,6 +143,14 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         logger.info("Computing metrics for %s", filename)
         logger.info("Task data: %s", task_data)
 
+
+        curr_metrics = compute_metrics_for_case(task_data=task_data, image_reader=self._file_reader, class_names=self._class_names, data_description=self._data_description, wsi_metrics=self._wsi_metrics, save_per_image=self._save_per_image)
+
+        # TODO: Ajey, you can put the results in the Manager.Queue from base
+
+        logger.info("Metrics: %s", curr_metrics)
+
+
     # def schedule_task(
     #         task_data: TaskData,
     #         pool: Pool,
