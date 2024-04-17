@@ -15,7 +15,7 @@ import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
-from ahcore.callbacks.converters.tiff_callback import ConvertCallbacks
+from ahcore.callbacks.converters.common import ConvertCallbacks
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericNumberArray, InferencePrecision, NormalizationType

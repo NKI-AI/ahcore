@@ -1,3 +1,1 @@
-from .tiff_callback import TiffConverterCallback
-
-__all__ = ("TiffConverterCallback",)
+from __future__ import annotations
