@@ -1,7 +1,5 @@
 """Module to write copy manifests files over to SCRATCH directory"""
-
 from __future__ import annotations
-
 import argparse
 import hashlib
 import os
@@ -44,8 +42,18 @@ def copy_data(args: argparse.Namespace) -> None:
             for patient in all_records:
                 for image in patient.images:
                     image_fn = image.filename
+
                     get_from = base_dir / image_fn
                     write_to = Path(target_dir) / dataset_name / image_fn
+
+                    accompanying_folder_write_to, accompanying_folder_get_from = None, None
+                    if get_from.suffix == ".mrxs":
+                        accompanying_folder_get_from = get_from.parent / get_from.stem
+                        if not accompanying_folder_get_from.is_dir():
+                            raise ValueError(
+                                f"Image {image_fn} does not have an accompanying folder, which is expected for mrxs images"
+                            )
+                        accompanying_folder_write_to = write_to.parent / write_to.stem
 
                     write_to.parent.mkdir(parents=True, exist_ok=True)
                     if write_to.exists():
@@ -62,6 +70,9 @@ def copy_data(args: argparse.Namespace) -> None:
 
                     # Copy file from get_from to write_to
                     shutil.copy(get_from, write_to)
+                    if accompanying_folder_get_from is not None:
+                        shutil.copytree(accompanying_folder_get_from, accompanying_folder_write_to, dirs_exist_ok=True)
+                        total_size += accompanying_folder_get_from.stat().st_size
                     progress.update(task, advance=1)
 
     progress.console.log("Total data size copied: {:.2f} GB".format(total_size / 1024**3))
@@ -85,7 +96,7 @@ def register_parser(
     _parser.add_argument(
         "manifest_uri",
         type=str,
-        help="URI that refers to the sqlalchemy supported database path.",
+        help="URI that refers to the sqlalchemy supported database path. If using an sqlite database this looks like 'sqlite:///your_database_path'.",
     )
     _parser.add_argument(
         "manifest_name",
