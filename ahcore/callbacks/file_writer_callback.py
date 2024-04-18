@@ -4,15 +4,14 @@ from pathlib import Path
 
 from dlup.data.dataset import TiledWsiDataset
 
+from ahcore.callbacks.converters.common import ConvertCallbacks
+from ahcore.callbacks.writer_callback import WriterCallback
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.utils.callbacks import get_output_filename as get_output_filename_
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import InferencePrecision, NormalizationType
 from ahcore.writers import Writer
-
-from ahcore.callbacks.converters.common import ConvertCallbacks
-from ahcore.callbacks.writer_callback import WriterCallback
 
 logger = get_logger(__name__)
 

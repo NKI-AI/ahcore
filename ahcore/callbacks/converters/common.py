@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import abc
-from multiprocessing import Pool, Process, Queue, Manager
+from multiprocessing import Manager, Pool, Process, Queue
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -70,21 +70,15 @@ class ConvertCallbacks(abc.ABC):
     def dump_dir(self) -> Path:
         return self._dump_dir
 
-    # @abc.abstractmethod
-    # def schedule_task(self, filename: Path, cache_filename: Path) -> None:
-    #     """Abstract method to schedule the task"""
-
     def collect_results(self):
-        """Collect results from the results queue."""
-        results = []
-        finished_workers = 0
-        while finished_workers < self._max_concurrent_tasks:
+        """Yield results from the results queue as they arrive."""
+        logger.info("Collecting...")
+        while True:
             result = self._results_queue.get()
+            logger.info("Result: %s", result)
             if result is None:
-                finished_workers += 1
-            else:
-                results.append(result)
-        return results
+                break
+            yield result
 
     def start(self, filename: str) -> None:
         cache_filename = get_output_filename(

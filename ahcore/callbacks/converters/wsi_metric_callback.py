@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import itertools
-from multiprocessing import Process
 import time
 import warnings
 from collections import namedtuple
+from multiprocessing import Process
 from multiprocessing.pool import Pool
 from pathlib import Path
 from typing import Any, Generator, Optional, Type, cast
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning import Callback
-from ahcore.callbacks import WriterCallback
 
-from ahcore.callbacks import WriteFileCallback
+from ahcore.callbacks import WriterCallback
+from ahcore.callbacks.converters.common import ConvertCallbacks
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.metrics import WSIMetricFactory
 from ahcore.readers import FileImageReader, StitchingMode
@@ -22,7 +21,6 @@ from ahcore.utils.callbacks import _ValidationDataset, get_output_filename
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.manifest import DataManager, ImageMetadata, fetch_image_metadata, get_mask_and_annotations_from_record
-from ahcore.callbacks.converters.common import ConvertCallbacks
 
 logger = get_logger(__name__)
 
@@ -57,13 +55,12 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         self._wsi_metrics: WSIMetricFactory | None = None
         self._class_names: dict[int, str] = {}
         self._data_manager = None
-        self._validate_filenames_gen = None
 
         self._model_name: str | None = None
         self._data_dir: Path
-        self._validate_metadata_gen: Generator[ImageMetadata, None, None] | None = None
 
-        self._dump_list: list[dict[str, str]] = []
+        self._storage = {}
+        self.has_returns = True
 
     def setup(self, callback: WriterCallback, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
         if pl_module.wsi_metrics is None:
@@ -101,33 +98,13 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
 
         self._dump_dir = self._callback.dump_dir
         self._data_dir = self._pl_module.data_description.data_dir
-
+        self._filenames_seen = []
         # MAYBE CAN CALL
         # Start worker processes
         for _ in range(self._max_concurrent_tasks):
             process = Process(target=self.worker)
             process.start()
             self._workers.append(process)
-
-    # def _create_validate_image_metadata_gen(
-    #     self,
-    # ) -> Generator[ImageMetadata, None, None]:
-    #     assert self._data_description
-    #     assert self._data_manager
-    #     gen = self._data_manager.get_image_metadata_by_split(
-    #         manifest_name=self._data_description.manifest_name,
-    #         split_version=self._data_description.split_version,
-    #         split_category="validate",
-    #     )
-    #     for image_metadata in gen:
-    #         yield image_metadata
-    #
-    # @property
-    # def _validate_metadata(self) -> Generator[ImageMetadata, None, None] | None:
-    #     return self._validate_metadata_gen
-    #
-    # def compute_metrics(self):
-    #     pass
 
     def compute_metrics(self, filename, pl_module: pl.LightningModule):
         # So we have the filename of the image, but now we need to get it's metadata
@@ -143,46 +120,26 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         logger.info("Computing metrics for %s", filename)
         logger.info("Task data: %s", task_data)
 
+        curr_metrics = compute_metrics_for_case(
+            task_data=task_data,
+            image_reader=self._file_reader,
+            class_names=self._class_names,
+            data_description=self._data_description,
+            wsi_metrics=self._wsi_metrics,
+            save_per_image=self._save_per_image,
+        )
 
-        curr_metrics = compute_metrics_for_case(task_data=task_data, image_reader=self._file_reader, class_names=self._class_names, data_description=self._data_description, wsi_metrics=self._wsi_metrics, save_per_image=self._save_per_image)
+        self._results_queue.put(curr_metrics)
 
         # TODO: Ajey, you can put the results in the Manager.Queue from base
-
+        self._filenames_seen.append(filename)
         logger.info("Metrics: %s", curr_metrics)
-
-
-    # def schedule_task(
-    #         task_data: TaskData,
-    #         pool: Pool,
-    #         results_dict: dict[Any, str],  # Any because it will be a multiprocessing.pool.AsyncResult
-    #         class_names: dict[int, str],
-    #         data_description: DataDescription,
-    #         wsi_metrics: WSIMetricFactory,
-    #         save_per_image: bool,
-    # ) -> None:
-    #     result = pool.apply_async(
-    #         compute_metrics_for_case,
-    #         args=(task_data, class_names, data_description, wsi_metrics, save_per_image),
-    #     )
-    #
-    #     compute_metrics_for_case(task_data, class_names, data_description, wsi_metrics, save_per_image)
-    #
-    #     results_dict[result] = task_data.filename
 
     def process_task(self, filename: Path, cache_filename: Path) -> None:
         self.compute_metrics(filename, self._pl_module)
 
-        # _write_tiff(
-        #     cache_filename,
-        #     self._tile_size,
-        #     self._tile_process_function,
-        #     self._colormap,
-        #     self._reader_class,
-        #     _generator_from_reader,
-        # )
 
-
-TaskData = namedtuple("TaskData", ["filename", "h5_filename", "metadata", "mask", "annotations"])
+TaskData = namedtuple("TaskData", ["filename", "cache_filename", "metadata", "mask", "annotations"])
 
 
 def prepare_task_data(
@@ -207,25 +164,6 @@ def prepare_task_data(
     return TaskData(filename, cache_filename, metadata, mask, annotations)
 
 
-def schedule_task(
-    task_data: TaskData,
-    pool: Pool,
-    results_dict: dict[Any, str],  # Any because it will be a multiprocessing.pool.AsyncResult
-    class_names: dict[int, str],
-    data_description: DataDescription,
-    wsi_metrics: WSIMetricFactory,
-    save_per_image: bool,
-) -> None:
-    result = pool.apply_async(
-        compute_metrics_for_case,
-        args=(task_data, class_names, data_description, wsi_metrics, save_per_image),
-    )
-
-    compute_metrics_for_case(task_data, class_names, data_description, wsi_metrics, save_per_image)
-
-    results_dict[result] = task_data.filename
-
-
 def compute_metrics_for_case(
     task_data: TaskData,
     image_reader: Type[FileImageReader],
@@ -236,17 +174,16 @@ def compute_metrics_for_case(
 ) -> list[dict[str, Any]]:
     # Extract the data from the namedtuple
     filename, cache_filename, metadata, mask, annotations = task_data
-    dump_list = []
 
     logger.info("Computing metrics for %s", filename)
 
-    with image_reader(cache_filename, stitching_mode=StitchingMode.CROP) as h5reader:
+    with image_reader(cache_filename, stitching_mode=StitchingMode.CROP) as cache_reader:
         dataset_of_validation_image = _ValidationDataset(
             data_description=data_description,
             native_mpp=metadata.mpp,
             mask=mask,
             annotations=annotations,
-            reader=h5reader,
+            reader=cache_reader,
         )
         for sample in dataset_of_validation_image:
             prediction = torch.from_numpy(sample["prediction"]).unsqueeze(0).float()
@@ -259,23 +196,21 @@ def compute_metrics_for_case(
                 roi=roi,
                 wsi_name=str(filename),
             )
-    if save_per_image:
-        wsi_metrics_dictionary = {
-            "image_fn": str(data_description.data_dir / metadata.filename),
-            "uuid": filename.stem,
+
+    wsi_metrics_dictionary = {
+        "image_fn": str(data_description.data_dir / metadata.filename),
+        "uuid": filename.stem,
+    }
+
+    if filename.with_suffix(".tiff").is_file():
+        wsi_metrics_dictionary["tiff_fn"] = str(filename.with_suffix(".tiff"))
+    if filename.is_file():
+        wsi_metrics_dictionary["cache_fn"] = str(filename)
+    for metric in wsi_metrics._metrics:
+        metric.get_wsi_score(str(filename))
+        wsi_metrics_dictionary[metric.name] = {
+            class_names[class_idx]: metric.wsis[str(filename)][class_idx][metric.name].item()
+            for class_idx in range(data_description.num_classes)
         }
 
-        # TODO: These need to be removed, this is really weird.
-        if filename.with_suffix(".tiff").is_file():
-            wsi_metrics_dictionary["tiff_fn"] = str(filename.with_suffix(".tiff"))
-        if filename.is_file():
-            wsi_metrics_dictionary["h5_fn"] = str(filename)
-        for metric in wsi_metrics._metrics:
-            metric.get_wsi_score(str(filename))
-            wsi_metrics_dictionary[metric.name] = {
-                class_names[class_idx]: metric.wsis[str(filename)][class_idx][metric.name].item()
-                for class_idx in range(data_description.num_classes)
-            }
-        dump_list.append(wsi_metrics_dictionary)
-
-    return dump_list
+    return wsi_metrics_dictionary

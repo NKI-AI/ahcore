@@ -40,6 +40,7 @@ class TiffConverterCallback(ConvertCallbacks):
         self._colormap = colormap
         self._tile_size = (1024, 1024)
         self._tile_process_function = _tile_process_function
+        self.has_returns = False
         super().__init__(max_concurrent_tasks=max_concurrent_tasks)
 
     def process_task(self, filename: Path, cache_filename: Path) -> None:

@@ -362,6 +362,20 @@ class WriterCallback(abc.ABC, Callback):
         self._cleanup_shutdown_event.set()
         self._tile_counter = {}
 
+        logger.info("Ending epoch...")
+        # TODO: There must be a mechanism that this can be done during the batch processing? Or should there be a signal?
+        for callback in self._callbacks:
+            if not callback.has_returns:
+                continue
+            from pprint import pformat
+
+            results = callback.collect_results()
+            print(callback._filenames_seen)
+            for result in results:
+                if result is None:
+                    break
+                logger.info("Results: %s", pformat(result))
+
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._epoch_end(trainer, pl_module)
 
@@ -371,7 +385,6 @@ class WriterCallback(abc.ABC, Callback):
     def start_callbacks(self, filename: str) -> None:
         for callback in self._callbacks:
             callback.start(filename)
-
 
 def _queue_generator(
     queue: "Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]",
