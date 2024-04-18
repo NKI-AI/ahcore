@@ -6,6 +6,7 @@ import warnings
 from collections import namedtuple
 from multiprocessing import Process
 from multiprocessing.pool import Pool
+from typing import NamedTuple
 from pathlib import Path
 from typing import Any, Generator, Optional, Type, cast
 
@@ -74,7 +75,6 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         logger.info("Data description: %s", self._data_description)
         logger.info("Data dir: %s", self._data_description.data_dir)
 
-        # self._data_dir = self._data_description.data_dir
 
         # For mypy
         assert self._data_description
@@ -89,7 +89,6 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
 
         # Here we can query the database for the validation images
         self._data_manager: DataManager = trainer.datamodule.data_manager  # type: ignore
-        # self._validate_metadata_gen = self._create_validate_image_metadata_gen()
 
         self._callback = callback
         self._trainer = trainer
@@ -98,27 +97,23 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
 
         self._dump_dir = self._callback.dump_dir
         self._data_dir = self._pl_module.data_description.data_dir
-        self._filenames_seen = []
-        # MAYBE CAN CALL
-        # Start worker processes
+
         for _ in range(self._max_concurrent_tasks):
             process = Process(target=self.worker)
             process.start()
             self._workers.append(process)
 
-    def compute_metrics(self, filename, pl_module: pl.LightningModule):
+    def process_task(self, filename: Path, cache_filename: Path):
         # So we have the filename of the image, but now we need to get it's metadata
 
         task_data = prepare_task_data(
             filename,
             self._dump_dir,
             self._data_dir,
-            pl_module,
+            self._pl_module,
             self._data_description,
             self._data_manager,
         )
-        logger.info("Computing metrics for %s", filename)
-        logger.info("Task data: %s", task_data)
 
         curr_metrics = compute_metrics_for_case(
             task_data=task_data,
@@ -129,17 +124,17 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
             save_per_image=self._save_per_image,
         )
 
-        self._results_queue.put(curr_metrics)
-
-        # TODO: Ajey, you can put the results in the Manager.Queue from base
-        self._filenames_seen.append(filename)
-        logger.info("Metrics: %s", curr_metrics)
-
-    def process_task(self, filename: Path, cache_filename: Path) -> None:
-        self.compute_metrics(filename, self._pl_module)
+        logger.info("Metrics putting in queue: %s (and returning from process_task)", curr_metrics)
+        return curr_metrics
 
 
-TaskData = namedtuple("TaskData", ["filename", "cache_filename", "metadata", "mask", "annotations"])
+class WsiMetricTaskData(NamedTuple):
+    filename: Path
+    cache_filename: Path
+    metadata: ImageMetadata
+    mask: Optional[Any] = None
+    annotations: Optional[Any] = None
+
 
 
 def prepare_task_data(
@@ -149,7 +144,7 @@ def prepare_task_data(
     pl_module: pl.LightningModule,
     data_description: DataDescription,
     data_manager: DataManager,
-) -> TaskData:
+) -> WsiMetricTaskData:
     cache_filename = get_output_filename(
         dump_dir=dump_dir,
         input_path=data_dir / filename,
@@ -161,11 +156,11 @@ def prepare_task_data(
     metadata = fetch_image_metadata(image)
     mask, annotations = get_mask_and_annotations_from_record(data_description.annotations_dir, image)
 
-    return TaskData(filename, cache_filename, metadata, mask, annotations)
+    return WsiMetricTaskData(filename, cache_filename, metadata, mask, annotations)
 
 
 def compute_metrics_for_case(
-    task_data: TaskData,
+    task_data: WsiMetricTaskData,
     image_reader: Type[FileImageReader],
     class_names: dict[int, str],
     data_description: DataDescription,
@@ -174,8 +169,6 @@ def compute_metrics_for_case(
 ) -> list[dict[str, Any]]:
     # Extract the data from the namedtuple
     filename, cache_filename, metadata, mask, annotations = task_data
-
-    logger.info("Computing metrics for %s", filename)
 
     with image_reader(cache_filename, stitching_mode=StitchingMode.CROP) as cache_reader:
         dataset_of_validation_image = _ValidationDataset(
@@ -200,6 +193,7 @@ def compute_metrics_for_case(
     wsi_metrics_dictionary = {
         "image_fn": str(data_description.data_dir / metadata.filename),
         "uuid": filename.stem,
+        "metrics": {},
     }
 
     if filename.with_suffix(".tiff").is_file():
@@ -208,9 +202,11 @@ def compute_metrics_for_case(
         wsi_metrics_dictionary["cache_fn"] = str(filename)
     for metric in wsi_metrics._metrics:
         metric.get_wsi_score(str(filename))
-        wsi_metrics_dictionary[metric.name] = {
+        wsi_metrics_dictionary["metrics"][metric.name] = {
             class_names[class_idx]: metric.wsis[str(filename)][class_idx][metric.name].item()
             for class_idx in range(data_description.num_classes)
         }
+
+    logger.info("Returning these metrics: %s", wsi_metrics_dictionary)
 
     return wsi_metrics_dictionary

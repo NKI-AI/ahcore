@@ -63,7 +63,10 @@ class ConvertCallbacks(abc.ABC):
                 self._results_queue.put(None)  # Signal that this worker is done
                 break
             filename, cache_filename = task
+            logger.info("Processing task: %s %s", filename, cache_filename)
+
             result = self.process_task(filename, cache_filename)
+            logger.info("Task completed: %s (from worker)", result)
             self._results_queue.put(result)  # Store the result
 
     @property
@@ -71,13 +74,17 @@ class ConvertCallbacks(abc.ABC):
         return self._dump_dir
 
     def collect_results(self):
-        """Yield results from the results queue as they arrive."""
-        logger.info("Collecting...")
-        while True:
+        logger.info("Collecting results")
+        finished_workers = 0
+        while finished_workers < self._max_concurrent_tasks:
             result = self._results_queue.get()
             logger.info("Result: %s", result)
             if result is None:
-                break
+                finished_workers += 1
+                logger.info(f"Worker completed, total finished: {finished_workers}")
+                if finished_workers == self._max_concurrent_tasks:
+                    logger.info("All workers have completed.")
+                continue
             yield result
 
     def start(self, filename: str) -> None:
@@ -95,7 +102,10 @@ class ConvertCallbacks(abc.ABC):
         self.schedule_task(filename=Path(filename), cache_filename=cache_filename)
 
     def shutdown_workers(self):
+        logger.info("Shutting down workers...")
         for _ in range(self._max_concurrent_tasks):
             self._task_queue.put(None)  # Send shutdown signal
         for worker in self._workers:
             worker.join()  # Wait for all workers to finish
+        logger.info("Workers shut down.")
+
