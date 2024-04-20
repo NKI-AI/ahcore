@@ -403,6 +403,7 @@ class WriterCallback(abc.ABC, Callback):
 
     def start_callbacks(self, filename: str) -> None:
         for callback in self._callbacks:
+            logger.info("Starting callback %s on filename %s", callback.__class__.__name__, filename)
             callback.start(filename)
 
 
