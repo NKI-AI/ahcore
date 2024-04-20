@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Generator, Iterator
+from typing import Callable, Generator, Iterator, Type
 
 import numpy as np
 from dlup._image import Resampling
@@ -35,7 +35,27 @@ def _tile_process_function(x: GenericNumberArray) -> GenericNumberArray:
 
 
 class TiffConverterCallback(ConvertCallbacks):
-    def __init__(self, reader_class, colormap, max_concurrent_tasks: int = 1):
+    def __init__(
+        self, reader_class: Type[FileImageReader], colormap: dict[int, str], max_concurrent_tasks: int = 1
+    ) -> None:
+        """
+        Write tiffs based on the outputs stored by FileImageWriter.
+
+        Parameters
+        ----------
+        reader_class : Type[FileImageReader]
+            The reader class to use to read the images, e.g., H5FileImageReader or ZarrFileImageReader.
+        colormap : dict[int, str]
+            A dictionary mapping class indices to RGB colors. This will be processed by libtiff as coloring the output
+            of the segmentation map.
+        max_concurrent_tasks : int
+            The maximum number of concurrent processes to write the tiff files.
+
+        Returns
+        -------
+        None
+
+        """
         self._reader_class = reader_class
         self._colormap = colormap
         self._tile_size = (1024, 1024)
@@ -78,7 +98,7 @@ def _write_tiff(
     tile_size: tuple[int, int],
     tile_process_function: Callable[[GenericNumberArray], GenericNumberArray],
     colormap: dict[int, str] | None,
-    file_reader: FileImageReader,
+    file_reader: Type[FileImageReader],
     generator_from_reader: Callable[
         [FileImageReader, tuple[int, int], Callable[[GenericNumberArray], GenericNumberArray]],
         Iterator[npt.NDArray[np.int_]],

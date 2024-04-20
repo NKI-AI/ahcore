@@ -2,19 +2,19 @@ import abc
 import ctypes
 import pathlib
 import time
+from collections import defaultdict
 from multiprocessing import Event, Process, Queue, Semaphore, Value
 from multiprocessing.sharedctypes import SynchronizedBase
 from multiprocessing.synchronize import Event as EventClass
 from multiprocessing.synchronize import Semaphore as SemaphoreClass
 from threading import Thread
-from typing import Any, Generator, Tuple
+from typing import Any, Generator, Tuple, Type
 
 import pytorch_lightning as pl
 import torch
 import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
-from collections import defaultdict
 
 from ahcore.callbacks.converters.common import ConvertCallbacks
 from ahcore.lit_module import AhCoreLightningModule
@@ -106,7 +106,7 @@ def _gather_batch(
 class WriterCallback(abc.ABC, Callback):
     def __init__(
         self,
-        writer_class: Writer,
+        writer_class: Type[Writer],
         dump_dir: pathlib.Path,
         queue_size: int = 16,
         max_concurrent_queues: int = 16,
@@ -381,8 +381,8 @@ class WriterCallback(abc.ABC, Callback):
 
     @staticmethod
     def _process_metrics(results: list[dict[str, Any]]) -> dict[str, Any] | None:
-        output_metrics = defaultdict(float)
-        idx = 0
+        output_metrics: dict[str, float] = defaultdict(float)
+        idx = 0  # Will be overwritten, but it's to ensure output_metrics is properly defined for the linter
         for idx, result in enumerate(results):
             if "metrics" not in result:
                 return None

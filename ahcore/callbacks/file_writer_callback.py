@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Type
 
 from dlup.data.dataset import TiledWsiDataset
 
@@ -19,7 +20,7 @@ logger = get_logger(__name__)
 class WriteFileCallback(WriterCallback):
     def __init__(
         self,
-        writer_class: Writer,
+        writer_class: Type[Writer],
         queue_size: int,
         max_concurrent_queues: int,
         dump_dir: Path,
@@ -49,7 +50,7 @@ class WriteFileCallback(WriterCallback):
         self._current_filename = None
         self._dump_dir = Path(dump_dir)
 
-        self._writer_class = writer_class
+        self._writer_class: Type[Writer] = writer_class
         self._suffix = ".cache"
         self._normalization_type: NormalizationType = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)

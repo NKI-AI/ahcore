@@ -28,7 +28,9 @@ from pydantic import BaseModel
 from rich.progress import Progress
 
 from ahcore.cli import dir_path, file_path
-from ahcore.writers import H5FileImageWriter, ZarrFileImageWriter
+from ahcore.writers import H5FileImageWriter, Writer, ZarrFileImageWriter
+
+_WriterClass = Type[H5FileImageWriter] | Type[ZarrFileImageWriter]
 
 logger = getLogger(__name__)
 
@@ -155,7 +157,7 @@ def _save_thumbnail(
         # If the color_profile is not applied, we need to add it to the metadata of the thumbnail
         if slide_image.color_profile:
             to_profile = PIL.ImageCms.createProfile("sRGB")
-            intent = PIL.ImageCms.getDefaultIntent(slide_image.color_profile)  # type: ignore
+            intent = PIL.ImageCms.getDefaultIntent(slide_image.color_profile)
             rgb_color_transform = PIL.ImageCms.buildTransform(
                 slide_image.color_profile, to_profile, "RGB", "RGB", intent, 0
             )
@@ -278,7 +280,7 @@ def _generator(
 
 def save_tiles(
     dataset: TiledWsiDataset,
-    h5_writer: H5FileImageWriter,
+    writer_class: _WriterClass,
     compression: Literal["jpg", "png", "none"],
     quality: int | None = 85,
 ) -> None:
@@ -289,8 +291,8 @@ def save_tiles(
     ----------
     dataset : TiledROIsSlideImageDataset
         The image slide dataset containing tiles of a single whole slide image.
-    h5_writer : H5FileImageWriter
-        The H5 writer to write the tiles to.
+    writer_class : _WriterClass
+        The writer class to write the tiles with.
     compression : Literal["jpg", "png", "none"]
         Either "jpg", "png" or "none".
     quality : int | None
@@ -301,7 +303,7 @@ def save_tiles(
     _quality = None if _compression != "JPEG" else quality
 
     generator = _generator(dataset, _quality, _compression)
-    h5_writer.consume(generator)
+    writer_class.consume(generator, connection_to_parent=None)
 
 
 def _tiling_pipeline(
@@ -315,7 +317,6 @@ def _tiling_pipeline(
     save_thumbnail: bool = False,
 ) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    _writer_class: Type[H5FileImageWriter | ZarrFileImageWriter]
     if writer_class == "h5":
         _writer_class = H5FileImageWriter
     elif writer_class == "zarr":
@@ -335,7 +336,7 @@ def _tiling_pipeline(
 
         color_profile = None
         if not dataset_cfg.color_profile_applied and dataset.slide_image.color_profile:
-            color_profile = dataset.slide_image.color_profile.tobytes()  # type: ignore
+            color_profile = dataset.slide_image.color_profile.tobytes()
 
         extra_metadata = {
             "color_profile_applied": dataset_cfg.color_profile_applied,

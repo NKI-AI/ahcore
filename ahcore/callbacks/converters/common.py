@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 from multiprocessing import Manager, Pool, Process, Queue
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, Generator, NamedTuple
 
 import pytorch_lightning as pl
 
@@ -33,6 +33,8 @@ class ConvertCallbacks(abc.ABC):
         self._results_queue = self._manager.Queue()
         self._task_queue = Queue()
 
+        self.has_returns: bool
+
     def setup(self, callback: Any, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
         self._callback = callback
         self._trainer = trainer
@@ -52,7 +54,7 @@ class ConvertCallbacks(abc.ABC):
     def process_task(self, filename: Path, cache_filename: Path) -> Any:
         """Abstract method to process the task"""
 
-    def schedule_task(self, filename: Path, cache_filename: Path):
+    def schedule_task(self, filename: Path, cache_filename: Path) -> None:
         self._task_queue.put((filename, cache_filename))  # Put task into the queue for asynchronous processing
 
     def worker(self) -> None:
@@ -73,7 +75,7 @@ class ConvertCallbacks(abc.ABC):
     def dump_dir(self) -> Path:
         return self._dump_dir
 
-    def collect_results(self):
+    def collect_results(self) -> Generator:
         logger.debug("Collecting results")
         finished_workers = 0
         while finished_workers < self._max_concurrent_tasks:

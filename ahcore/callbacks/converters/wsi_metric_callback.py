@@ -6,9 +6,8 @@ import warnings
 from collections import namedtuple
 from multiprocessing import Process
 from multiprocessing.pool import Pool
-from typing import NamedTuple
 from pathlib import Path
-from typing import Any, Generator, Optional, Type, cast
+from typing import Any, Generator, NamedTuple, Optional, Type, cast
 
 import pytorch_lightning as pl
 import torch
@@ -32,7 +31,7 @@ warnings.filterwarnings("ignore", message="It is recommended to use `sync_dist=T
 
 class ComputeWsiMetricsCallback(ConvertCallbacks):
     def __init__(
-        self, reader_class: FileImageReader, max_concurrent_tasks: int = 1, save_per_image: bool = True
+        self, reader_class: Type[FileImageReader], max_concurrent_tasks: int = 1, save_per_image: bool = True
     ) -> None:
         """
         Callback to compute metrics on whole-slide images. This callback is used to compute metrics on whole-slide
@@ -44,23 +43,23 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
             The reader class to use to read the images, e.g., H5FileImageReader or ZarrFileImageReader.
         max_concurrent_tasks : int
             The maximum number of concurrent processes.
+        save_per_image : bool
+            Whether to save the metrics per image as a file to the output directory.
         """
         super().__init__(max_concurrent_tasks=max_concurrent_tasks)
         self._data_description: Optional[DataDescription] = None
-        self._file_reader: FileImageReader = reader_class
+        self._file_reader: Type[FileImageReader] = reader_class
         self._max_processes: int = max_concurrent_tasks
-        self._dump_dir: Optional[Path] = None
-        self._save_per_image = save_per_image
+        self._dump_dir: Path
+        self._save_per_image: bool = save_per_image
         self._filenames: dict[Path, Path] = {}
 
-        self._wsi_metrics: WSIMetricFactory | None = None
+        self._wsi_metrics: WSIMetricFactory
         self._class_names: dict[int, str] = {}
-        self._data_manager = None
+        self._data_manager: DataManager
 
         self._model_name: str | None = None
         self._data_dir: Path
-
-        self._storage = {}
         self.has_returns = True
 
     def setup(self, callback: WriterCallback, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
@@ -97,8 +96,8 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
             process.start()
             self._workers.append(process)
 
-    def process_task(self, filename: Path, cache_filename: Path):
-        # So we have the filename of the image, but now we need to get it's metadata
+    def process_task(self, filename: Path, cache_filename: Path) -> list[dict[str, Any]]:
+        # So we have the filename of the image, but now we need to get its metadata
 
         task_data = prepare_task_data(
             filename,
