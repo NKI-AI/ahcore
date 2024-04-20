@@ -83,6 +83,19 @@ class AhCoreLightningModule(pl.LightningModule):
             self._wsi_metrics = wsi_metric
 
         self._data_description = data_description
+        self._validation_counter = 0
+
+    def on_train_epoch_start(self):
+        # Reset the validation run counter at the start of each training epoch
+        self._validation_counter = 0
+
+    def on_validation_end(self):
+        # Increment the counter each time validation starts
+        self._validation_counter += 1
+
+    @property
+    def validation_counter(self) -> int:
+        return self._validation_counter
 
     @property
     def wsi_metrics(self) -> WSIMetricFactory | None:

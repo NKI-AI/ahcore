@@ -76,7 +76,7 @@ class WriteFileCallback(WriterCallback):
             self.dump_dir,
             Path(filename),
             model_name=str(pl_module.name),
-            step=pl_module.global_step,
+            counter=f"{pl_module.current_epoch}_{pl_module.validation_counter}",
         )
         output_filename.parent.mkdir(parents=True, exist_ok=True)
         return output_filename

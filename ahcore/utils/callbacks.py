@@ -229,10 +229,10 @@ def _get_uuid_for_filename(input_path: Path) -> str:
     return hex_dig
 
 
-def get_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:
+def get_output_filename(dump_dir: Path, input_path: Path, model_name: str, counter: str) -> Path:
     hex_dig = _get_uuid_for_filename(input_path=input_path)
 
     # Return the hashed filename with the new extension
-    if step is not None:
-        return dump_dir / "outputs" / model_name / f"step_{step}" / f"{hex_dig}.cache"
+    if counter is not None:
+        return dump_dir / "outputs" / model_name / f"{counter}" / f"{hex_dig}.cache"
     return dump_dir / "outputs" / model_name / f"{hex_dig}.cache"

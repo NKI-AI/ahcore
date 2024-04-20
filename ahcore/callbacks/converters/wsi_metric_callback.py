@@ -41,8 +41,8 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         Parameters
         ----------
         reader_class : FileImageReader
-            The reader class to use to read the images, e.g H5FileImageReader or ZarrFileImageReader.
-        max_processes : int
+            The reader class to use to read the images, e.g., H5FileImageReader or ZarrFileImageReader.
+        max_concurrent_tasks : int
             The maximum number of concurrent processes.
         """
         super().__init__(max_concurrent_tasks=max_concurrent_tasks)
@@ -69,12 +69,6 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
 
         self._wsi_metrics = pl_module.wsi_metrics
         self._data_description = trainer.datamodule.data_description  # type: ignore
-
-        logger.info("Setting up WSI metrics callback")
-        logger.info("WSI metrics: %s", self._wsi_metrics)
-        logger.info("Data description: %s", self._data_description)
-        logger.info("Data dir: %s", self._data_description.data_dir)
-
 
         # For mypy
         assert self._data_description
@@ -124,7 +118,6 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
             save_per_image=self._save_per_image,
         )
 
-        logger.info("Metrics putting in queue: %s (and returning from process_task)", curr_metrics)
         return curr_metrics
 
 
@@ -134,7 +127,6 @@ class WsiMetricTaskData(NamedTuple):
     metadata: ImageMetadata
     mask: Optional[Any] = None
     annotations: Optional[Any] = None
-
 
 
 def prepare_task_data(
@@ -149,7 +141,7 @@ def prepare_task_data(
         dump_dir=dump_dir,
         input_path=data_dir / filename,
         model_name=str(pl_module.name),
-        step=pl_module.global_step,
+        counter=f"{pl_module.current_epoch}_{pl_module.validation_counter}",
     )
 
     image = data_manager.get_image_by_filename(str(filename.relative_to(data_dir)))
@@ -206,7 +198,5 @@ def compute_metrics_for_case(
             class_names[class_idx]: metric.wsis[str(filename)][class_idx][metric.name].item()
             for class_idx in range(data_description.num_classes)
         }
-
-    logger.info("Returning these metrics: %s", wsi_metrics_dictionary)
 
     return wsi_metrics_dictionary

@@ -14,6 +14,7 @@ import torch
 import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
+from collections import defaultdict
 
 from ahcore.callbacks.converters.common import ConvertCallbacks
 from ahcore.lit_module import AhCoreLightningModule
@@ -180,7 +181,7 @@ class WriterCallback(abc.ABC, Callback):
         return self._on_epoch_start(trainer)
 
     def on_predict_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        logger.info("Prediction epoch start")
+        logger.debug("Prediction epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
         self._total_dataset = trainer.predict_dataloaders.dataset  # type: ignore
@@ -363,36 +364,39 @@ class WriterCallback(abc.ABC, Callback):
         self._tile_counter = {}
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        logger.info("Ending epoch...")
-        # TODO: There must be a mechanism that this can be done during the batch processing? Or should there be a signal?
         for callback in self._callbacks:
             if not callback.has_returns:
                 continue
 
             callback.shutdown_workers()
 
-            output_metrics = {}
-
             results = callback.collect_results()
+            output_metrics = self._process_metrics(results)
+            if output_metrics is None:
+                continue
 
-            for idx, result in enumerate(results):
-                metrics = result["metrics"]
-                if idx == 0:
-                    for key, value in metrics.items():
-                        if key not in output_metrics:
-                            output_metrics[key] = 0.0
+            pl_module.log_dict(output_metrics, on_step=True, on_epoch=False, prog_bar=True, logger=True)
 
-                for key, value in metrics.items():
-                    output_metrics[key] += value
-
-                if result is None:
-                    break
-
-        reduced_metrics = {k: v / idx for k, v in output_metrics.items()}
-        pl_module.log_dict(reduced_metrics, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-
-    def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._epoch_end(trainer, pl_module)
+
+    @staticmethod
+    def _process_metrics(results: list[dict[str, Any]]) -> dict[str, Any] | None:
+        output_metrics = defaultdict(float)
+        idx = 0
+        for idx, result in enumerate(results):
+            if "metrics" not in result:
+                return None
+
+            metrics = result["metrics"]
+            for metrics_name, curr_metrics in metrics.items():
+                for key, value in curr_metrics.items():
+                    output_metrics[f"{metrics_name}/{key}"] += value
+
+            if result is None:
+                break
+
+        output_metrics = {k: v / (idx + 1) for k, v in output_metrics.items()}
+        return output_metrics
 
     def on_predict_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._epoch_end(trainer, pl_module)
@@ -400,6 +404,7 @@ class WriterCallback(abc.ABC, Callback):
     def start_callbacks(self, filename: str) -> None:
         for callback in self._callbacks:
             callback.start(filename)
+
 
 def _queue_generator(
     queue: "Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]",

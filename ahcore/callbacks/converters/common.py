@@ -63,10 +63,10 @@ class ConvertCallbacks(abc.ABC):
                 self._results_queue.put(None)  # Signal that this worker is done
                 break
             filename, cache_filename = task
-            logger.info("Processing task: %s %s", filename, cache_filename)
+            logger.info("Processing task: %s %s (this is %s)", filename, cache_filename, type(self).__name__)
 
             result = self.process_task(filename, cache_filename)
-            logger.info("Task completed: %s (from worker)", result)
+            logger.info("Task completed: %s (from %s)", result, type(self).__name__)
             self._results_queue.put(result)  # Store the result
 
     @property
@@ -88,11 +88,12 @@ class ConvertCallbacks(abc.ABC):
             yield result
 
     def start(self, filename: str) -> None:
+        # Need to use training step here or otherwise the next few callbacks will not work
         cache_filename = get_output_filename(
             dump_dir=self._callback.dump_dir,
             input_path=self._pl_module.data_description.data_dir / filename,
             model_name=str(self._pl_module.name),
-            step=self._pl_module.global_step,
+            counter=f"{self._pl_module.current_epoch}_{self._pl_module.validation_counter}",
         )
 
         # This should never not exist.
@@ -101,11 +102,10 @@ class ConvertCallbacks(abc.ABC):
 
         self.schedule_task(filename=Path(filename), cache_filename=cache_filename)
 
-    def shutdown_workers(self):
+    def shutdown_workers(self) -> None:
         logger.info("Shutting down workers...")
         for _ in range(self._max_concurrent_tasks):
             self._task_queue.put(None)  # Send shutdown signal
         for worker in self._workers:
             worker.join()  # Wait for all workers to finish
         logger.info("Workers shut down.")
-
