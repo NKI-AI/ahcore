@@ -375,7 +375,7 @@ class WriterCallback(abc.ABC, Callback):
             if output_metrics is None:
                 continue
 
-            pl_module.log_dict(output_metrics, on_step=True, on_epoch=False, prog_bar=True, logger=True)
+            pl_module.log_dict(output_metrics, on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
         self._epoch_end(trainer, pl_module)
 
