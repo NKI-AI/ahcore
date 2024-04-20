@@ -63,10 +63,10 @@ class ConvertCallbacks(abc.ABC):
                 self._results_queue.put(None)  # Signal that this worker is done
                 break
             filename, cache_filename = task
-            logger.info("Processing task: %s %s (this is %s)", filename, cache_filename, type(self).__name__)
+            logger.debug("Processing task: %s %s (this is %s)", filename, cache_filename, type(self).__name__)
 
             result = self.process_task(filename, cache_filename)
-            logger.info("Task completed: %s (from %s)", result, type(self).__name__)
+            logger.debug("Task completed: %s (from %s)", result, type(self).__name__)
             self._results_queue.put(result)  # Store the result
 
     @property
@@ -74,16 +74,15 @@ class ConvertCallbacks(abc.ABC):
         return self._dump_dir
 
     def collect_results(self):
-        logger.info("Collecting results")
+        logger.debug("Collecting results")
         finished_workers = 0
         while finished_workers < self._max_concurrent_tasks:
             result = self._results_queue.get()
-            logger.info("Result: %s", result)
+            logger.debug("Result: %s", result)
             if result is None:
                 finished_workers += 1
-                logger.info(f"Worker completed, total finished: {finished_workers}")
                 if finished_workers == self._max_concurrent_tasks:
-                    logger.info("All workers have completed.")
+                    logger.debug("All workers have completed.")
                 continue
             yield result
 
@@ -103,9 +102,9 @@ class ConvertCallbacks(abc.ABC):
         self.schedule_task(filename=Path(filename), cache_filename=cache_filename)
 
     def shutdown_workers(self) -> None:
-        logger.info("Shutting down workers...")
+        logger.debug("Shutting down workers...")
         for _ in range(self._max_concurrent_tasks):
             self._task_queue.put(None)  # Send shutdown signal
         for worker in self._workers:
             worker.join()  # Wait for all workers to finish
-        logger.info("Workers shut down.")
+        logger.debug("Workers shut down.")
