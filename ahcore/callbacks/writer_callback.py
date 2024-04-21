@@ -139,6 +139,8 @@ class WriterCallback(abc.ABC, Callback):
         self._total_dataset: ConcatDataset[dict[str, Any]] | None = None
         self._dataset_index = 0
 
+        self._num_filenames_seen = 0
+
     @property
     def dump_dir(self) -> pathlib.Path:
         return self._dump_dir
@@ -152,6 +154,7 @@ class WriterCallback(abc.ABC, Callback):
 
         # TODO: is this only required in rank 0?
         for callback in self._callbacks:
+            logger.info("Setting up callback %s", callback.__class__.__name__)
             callback.setup(self, trainer, pl_module, stage)
 
     @abc.abstractmethod
@@ -174,7 +177,7 @@ class WriterCallback(abc.ABC, Callback):
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        logger.debug("Validation epoch start")
+        logger.info("Validation epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
         self._total_dataset = trainer.datamodule.validate_dataset  # type: ignore
@@ -332,6 +335,7 @@ class WriterCallback(abc.ABC, Callback):
             )
             self._processes[filename] = process
             self._completion_flags[filename] = completion_flag
+            self._num_filenames_seen += 1
             process.start()
         self._queues[filename].put((coordinates, batch))
         if last_batch:
@@ -364,9 +368,20 @@ class WriterCallback(abc.ABC, Callback):
         self._tile_counter = {}
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        logger.info("Validation epoch ended.")
+
         for callback in self._callbacks:
+            logger.info("Callback %s has returns: %s", callback.__class__.__name__, callback.has_returns)
             if not callback.has_returns:
                 continue
+
+            while self._num_filenames_seen != callback.completed_tasks:
+                logger.info("Waiting for tasks to complete, I've seen %s, but %s are completed", self._num_filenames_seen, callback.completed_tasks)
+                time.sleep(0.5)
+
+            # Now we need to reset those counters
+            callback.reset_counters()
+            self._num_filenames_seen = 0
 
             callback.shutdown_workers()
 

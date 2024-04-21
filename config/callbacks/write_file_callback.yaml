@@ -6,14 +6,14 @@ write_file_callback:
     _target_: ahcore.writers.ZarrFileImageWriter
     _partial_: true
   callbacks:
-    - _target_: ahcore.callbacks.converters.tiff_callback.TiffConverterCallback
-      reader_class:
-        _target_: ahcore.readers.ZarrFileImageReader
-        _partial_: true
-      max_concurrent_tasks: 3
-      colormap:
-        0: black
-        1: green
+#    - _target_: ahcore.callbacks.converters.tiff_callback.TiffConverterCallback
+#      reader_class:
+#        _target_: ahcore.readers.ZarrFileImageReader
+#        _partial_: true
+#      max_concurrent_tasks: 3
+#      colormap:
+#        0: black
+#        1: green
     - _target_: ahcore.callbacks.converters.wsi_metric_callback.ComputeWsiMetricsCallback
       reader_class:
         _target_: ahcore.readers.ZarrFileImageReader

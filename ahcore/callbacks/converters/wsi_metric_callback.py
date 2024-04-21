@@ -98,7 +98,7 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
 
     def process_task(self, filename: Path, cache_filename: Path) -> list[dict[str, Any]]:
         # So we have the filename of the image, but now we need to get its metadata
-
+        logger.info("Processing metrics: %s", filename)
         task_data = prepare_task_data(
             filename,
             self._dump_dir,
@@ -160,7 +160,6 @@ def compute_metrics_for_case(
 ) -> list[dict[str, Any]]:
     # Extract the data from the namedtuple
     filename, cache_filename, metadata, mask, annotations = task_data
-
     with image_reader(cache_filename, stitching_mode=StitchingMode.CROP) as cache_reader:
         dataset_of_validation_image = _ValidationDataset(
             data_description=data_description,

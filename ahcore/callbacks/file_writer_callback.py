@@ -84,8 +84,13 @@ class WriteFileCallback(WriterCallback):
 
     def build_writer_class(self, pl_module: AhCoreLightningModule, stage: str, filename: str) -> Writer:
         output_filename = self.get_output_filename(pl_module, filename)
+        # TODO: need to make a path builder as this is shared with the output_filename method.
         link_fn = (
-            self.dump_dir / "outputs" / f"{pl_module.name}" / f"step_{pl_module.global_step}" / "image_cache_link.txt"
+            self.dump_dir
+            / "outputs"
+            / f"{pl_module.name}"
+            / f"{pl_module.current_epoch}_{pl_module.validation_counter}"
+            / "image_cache_link.txt"
         )
         link_fn.parent.mkdir(parents=True, exist_ok=True)
 
