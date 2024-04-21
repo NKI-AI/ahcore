@@ -376,7 +376,11 @@ class WriterCallback(abc.ABC, Callback):
                 continue
 
             while self._num_filenames_seen != callback.completed_tasks:
-                logger.info("Waiting for tasks to complete, I've seen %s, but %s are completed", self._num_filenames_seen, callback.completed_tasks)
+                logger.info(
+                    "Waiting for tasks to complete, I've seen %s, but %s are completed",
+                    self._num_filenames_seen,
+                    callback.completed_tasks,
+                )
                 time.sleep(0.5)
 
             # Now we need to reset those counters

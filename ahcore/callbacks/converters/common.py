@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import abc
-from multiprocessing import Manager, Pool, Process, Queue
+from multiprocessing import Lock, Manager, Pool, Process, Queue, Value
 from pathlib import Path
 from typing import Any, Generator, NamedTuple
-from multiprocessing import Value, Lock
 
 import pytorch_lightning as pl
 
@@ -38,7 +37,7 @@ class ConvertCallbacks(abc.ABC):
         self._results_queue = self._manager.Queue()
         self._task_queue = Queue()
 
-        self._completed_tasks = Value('i', 0)  # 'i' Tracks completed tasks
+        self._completed_tasks = Value("i", 0)  # 'i' Tracks completed tasks
         self._completed_tasks_lock = Lock()  # To ensure thread-safe increments
 
         self.has_returns: bool
@@ -64,7 +63,14 @@ class ConvertCallbacks(abc.ABC):
 
     def schedule_task(self, filename: Path, cache_filename: Path) -> None:
         """Schedule a task for processing"""
-        logger.info("Putting task into queue of %s: %s (%s) %s (%s)", type(self).__name__, filename, filename.exists(), cache_filename, cache_filename.exists())
+        logger.info(
+            "Putting task into queue of %s: %s (%s) %s (%s)",
+            type(self).__name__,
+            filename,
+            filename.exists(),
+            cache_filename,
+            cache_filename.exists(),
+        )
         self._task_queue.put((filename, cache_filename))  # Put task into the queue for asynchronous processing
 
     def worker(self) -> None:
