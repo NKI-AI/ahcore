@@ -52,7 +52,7 @@ class MeanStdNormalizer(nn.Module):
         data_keys = kwargs["data_keys"]
         for sample, data_key in zip(args, data_keys):
             if data_key in [DataKey.INPUT, 0, "INPUT"]:
-                sample = sample / torch.Tensor(255.0)
+                sample = sample / 255.0
                 sample = (sample - self._mean[..., None, None].to(sample.device)) / self._std[..., None, None].to(
                     sample.device
                 )
@@ -145,7 +145,7 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
         _scale_sigma = torch.Tensor(scale_sigma).float()
         _bias_sigma = torch.Tensor(bias_sigma).float()
 
-        scale_factor = torch.stack([torch.Tensor(1.0) - _scale_sigma, torch.Tensor(1.0) + _scale_sigma], dim=0)
+        scale_factor = torch.stack([1.0 - _scale_sigma, 1.0 + _scale_sigma], dim=0)
         bias_factor = torch.stack([-_bias_sigma, _bias_sigma], dim=0)
 
         self._param_generator = rg.PlainUniformGenerator(

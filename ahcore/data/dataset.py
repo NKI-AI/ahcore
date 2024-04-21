@@ -22,6 +22,7 @@ from ahcore.utils.types import DlupDatasetSample, _DlupDataset
 logger = get_logger(__name__)
 
 
+# TODO: This needs to be moved to dlup
 class ConcatDataset(Dataset[DlupDatasetSample]):
     """Dataset as a concatenation of multiple datasets.
 
@@ -191,6 +192,11 @@ class DlupDataModule(pl.LightningDataModule):
         }
         self._num_classes = data_description.num_classes
 
+        # Limit the number of samples to load for each stage, this is useful for debugging.
+        self._limit_validate_samples = 2
+        self._limit_fit_samples = None
+        self._limit_predict_samples = None
+
     @property
     def data_manager(self) -> DataManager:
         return self._data_manager
@@ -224,10 +230,16 @@ class DlupDataModule(pl.LightningDataModule):
         if not data_iterator:
             return None
 
+        limit_samples = getattr(self, f"_limit_{stage}_samples", None)
+
         def construct_dataset() -> ConcatDataset:
             datasets = []
-            for _, ds in enumerate(data_iterator):
+            for idx, ds in enumerate(data_iterator):
                 datasets.append(ds)
+
+                if limit_samples and idx >= limit_samples:
+                    break
+
             return ConcatDataset(datasets=datasets)
 
         self._logger.info("Constructing dataset for stage %s (this can take a while)", stage)
