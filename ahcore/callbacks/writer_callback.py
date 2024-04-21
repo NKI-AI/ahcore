@@ -382,7 +382,7 @@ class WriterCallback(abc.ABC, Callback):
     @staticmethod
     def _process_metrics(results: list[dict[str, Any]]) -> dict[str, Any] | None:
         output_metrics: dict[str, float] = defaultdict(float)
-        idx = 0  # Will be overwritten, but it's to ensure output_metrics is properly defined for the linter
+        idx = -1  # Will be overwritten, but it's to ensure output_metrics is properly defined for the linter
         for idx, result in enumerate(results):
             if "metrics" not in result:
                 return None

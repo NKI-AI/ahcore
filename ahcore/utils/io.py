@@ -26,7 +26,7 @@ import torch
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.errors import InterpolationKeyError
 from pytorch_lightning import LightningModule
-from pytorch_lightning.utilities import rank_zero_only
+from pytorch_lightning.utilities import rank_zero_only  # type: ignore
 
 from ahcore.models.jit_model import AhcoreJitModel
 

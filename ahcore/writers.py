@@ -236,11 +236,7 @@ class Writer(abc.ABC):
     def write_metadata(self, metadata: dict[str, Any], file: Any) -> None:
         """Write metadata to the file"""
 
-    def consume(
-        self,
-        batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
-        connection_to_parent: Optional[Connection] = None,
-    ) -> None:
+    def consume(self, batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None]) -> None:
         """Consumes tiles one-by-one from a generator and writes them to the file."""
         grid_counter = 0
 
@@ -300,16 +296,10 @@ class Writer(abc.ABC):
 
         except Exception as e:
             logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
-            if connection_to_parent:
-                connection_to_parent.send((False, self._filename, e))  # Send a message to the parent
 
         else:
             # When done writing rename the file.
             self._filename.with_suffix(self._partial_suffix).rename(self._filename)
-        finally:
-            if connection_to_parent:
-                connection_to_parent.send((True, None, None))
-                connection_to_parent.close()
 
     def init_writer(self, first_coordinates: GenericNumberArray, first_batch: GenericNumberArray, file: Any) -> Any:
         """Initializes the image_dataset based on the first tile."""

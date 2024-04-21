@@ -30,7 +30,7 @@ from rich.progress import Progress
 from ahcore.cli import dir_path, file_path
 from ahcore.writers import H5FileImageWriter, Writer, ZarrFileImageWriter
 
-_WriterClass = Type[H5FileImageWriter] | Type[ZarrFileImageWriter]
+_WriterClass = Type[Writer]
 
 logger = getLogger(__name__)
 
@@ -157,7 +157,7 @@ def _save_thumbnail(
         # If the color_profile is not applied, we need to add it to the metadata of the thumbnail
         if slide_image.color_profile:
             to_profile = PIL.ImageCms.createProfile("sRGB")
-            intent = PIL.ImageCms.getDefaultIntent(slide_image.color_profile)
+            intent = PIL.ImageCms.getDefaultIntent(slide_image.color_profile)  # type: ignore
             rgb_color_transform = PIL.ImageCms.buildTransform(
                 slide_image.color_profile, to_profile, "RGB", "RGB", intent, 0
             )
@@ -280,7 +280,7 @@ def _generator(
 
 def save_tiles(
     dataset: TiledWsiDataset,
-    writer_class: _WriterClass,
+    writer_class: Writer,
     compression: Literal["jpg", "png", "none"],
     quality: int | None = 85,
 ) -> None:
@@ -303,7 +303,7 @@ def save_tiles(
     _quality = None if _compression != "JPEG" else quality
 
     generator = _generator(dataset, _quality, _compression)
-    writer_class.consume(generator, connection_to_parent=None)
+    writer_class.consume(batch_generator=generator)
 
 
 def _tiling_pipeline(
@@ -317,6 +317,7 @@ def _tiling_pipeline(
     save_thumbnail: bool = False,
 ) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    _writer_class: type[H5FileImageWriter] | type[ZarrFileImageWriter]
     if writer_class == "h5":
         _writer_class = H5FileImageWriter
     elif writer_class == "zarr":
@@ -334,9 +335,9 @@ def _tiling_pipeline(
         )
         _scaling = dataset.slide_image.get_scaling(dataset_cfg.mpp)
 
-        color_profile = None
+        color_profile: bytes | None = None
         if not dataset_cfg.color_profile_applied and dataset.slide_image.color_profile:
-            color_profile = dataset.slide_image.color_profile.tobytes()
+            color_profile = dataset.slide_image.color_profile.tobytes()  # type: ignore
 
         extra_metadata = {
             "color_profile_applied": dataset_cfg.color_profile_applied,

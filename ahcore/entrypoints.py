@@ -64,8 +64,8 @@ def train(config: DictConfig) -> torch.Tensor | None:
     if config.get("seed"):
         seed_everything(config.seed, workers=True)
 
-    # TODO: Configurable?
-    torch.set_float32_matmul_precision("high")  # type: ignore
+    if config.get("float32_matmul_precision"):
+        torch.set_float32_matmul_precision(config.float32_matmul_precision)
 
     # Convert relative ckpt path to absolute path if necessary
     checkpoint_path = config.get("ckpt_path")
@@ -202,8 +202,8 @@ def inference(config: DictConfig) -> None:
     if config.get("seed"):
         seed_everything(config.seed, workers=True)
 
-    # TODO: Make ja Configurable
-    torch.set_float32_matmul_precision("high")
+    if config.get("float32_matmul_precision"):
+        torch.set_float32_matmul_precision(config.float32_matmul_precision)
 
     config = validate_checkpoint_paths(config)
 

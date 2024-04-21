@@ -47,7 +47,7 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
             Whether to save the metrics per image as a file to the output directory.
         """
         super().__init__(max_concurrent_tasks=max_concurrent_tasks)
-        self._data_description: Optional[DataDescription] = None
+        self._data_description: DataDescription
         self._file_reader: Type[FileImageReader] = reader_class
         self._max_processes: int = max_concurrent_tasks
         self._dump_dir: Path

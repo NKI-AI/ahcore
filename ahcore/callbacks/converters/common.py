@@ -7,6 +7,7 @@ from typing import Any, Generator, NamedTuple
 
 import pytorch_lightning as pl
 
+from ahcore.lit_module import AhCoreLightningModule
 from ahcore.utils.callbacks import get_output_filename
 from ahcore.utils.io import get_logger
 
@@ -24,10 +25,13 @@ class ConvertCallbacks(abc.ABC):
         self._task_queue: Queue = Queue()
         self._callback: Any
         self._trainer: pl.Trainer
-        self._pl_module: pl.LightningModule
+        self._pl_module: AhCoreLightningModule
         self._stage: str
-        self._dump_dir: Path
         self._workers: list[Process] = []
+
+        # Paths
+        self._dump_dir: Path
+        self._data_dir: Path
 
         self._manager = Manager()
         self._results_queue = self._manager.Queue()
@@ -92,7 +96,7 @@ class ConvertCallbacks(abc.ABC):
         # Need to use training step here or otherwise the next few callbacks will not work
         cache_filename = get_output_filename(
             dump_dir=self._callback.dump_dir,
-            input_path=self._pl_module.data_description.data_dir / filename,
+            input_path=self._data_dir / filename,
             model_name=str(self._pl_module.name),
             counter=f"{self._pl_module.current_epoch}_{self._pl_module.validation_counter}",
         )

@@ -395,6 +395,6 @@ def _get_intersection_and_cardinality(
 
 
 def _compute_dice(intersection: torch.Tensor, cardinality: torch.Tensor) -> torch.Tensor:
-    dice_score = 2.0 * intersection / cardinality
+    dice_score = torch.Tensor(2.0) * intersection / cardinality
     dice_score[dice_score.isnan()] = 1.0
     return dice_score

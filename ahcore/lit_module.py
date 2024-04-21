@@ -85,11 +85,11 @@ class AhCoreLightningModule(pl.LightningModule):
         self._data_description = data_description
         self._validation_counter = 0
 
-    def on_train_epoch_start(self):
+    def on_train_epoch_start(self) -> None:
         # Reset the validation run counter at the start of each training epoch
         self._validation_counter = 0
 
-    def on_validation_end(self):
+    def on_validation_end(self) -> None:
         # Increment the counter each time validation starts
         self._validation_counter += 1
 

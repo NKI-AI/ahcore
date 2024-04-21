@@ -340,7 +340,7 @@ class FileImageReader(abc.ABC):
 
 
 class H5FileImageReader(FileImageReader):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._file: Optional[h5py.File] = None
 
@@ -369,7 +369,7 @@ class H5FileImageReader(FileImageReader):
 
 
 class ZarrFileImageReader(FileImageReader):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._file: Optional[zarr.Group] = None
 
