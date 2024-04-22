@@ -91,11 +91,6 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         self._dump_dir = self._callback.dump_dir
         self._data_dir = self._pl_module.data_description.data_dir
 
-        for _ in range(self._max_concurrent_tasks):
-            process = Process(target=self.worker)
-            process.start()
-            self._workers.append(process)
-
     def process_task(self, filename: Path, cache_filename: Path) -> list[dict[str, Any]]:
         # So we have the filename of the image, but now we need to get its metadata
         logger.info("Processing metrics: %s", filename)

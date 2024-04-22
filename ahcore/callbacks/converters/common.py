@@ -51,11 +51,6 @@ class ConvertCallbacks(abc.ABC):
         self._dump_dir = self._callback.dump_dir
         self._data_dir = self._pl_module.data_description.data_dir
 
-        # Start worker processes
-        for _ in range(self._max_concurrent_tasks):
-            process = Process(target=self.worker)
-            process.start()
-            self._workers.append(process)
 
     @abc.abstractmethod
     def process_task(self, filename: Path, cache_filename: Path) -> Any:
@@ -139,6 +134,13 @@ class ConvertCallbacks(abc.ABC):
         assert cache_filename.exists()
 
         self.schedule_task(filename=Path(filename), cache_filename=cache_filename)
+
+    def start_workers(self):
+        for _ in range(self._max_concurrent_tasks):
+            process = Process(target=self.worker)
+            process.start()
+            self._workers.append(process)
+        logger.info("Workers started.")
 
     def shutdown_workers(self) -> None:
         logger.info("Shutting down workers...")
