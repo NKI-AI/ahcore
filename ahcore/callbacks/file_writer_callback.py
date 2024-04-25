@@ -5,8 +5,8 @@ from typing import Type
 
 from dlup.data.dataset import TiledWsiDataset
 
+from ahcore.callbacks.abstract_writer_callback import AbstractWriterCallback
 from ahcore.callbacks.converters.common import ConvertCallbacks
-from ahcore.callbacks.writer_callback import WriterCallback
 from ahcore.lit_module import AhCoreLightningModule
 from ahcore.utils.callbacks import get_output_filename as get_output_filename_
 from ahcore.utils.data import DataDescription, GridDescription
@@ -17,7 +17,7 @@ from ahcore.writers import Writer
 logger = get_logger(__name__)
 
 
-class WriteFileCallback(WriterCallback):
+class WriteFileCallback(AbstractWriterCallback):
     def __init__(
         self,
         writer_class: Type[Writer],

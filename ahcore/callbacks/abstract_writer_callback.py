@@ -103,7 +103,7 @@ def _gather_batch(
     return all_coordinates, all_data, all_global_index, all_paths
 
 
-class WriterCallback(abc.ABC, Callback):
+class AbstractWriterCallback(abc.ABC, Callback):
     def __init__(
         self,
         writer_class: Type[Writer],
@@ -153,6 +153,9 @@ class WriterCallback(abc.ABC, Callback):
                 )
 
         # TODO: is this only required in rank 0?
+        if trainer.global_rank != 0 and self._requires_gather:
+            return
+            
         for callback in self._callbacks:
             logger.info("Setting up callback %s", callback.__class__.__name__)
             callback.setup(self, trainer, pl_module, stage)
@@ -161,6 +164,10 @@ class WriterCallback(abc.ABC, Callback):
     def get_output_filename(self, pl_module: AhCoreLightningModule, filename: str) -> pathlib.Path:
         pass
 
+    def _start_callback_workers(self) -> None:
+        for callback in self._callbacks:
+            callback.start_workers()
+
     def _on_epoch_start(self, trainer: "pl.Trainer") -> None:
         self._cleanup_shutdown_event.clear()
         self._cleanup_thread = Thread(target=self._monitor_and_cleanup)
@@ -168,6 +175,7 @@ class WriterCallback(abc.ABC, Callback):
         self._cleanup_thread.start()
 
         if self._dataset_sizes != {}:
+            self._start_callback_workers()
             return
 
         current_dataset: TiledWsiDataset
@@ -175,9 +183,8 @@ class WriterCallback(abc.ABC, Callback):
         for current_dataset in self._total_dataset.datasets:  # type: ignore
             assert current_dataset.slide_image.identifier
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
-
-        for callback in self._callbacks:
-            callback.start_workers()
+        
+        self._start_callback_workers()
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         logger.info("Validation epoch start")
@@ -371,6 +378,8 @@ class WriterCallback(abc.ABC, Callback):
         self._tile_counter = {}
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if trainer.global_rank != 0 and self._requires_gather:
+            return
         logger.info("Validation epoch ended.")
 
         for callback in self._callbacks:
@@ -454,7 +463,7 @@ def _queue_generator(
 
 
 def _writer_process(
-    callback_instance: WriterCallback,
+    callback_instance: AbstractWriterCallback,
     queue: "Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]",
     filename: str,
     semaphore: SemaphoreClass,

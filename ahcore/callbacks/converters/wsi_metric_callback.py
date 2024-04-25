@@ -1,20 +1,14 @@
 from __future__ import annotations
 
-import itertools
-import time
 import warnings
-from collections import namedtuple
-from multiprocessing import Process
-from multiprocessing.pool import Pool
 from pathlib import Path
-from typing import Any, Generator, NamedTuple, Optional, Type, cast
+from typing import Any, NamedTuple, Optional, Type
 
 import pytorch_lightning as pl
 import torch
 
-from ahcore.callbacks import WriterCallback
+from ahcore.callbacks import AbstractWriterCallback
 from ahcore.callbacks.converters.common import ConvertCallbacks
-from ahcore.lit_module import AhCoreLightningModule
 from ahcore.metrics import WSIMetricFactory
 from ahcore.readers import FileImageReader, StitchingMode
 from ahcore.utils.callbacks import _ValidationDataset, get_output_filename
@@ -62,7 +56,9 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         self._data_dir: Path
         self.has_returns = True
 
-    def setup(self, callback: WriterCallback, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
+    def setup(
+        self, callback: AbstractWriterCallback, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str
+    ) -> None:
         if pl_module.wsi_metrics is None:
             raise ValueError("WSI metrics are not set.")
 

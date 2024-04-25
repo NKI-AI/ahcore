@@ -1,6 +1,6 @@
 """Ahcore's callbacks"""
 
+from .abstract_writer_callback import AbstractWriterCallback
 from .file_writer_callback import WriteFileCallback
-from .writer_callback import WriterCallback
 
-__all__ = ("WriteFileCallback", "WriterCallback")
+__all__ = ("WriteFileCallback", "AbstractWriterCallback")
