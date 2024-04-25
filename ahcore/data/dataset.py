@@ -193,8 +193,8 @@ class DlupDataModule(pl.LightningDataModule):
         self._num_classes = data_description.num_classes
 
         # Limit the number of samples to load for each stage, this is useful for debugging.
-        self._limit_validate_samples = 2
-        self._limit_fit_samples = 2
+        self._limit_validate_samples = None
+        self._limit_fit_samples = None
         self._limit_predict_samples = None
 
     @property
