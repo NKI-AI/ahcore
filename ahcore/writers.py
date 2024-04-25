@@ -12,9 +12,8 @@ import abc
 import io
 import json
 from contextlib import contextmanager
-from multiprocessing.connection import Connection
 from pathlib import Path
-from typing import Any, Generator, NamedTuple, Optional, Type
+from typing import Any, Generator, NamedTuple, Optional
 
 import h5py
 import numcodecs

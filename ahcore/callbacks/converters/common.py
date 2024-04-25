@@ -51,7 +51,6 @@ class ConvertCallbacks(abc.ABC):
         self._dump_dir = self._callback.dump_dir
         self._data_dir = self._pl_module.data_description.data_dir
 
-
     @abc.abstractmethod
     def process_task(self, filename: Path, cache_filename: Path) -> Any:
         """Abstract method to process the task"""
