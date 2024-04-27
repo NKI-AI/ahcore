@@ -57,14 +57,6 @@ class ConvertCallbacks(abc.ABC):
 
     def schedule_task(self, filename: Path, cache_filename: Path) -> None:
         """Schedule a task for processing"""
-        logger.info(
-            "Putting task into queue of %s: %s (%s) %s (%s)",
-            type(self).__name__,
-            filename,
-            filename.exists(),
-            cache_filename,
-            cache_filename.exists(),
-        )
         self._task_queue.put((filename, cache_filename))  # Put task into the queue for asynchronous processing
 
     def worker(self) -> None:
