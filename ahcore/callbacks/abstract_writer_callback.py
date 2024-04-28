@@ -155,7 +155,7 @@ class AbstractWriterCallback(abc.ABC, Callback):
         # TODO: is this only required in rank 0?
         if trainer.global_rank != 0 and self._requires_gather:
             return
-            
+
         for callback in self._callbacks:
             logger.info("Setting up callback %s", callback.__class__.__name__)
             callback.setup(self, trainer, pl_module, stage)
@@ -183,7 +183,7 @@ class AbstractWriterCallback(abc.ABC, Callback):
         for current_dataset in self._total_dataset.datasets:  # type: ignore
             assert current_dataset.slide_image.identifier
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
-        
+
         self._start_callback_workers()
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
@@ -383,12 +383,11 @@ class AbstractWriterCallback(abc.ABC, Callback):
         logger.info("Validation epoch ended.")
 
         for callback in self._callbacks:
-            logger.info("Callback %s has returns: %s", callback.__class__.__name__, callback.has_returns)
             if not callback.has_returns:
                 continue
 
             while self._num_filenames_seen != callback.completed_tasks:
-                logger.info(
+                logger.debug(
                     "Waiting for tasks to complete, I've seen %s, but %s are completed",
                     self._num_filenames_seen,
                     callback.completed_tasks,
@@ -411,7 +410,7 @@ class AbstractWriterCallback(abc.ABC, Callback):
         self._epoch_end(trainer, pl_module)
 
     @staticmethod
-    def _process_metrics(results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    def _process_metrics(results: Generator[Any, Any, Any]) -> dict[str, Any] | None:
         output_metrics: dict[str, float] = defaultdict(float)
         idx = -1  # Will be overwritten, but it's to ensure output_metrics is properly defined for the linter
         for idx, result in enumerate(results):
@@ -434,7 +433,7 @@ class AbstractWriterCallback(abc.ABC, Callback):
 
     def start_callbacks(self, filename: str) -> None:
         for callback in self._callbacks:
-            logger.info("Starting callback %s on filename %s", callback.__class__.__name__, filename)
+            logger.debug("Starting callback %s on filename %s", callback.__class__.__name__, filename)
             callback.start(filename)
 
 

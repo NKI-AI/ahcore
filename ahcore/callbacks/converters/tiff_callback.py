@@ -17,7 +17,7 @@ from ahcore.utils.types import GenericNumberArray
 logger = get_logger(__name__)
 
 
-def _tile_process_function(x: GenericNumberArray) -> GenericNumberArray:
+def _tile_process_function(x: GenericNumberArray) -> npt.NDArray[np.int_]:
     """
     Function to process a tile before writing it to a tiff file.
 
@@ -36,7 +36,11 @@ def _tile_process_function(x: GenericNumberArray) -> GenericNumberArray:
 
 class TiffConverterCallback(ConvertCallbacks):
     def __init__(
-        self, reader_class: Type[FileImageReader], colormap: dict[int, str], max_concurrent_tasks: int = 1
+        self,
+        reader_class: Type[FileImageReader],
+        colormap: dict[int, str],
+        max_concurrent_tasks: int = 1,
+        tile_size: tuple[int, int] = (1024, 1024),
     ) -> None:
         """
         Write tiffs based on the outputs stored by FileImageWriter.
@@ -50,6 +54,8 @@ class TiffConverterCallback(ConvertCallbacks):
             of the segmentation map.
         max_concurrent_tasks : int
             The maximum number of concurrent processes to write the tiff files.
+        tile_size : tuple[int, int]
+            The size of the tiles to write the tiff files in.
 
         Returns
         -------
@@ -58,27 +64,27 @@ class TiffConverterCallback(ConvertCallbacks):
         """
         self._reader_class = reader_class
         self._colormap = colormap
-        self._tile_size = (1024, 1024)
+        self._tile_size = tile_size
         self._tile_process_function = _tile_process_function
         self.has_returns = False
         super().__init__(max_concurrent_tasks=max_concurrent_tasks)
 
     def process_task(self, filename: Path, cache_filename: Path) -> None:
+        assert self._tile_process_function == _tile_process_function
         _write_tiff(
             cache_filename,
             self._tile_size,
-            self._tile_process_function,
             self._colormap,
             self._reader_class,
-            _generator_from_reader,
+            _tiff_iterator_from_reader,
         )
 
 
-def _generator_from_reader(
+def _iterator_from_reader(
     cache_reader: FileImageReader,
     tile_size: tuple[int, int],
-    tile_process_function: Callable[[GenericNumberArray], GenericNumberArray],
-) -> Generator[GenericNumberArray, None, None]:
+    tile_process_function: Callable[[GenericNumberArray], GenericNumberArray] | None,
+) -> Iterator[GenericNumberArray]:
     validation_dataset = _ValidationDataset(
         data_description=None,
         native_mpp=cache_reader.mpp,
@@ -93,16 +99,23 @@ def _generator_from_reader(
         yield region if tile_process_function is None else tile_process_function(region)
 
 
+def _tiff_iterator_from_reader(
+    cache_reader: FileImageReader,
+    tile_size: tuple[int, int],
+) -> Iterator[npt.NDArray[np.int_]]:
+
+    iterator = _iterator_from_reader(cache_reader, tile_size, _tile_process_function)
+
+    for sample in iterator:
+        yield sample.astype(np.uint8)
+
+
 def _write_tiff(
     filename: Path,
     tile_size: tuple[int, int],
-    tile_process_function: Callable[[GenericNumberArray], GenericNumberArray],
     colormap: dict[int, str] | None,
     file_reader: Type[FileImageReader],
-    generator_from_reader: Callable[
-        [FileImageReader, tuple[int, int], Callable[[GenericNumberArray], GenericNumberArray]],
-        Iterator[npt.NDArray[np.int_]],
-    ],
+    iterator_from_reader: Callable[[FileImageReader, tuple[int, int]], Iterator[npt.NDArray[np.int_]]],
 ) -> None:
     with file_reader(filename, stitching_mode=StitchingMode.CROP) as cache_reader:
         writer = TifffileImageWriter(
@@ -116,4 +129,4 @@ def _write_tiff(
             interpolator=Resampling.NEAREST,
             colormap=colormap,
         )
-        writer.from_tiles_iterator(generator_from_reader(cache_reader, tile_size, tile_process_function))
+        writer.from_tiles_iterator(iterator_from_reader(cache_reader, tile_size))

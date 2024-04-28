@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import warnings
 from pathlib import Path
 from typing import Any, NamedTuple, Optional, Type
@@ -87,9 +88,9 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         self._dump_dir = self._callback.dump_dir
         self._data_dir = self._pl_module.data_description.data_dir
 
-    def process_task(self, filename: Path, cache_filename: Path) -> list[dict[str, Any]]:
+    def process_task(self, filename: Path, cache_filename: Path) -> dict[str, str | dict[str, float | int]]:
         # So we have the filename of the image, but now we need to get its metadata
-        logger.info("Processing metrics: %s", filename)
+        logger.debug("Processing metrics for %s", filename)
         task_data = prepare_task_data(
             filename,
             self._dump_dir,
@@ -105,8 +106,15 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
             class_names=self._class_names,
             data_description=self._data_description,
             wsi_metrics=self._wsi_metrics,
-            save_per_image=self._save_per_image,
         )
+
+        if self._save_per_image:
+            cache_filename = task_data.cache_filename
+            output_json_fn = cache_filename.with_suffix(".json")
+            output_dict = {"filename": str(filename), "cache_filename": str(cache_filename), "metrics": curr_metrics}
+
+            with open(output_json_fn, "w") as f:
+                json.dump(output_dict, f, indent=4)
 
         return curr_metrics
 
@@ -136,9 +144,9 @@ def prepare_task_data(
 
     image = data_manager.get_image_by_filename(str(filename.relative_to(data_dir)))
     metadata = fetch_image_metadata(image)
-    mask, annotations = get_mask_and_annotations_from_record(data_description.annotations_dir, image)
+    mask, _annotations = get_mask_and_annotations_from_record(data_description.annotations_dir, image)
 
-    return WsiMetricTaskData(filename, cache_filename, metadata, mask, annotations)
+    return WsiMetricTaskData(filename, cache_filename, metadata, mask, _annotations)
 
 
 def compute_metrics_for_case(
@@ -147,16 +155,13 @@ def compute_metrics_for_case(
     class_names: dict[int, str],
     data_description: DataDescription,
     wsi_metrics: WSIMetricFactory,
-    save_per_image: bool,
-) -> list[dict[str, Any]]:
-    # Extract the data from the namedtuple
-    filename, cache_filename, metadata, mask, annotations = task_data
-    with image_reader(cache_filename, stitching_mode=StitchingMode.CROP) as cache_reader:
+) -> dict[str, Any]:
+    with image_reader(task_data.cache_filename, stitching_mode=StitchingMode.CROP) as cache_reader:
         dataset_of_validation_image = _ValidationDataset(
             data_description=data_description,
-            native_mpp=metadata.mpp,
-            mask=mask,
-            annotations=annotations,
+            native_mpp=task_data.metadata.mpp,
+            mask=task_data.mask,
+            annotations=task_data.annotations,
             reader=cache_reader,
         )
         for sample in dataset_of_validation_image:
@@ -168,23 +173,14 @@ def compute_metrics_for_case(
                 predictions=prediction,
                 target=target,
                 roi=roi,
-                wsi_name=str(filename),
+                wsi_name=str(task_data.filename),
             )
 
-    wsi_metrics_dictionary = {
-        "image_fn": str(data_description.data_dir / metadata.filename),
-        "uuid": filename.stem,
-        "metrics": {},
-    }
-
-    if filename.with_suffix(".tiff").is_file():
-        wsi_metrics_dictionary["tiff_fn"] = str(filename.with_suffix(".tiff"))
-    if filename.is_file():
-        wsi_metrics_dictionary["cache_fn"] = str(filename)
-    for metric in wsi_metrics._metrics:
-        metric.get_wsi_score(str(filename))
-        wsi_metrics_dictionary["metrics"][metric.name] = {
-            class_names[class_idx]: metric.wsis[str(filename)][class_idx][metric.name].item()
+    wsi_metrics_dictionary = {}
+    for metric in wsi_metrics.metrics:
+        metric.get_wsi_score(str(task_data.filename))
+        wsi_metrics_dictionary[metric.name] = {
+            class_names[class_idx]: metric.wsis[str(task_data.filename)][class_idx][metric.name].item()
             for class_idx in range(data_description.num_classes)
         }
 

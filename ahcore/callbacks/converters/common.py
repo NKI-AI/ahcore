@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 from multiprocessing import Lock, Manager, Pool, Process, Queue, Value
 from pathlib import Path
-from typing import Any, Generator, NamedTuple
+from typing import Any, Generator, NamedTuple, cast
 
 import pytorch_lightning as pl
 
@@ -68,51 +68,45 @@ class ConvertCallbacks(abc.ABC):
                 self._results_queue.put(None)  # Signal that this worker is done
                 break
             filename, cache_filename = task
-            logger.info(
-                "Processing task: %s (this is %s)",
+            logger.debug(
+                "Processing %s in for writer %s",
                 filename,
                 type(self).__name__,
             )
 
             result = self.process_task(filename, cache_filename)
-            logger.info("Task completed: %s (from %s)", result, type(self).__name__)
+            logger.debug("Task completed: %s (from %s)", result, type(self).__name__)
             self._results_queue.put(result)  # Store the result
-            logger.info("Completion counter before increment: %s", self.completed_tasks)
             with self._completed_tasks_lock:
                 self._completed_tasks.value += 1
-                logger.info("Completion counter after increment: %s", self.completed_tasks)
-            logger.info("Completion counter after increment: %s", self.completed_tasks)
 
-    def reset_counters(self):
+    def reset_counters(self) -> None:
         with self._completed_tasks_lock:
             self._completed_tasks.value = 0
-            logger.info("Task counters reset.")
 
     @property
     def completed_tasks(self) -> int:
-        return self._completed_tasks.value
+        return cast(int, self._completed_tasks.value)
 
     @property
     def dump_dir(self) -> Path:
         return self._dump_dir
 
-    def collect_results(self) -> Generator:
+    def collect_results(self) -> Generator[Any, None, None]:
         finished_workers = 0
 
-        logger.info("Collecting results %s %s", finished_workers, self._max_concurrent_tasks)
         while finished_workers < self._max_concurrent_tasks:
             result = self._results_queue.get()
-            logger.info("Result: %s", result)
+            logger.debug("Result: %s", result)
             if result is None:
                 finished_workers += 1
                 if finished_workers == self._max_concurrent_tasks:
-                    logger.info("All workers have completed.")
+                    logger.debug("All workers have completed.")
                 continue
             yield result
 
     def start(self, filename: str) -> None:
         # Need to use training step here or otherwise the next few callbacks will not work
-        logger.info("Starting %s for %s", type(self).__name__, filename)
         cache_filename = get_output_filename(
             dump_dir=self._callback.dump_dir,
             input_path=self._data_dir / filename,
@@ -126,17 +120,17 @@ class ConvertCallbacks(abc.ABC):
 
         self.schedule_task(filename=Path(filename), cache_filename=cache_filename)
 
-    def start_workers(self):
+    def start_workers(self) -> None:
         for _ in range(self._max_concurrent_tasks):
             process = Process(target=self.worker)
             process.start()
             self._workers.append(process)
-        logger.info("Workers started.")
+        logger.debug("Workers started.")
 
     def shutdown_workers(self) -> None:
-        logger.info("Shutting down workers...")
+        logger.debug("Shutting down workers...")
         for _ in range(self._max_concurrent_tasks):
             self._task_queue.put(None)  # Send shutdown signal
         for worker in self._workers:
             worker.join()  # Wait for all workers to finish
-        logger.info("Workers shut down.")
+        logger.debug("Workers shut down.")
