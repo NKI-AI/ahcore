@@ -22,7 +22,7 @@ class ConvertCallbacks(abc.ABC):
     def __init__(self, max_concurrent_tasks: int = 1):
         self._max_concurrent_tasks = max_concurrent_tasks
         self._pool = Pool(max_concurrent_tasks)
-        self._task_queue: Queue = Queue()
+        self._task_queue: Queue[tuple[Path, Path] | None] = Queue()
         self._callback: Any
         self._trainer: pl.Trainer
         self._pl_module: AhCoreLightningModule
@@ -78,15 +78,15 @@ class ConvertCallbacks(abc.ABC):
             logger.debug("Task completed: %s (from %s)", result, type(self).__name__)
             self._results_queue.put(result)  # Store the result
             with self._completed_tasks_lock:
-                self._completed_tasks.value += 1
+                self._completed_tasks.value += 1  # type: ignore
 
     def reset_counters(self) -> None:
         with self._completed_tasks_lock:
-            self._completed_tasks.value = 0
+            self._completed_tasks.value = 0  # type: ignore
 
     @property
     def completed_tasks(self) -> int:
-        return cast(int, self._completed_tasks.value)
+        return cast(int, self._completed_tasks.value)  # type: ignore
 
     @property
     def dump_dir(self) -> Path:
