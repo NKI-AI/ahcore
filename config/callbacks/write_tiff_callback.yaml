@@ -1,6 +1,0 @@
-write_tiff_callback:
-  _target_: ahcore.callbacks.WriteTiffCallback
-  reader_class:
-    _target_: ahcore.readers.ZarrFileImageReader
-    _partial_: true
-  max_concurrent_writers: 2

@@ -5,8 +5,6 @@ defaults:
   - model_summary.yaml
   - rich_progress_bar.yaml
   - write_file_callback.yaml
-#  - write_tiff_callback.yaml
-#  - compute_wsi_metrics_callback.yaml # This needs to follow write_file_callback as it requires the outputs
   - _self_
 
 learningrate_monitor:
@@ -28,7 +26,3 @@ early_stopping:
 
 model_summary:
   max_depth: -1
-
-compute_wsi_metrics_callback:
-  max_processes: 4
-  save_per_image: true
