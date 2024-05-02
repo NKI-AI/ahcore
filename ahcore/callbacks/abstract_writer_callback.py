@@ -376,12 +376,11 @@ class AbstractWriterCallback(abc.ABC, Callback):
                 )
                 time.sleep(0.5)
 
-            if not callback.has_returns:
-                continue
-
             # Now we need to reset those counters
             callback.reset_counters()
-            self._num_filenames_seen = 0
+
+            if not callback.has_returns:
+                continue
 
             callback.shutdown_workers()
 
@@ -391,6 +390,7 @@ class AbstractWriterCallback(abc.ABC, Callback):
                 continue
 
             pl_module.log_dict(output_metrics, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self._num_filenames_seen = 0
 
         self._dataset_index = 0
         while True:
