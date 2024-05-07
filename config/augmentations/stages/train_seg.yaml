@@ -15,19 +15,19 @@ intensity_augmentations:
     p: 0.5
     scale_sigma: 0.2  # HED-light
     bias_sigma: 0.2   # HED-light
-  - _target_: kornia.augmentation.ColorJitter
-    p: 0.5
-    brightness: 0.05
-    contrast: 0.05
-    saturation: 0.05
-    hue: 0.05
+  # - _target_: kornia.augmentation.ColorJitter
+  #   p: 0.5
+  #   brightness: 0.05
+  #   contrast: 0.05
+  #   saturation: 0.05
+  #   hue: 0.05
   - _target_: kornia.augmentation.RandomGrayscale
     p: 0.1
     rgb_weights: null
   - _target_: kornia.augmentation.RandomGaussianBlur
     p: 0.5
     kernel_size: [9, 9]
-    sigma: [0.1, 1.0]
+    sigma: [0.1, 1.5]
 
 # [a, b] select between a and b random geometric transforms to apply.
 # If True, will select all in a random order. If False, will apply all sequentially.
@@ -38,15 +38,15 @@ geometric_augmentations:
       p: 0.5
     - _target_: kornia.augmentation.RandomVerticalFlip
       p: 0.5
-    - _target_: kornia.augmentation.RandomPerspective
-      p: 0.5
-      distortion_scale: 0.5
-    - _target_: kornia.augmentation.RandomAffine
-      p: 0.75
-      degrees: 180  # sampled randomly from -degree to +degree
-      scale: [.9, 1.1]
-      translate: [0.05, 0.05]  # This is given in percentages for x and y
-      shear: null
+    # - _target_: kornia.augmentation.RandomAffine
+    #   p: 0.75
+    #   degrees: null  # sampled randomly from -degree to +degree
+    #   scale: [.97, 1.03]
+    #   translate: null  # This is given in percentages for x and y
+    #   shear: null
+    # - _target_: kornia.augmentation.RandomPerspective
+    #   p: 0.1
+    #   distortion_scale: 0.15
 
 # These transforms are applied in order as a final step.
 final_transforms:

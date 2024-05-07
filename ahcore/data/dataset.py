@@ -146,6 +146,22 @@ class DlupDataModule(pl.LightningDataModule):
         if not data_iterator:
             return None
 
+        def _construct_dataset_weights(dataset: _DlupDataset) -> torch.Tensor:
+            def _get_sample_weights(sample: DlupDatasetSample) -> torch.Tensor:
+                sample_target: Optional[torch.Tensor] = sample.get("target", None)
+                if sample_target is None:
+                    raise ValueError("Cannot convert None target to distribution.")
+                _, width, height = sample_target.shape
+                total_pixels = width * height
+                sample_weights = sample_target.sum(dim=(1, 2)) / total_pixels
+                return sample_weights
+
+            # Annotations_only only works on specific branch. Otherwise image will get retrieved as well
+            dataset.annotations_only = True  # type: ignore
+            dataset_weight_matrix = torch.stack([_get_sample_weights(sample) for sample in dataset])
+            dataset.annotations_only = False  # type: ignore
+            return dataset_weight_matrix
+
         def construct_dataset() -> tuple[ConcatDataset[DlupDatasetSample], torch.Tensor | None]:
             datasets = []
             weights: list = []
@@ -157,11 +173,9 @@ class DlupDataModule(pl.LightningDataModule):
             for ds in data_iterator:
                 datasets.append(ds)
                 if stage == "fit" and class_weights is not None:
-                    # Calculate weight per sample
-                    weight_matrix: Optional[np.ndarray] = ds.tile_weight_matrix  # type: ignore
-                    assert weight_matrix is not None
-                    sample_weights = torch.Tensor(weight_matrix) * class_weights
-                    weights.append(sample_weights.sum(dim=1))
+                    weight_matrix = _construct_dataset_weights(ds)
+                    sample_weights = (weight_matrix * class_weights).sum(dim=1)
+                    weights.append(sample_weights)
 
             return ConcatDataset(datasets), (
                 torch.cat(weights) if stage == "fit" and class_weights is not None else None
@@ -183,7 +197,9 @@ class DlupDataModule(pl.LightningDataModule):
         batch_sampler: Sampler[list[int]]
         if stage == "fit":
             if weights is not None:
-                sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=len(dataset), replacement=True)
+                sampler = torch.utils.data.WeightedRandomSampler(
+                    weights=weights, num_samples=len(dataset), replacement=True
+                )
             else:
                 sampler = torch.utils.data.RandomSampler(data_source=dataset, replacement=True)  # type: ignore
             batch_sampler = torch.utils.data.BatchSampler(
