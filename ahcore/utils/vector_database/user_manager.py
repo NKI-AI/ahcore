@@ -63,9 +63,9 @@ class MilvusUserManager:
         logger.info(f"User {username} created successfully.")
 
     @handle_milvus_error
-    def change_password(self, username: str, new_password: str, old_password: str) -> None:
+    def change_password(self, username: str, old_password: str, new_password: str) -> None:
         """Changes the password of a user."""
-        utility.reset_password(username, new_password, old_password, using=self.database)
+        utility.reset_password(username, old_password, new_password, using=self.database)
         logger.info(f"Password for user {username} changed successfully.")
 
     @handle_milvus_error
