@@ -116,7 +116,6 @@ class AbstractWriterCallback(abc.ABC, Callback):
         precision: str = InferencePrecision.FP32,  # This is passed to the writer class
         callbacks: list[ConvertCallbacks] | None = None,
     ) -> None:
-        # TODO: Test predict
         self._dump_dir = dump_dir
         self._queue_size = queue_size
         self._queues: dict[str, Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]] = {}
@@ -152,7 +151,6 @@ class AbstractWriterCallback(abc.ABC, Callback):
                     "max_concurrent_queues should be greater than or equal to the world size to avoid deadlock."
                 )
 
-        # TODO: is this only required in rank 0?
         if trainer.global_rank != 0 and self._requires_gather:
             return
 
@@ -369,6 +367,31 @@ class AbstractWriterCallback(abc.ABC, Callback):
             time.sleep(0.5)  # Short sleep to yield control and reduce CPU usage
 
     def _epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        for callback in self._callbacks:
+            while self._num_filenames_seen != callback.completed_tasks:
+                logger.debug(
+                    f"Waiting for {type(callback)} tasks to complete, I've seen %s, but %s are completed",
+                    self._num_filenames_seen,
+                    callback.completed_tasks,
+                )
+                time.sleep(0.5)
+
+            # Now we need to reset those counters
+            callback.reset_counters()
+
+            if not callback.has_returns:
+                continue
+
+            callback.shutdown_workers()
+
+            results = callback.collect_results()
+            output_metrics = self._process_metrics(results)
+            if output_metrics is None:
+                continue
+
+            pl_module.log_dict(output_metrics, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self._num_filenames_seen = 0
+
         self._dataset_index = 0
         while True:
             if self._queues == {}:
@@ -381,54 +404,27 @@ class AbstractWriterCallback(abc.ABC, Callback):
         if trainer.global_rank != 0 and self._requires_gather:
             return
         logger.info("Validation epoch ended.")
-
-        for callback in self._callbacks:
-            if not callback.has_returns:
-                continue
-
-            while self._num_filenames_seen != callback.completed_tasks:
-                logger.debug(
-                    "Waiting for tasks to complete, I've seen %s, but %s are completed",
-                    self._num_filenames_seen,
-                    callback.completed_tasks,
-                )
-                time.sleep(0.5)
-
-            # Now we need to reset those counters
-            callback.reset_counters()
-            self._num_filenames_seen = 0
-
-            callback.shutdown_workers()
-
-            results = callback.collect_results()
-            output_metrics = self._process_metrics(results)
-            if output_metrics is None:
-                continue
-
-            pl_module.log_dict(output_metrics, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-
         self._epoch_end(trainer, pl_module)
 
     @staticmethod
     def _process_metrics(results: Generator[Any, Any, Any]) -> dict[str, Any] | None:
         output_metrics: dict[str, float] = defaultdict(float)
         idx = -1  # Will be overwritten, but it's to ensure output_metrics is properly defined for the linter
-        for idx, result in enumerate(results):
-            if "metrics" not in result:
-                return None
-
-            metrics = result["metrics"]
+        for idx, metrics in enumerate(results):
             for metrics_name, curr_metrics in metrics.items():
                 for key, value in curr_metrics.items():
                     output_metrics[f"{metrics_name}/{key}"] += value
 
-            if result is None:
+            if metrics is None:
                 break
 
         output_metrics = {k: v / (idx + 1) for k, v in output_metrics.items()}
         return output_metrics
 
     def on_predict_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if trainer.global_rank != 0 and self._requires_gather:
+            return
+        logger.info("Prediction ended.")
         self._epoch_end(trainer, pl_module)
 
     def start_callbacks(self, filename: str) -> None:

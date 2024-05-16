@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Generator, Iterator, Type
+from typing import Callable, Iterator, Type
 
 import numpy as np
 from dlup._image import Resampling
@@ -103,7 +103,6 @@ def _tiff_iterator_from_reader(
     cache_reader: FileImageReader,
     tile_size: tuple[int, int],
 ) -> Iterator[npt.NDArray[np.int_]]:
-
     iterator = _iterator_from_reader(cache_reader, tile_size, _tile_process_function)
 
     for sample in iterator:
