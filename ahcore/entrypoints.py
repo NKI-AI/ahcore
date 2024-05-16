@@ -21,6 +21,16 @@ from ahcore.utils.io import get_logger, load_weights, log_hyperparameters, valid
 logger = get_logger(__name__)
 
 
+def omp_warning():
+    omp_num_threads = os.environ.get("OMP_NUM_THREADS", None)
+    if not omp_num_threads or int(omp_num_threads) > 1:
+        logger.warning(
+            "\n*****************************************\n"
+            "OMP_NUM_THREADS likely needs to be set to 1 to prevent issues in the callbacks.\n"
+            "*****************************************",
+        )
+
+
 def create_datamodule(
     config: DictConfig,
 ) -> tuple[DataDescription, LightningDataModule]:
@@ -59,6 +69,7 @@ def train(config: DictConfig) -> torch.Tensor | None:
     Optional : float
         Metric score for hyperparameter optimization.
     """
+    omp_warning()
 
     # Set seed for random number generators in pytorch, numpy and python.random
     if config.get("seed"):
@@ -197,6 +208,7 @@ def inference(config: DictConfig) -> None:
     -------
     None
     """
+    omp_warning()
 
     # Set seed for random number generators in pytorch, numpy and python.random
     if config.get("seed"):
