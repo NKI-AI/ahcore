@@ -156,7 +156,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         if x + width > self._reader.size[0] or y + height > self._reader.size[1]:
             region = self._read_and_pad_region(coordinates)
         else:
-            region = self._reader.read_region_raw(coordinates, self._region_size)
+            region = self._reader.read_region(coordinates, 0, self._region_size)
         return region
 
     def _read_and_pad_region(self, coordinates: tuple[int, int]) -> npt.NDArray[Any]:
@@ -164,7 +164,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         width, height = self._region_size
         new_width = min(width, self._reader.size[0] - x)
         new_height = min(height, self._reader.size[1] - y)
-        clipped_region = self._reader.read_region_raw((x, y), (new_width, new_height))
+        clipped_region = self._reader.read_region((x, y), 0, (new_width, new_height))
 
         prediction = np.zeros((clipped_region.shape[0], *self._region_size), dtype=clipped_region.dtype)
         prediction[:, :new_height, :new_width] = clipped_region

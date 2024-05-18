@@ -14,13 +14,13 @@ import os
 from enum import Enum
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Literal, Optional, Type, cast
+from typing import Any, Literal, Optional, Type
 
 import h5py
 import numpy as np
 import PIL
+import PIL.Image
 import zarr
-from scipy.ndimage import map_coordinates
 from zarr.storage import ZipStore
 
 from ahcore.utils.io import get_logger
@@ -157,71 +157,9 @@ class FileImageReader(abc.ABC):
         else:
             return tile
 
-    def read_region(
-        self,
-        location: tuple[int, int],
-        scaling: float,
-        size: tuple[int, int],
-    ) -> GenericNumberArray:
+    def _read_region_impl(self, location: tuple[int, int], size: tuple[int, int]) -> GenericNumberArray:
         """
-
-        Parameters
-        ----------
-        location : tuple[int, int]
-            Location from the top left (x, y) in pixel coordinates given at the requested scaling.
-        scaling : float
-        size : tuple[int, int]
-            Size of the output region
-
-        Returns
-        -------
-        np.ndarray
-            The requested region.
-        """
-        if scaling == 1.0:
-            return self.read_region_raw(location, size)
-
-        order = 1
-        # Calculate original location and size considering the scaling
-
-        # unpack for mypy
-        l1, l2 = location
-        s1, s2 = size
-
-        original_location = (
-            int(math.floor(l1 / scaling)) - order,
-            int(math.floor(l2 / scaling)) - order,
-        )
-        original_size = (
-            int(math.ceil(s1 / scaling)) + order,
-            int(math.ceil(s2 / scaling)) + order,
-        )
-
-        raw_region = self.read_region_raw(original_location, original_size)
-
-        # Determine the fractional start and end coordinates for mapping
-        fractional_start = tuple(map(lambda _, ol: (_ / scaling) - ol + order, location, original_location))
-        fractional_end = tuple(fs + size[i] / scaling for i, fs in enumerate(fractional_start))
-
-        # Create an array of coordinates for map_coordinates
-        # mypy doesn't properly understand yet that the complex type is valid
-        coordinates = np.mgrid[
-            fractional_start[0] : fractional_end[0] : complex(size[0]),  # type: ignore
-            fractional_start[1] : fractional_end[1] : complex(size[1]),  # type: ignore
-        ]
-        coordinates = np.moveaxis(coordinates, 0, -1)
-
-        # Interpolate using map_coordinates for all channels
-        grid = np.mgrid[: raw_region.shape[0]]
-        coordinates = np.concatenate([grid[:, None, None], coordinates], axis=0)
-        # scipy doesn't have proper typing yet
-        rescaled_region = cast(GenericNumberArray, map_coordinates(raw_region, coordinates, order=order))
-
-        return rescaled_region
-
-    def read_region_raw(self, location: tuple[int, int], size: tuple[int, int]) -> GenericNumberArray:
-        """
-        Reads a region in the stored h5 file. This function stitches the regions as saved in the cache file. Doing this
+        Reads a region. This function stitches the regions as saved in the cache file. Doing this
         it takes into account:
         1) The region overlap, several region merging strategies are implemented: cropping, averaging across borders
           and taking the maximum across borders.
@@ -324,6 +262,31 @@ class FileImageReader(abc.ABC):
             stitched_image = stitched_image.astype(np.float32)
 
         return stitched_image
+
+    def read_region(self, location: tuple[int, int], level: int, size: tuple[int, int]) -> GenericNumberArray:
+        """
+        Reads a region. This function calls the _read_region_impl function, which handles all the tile stitching.
+
+        Parameters
+        ----------
+        location : tuple[int, int]
+            Coordinates (x, y) of the upper left corner of the region.
+        level : int
+            The level of the pyramid to read from. Currently, all writers write in only one level, so level has to be 0.
+            The reason it is implemented like this is to mimick the behavior of the requested region in dlup.
+        size : tuple[int, int]
+            The (h, w) size of the extracted region.
+
+        Returns
+        -------
+        np.ndarray
+            Extracted region
+        """
+        if level != 0:
+            raise ValueError("Only level 0 is supported")
+
+        region = self._read_region_impl(location, size)
+        return region
 
     @abc.abstractmethod
     def close(self) -> None:
