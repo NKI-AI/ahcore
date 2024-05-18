@@ -21,7 +21,7 @@ from ahcore.utils.io import get_logger, load_weights, log_hyperparameters, valid
 logger = get_logger(__name__)
 
 
-def omp_warning():
+def omp_warning() -> None:
     omp_num_threads = os.environ.get("OMP_NUM_THREADS", None)
     if not omp_num_threads or int(omp_num_threads) > 1:
         logger.warning(

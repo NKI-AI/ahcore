@@ -146,7 +146,7 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
         _bias_sigma = torch.Tensor(bias_sigma).float()
 
         scale_factor = torch.stack([1.0 - _scale_sigma, 1.0 + _scale_sigma], dim=0)
-        bias_factor = torch.stack([-_bias_sigma, _bias_sigma], dim=0)
+        bias_factor = torch.stack([-_bias_sigma, _bias_sigma], dim=0)  # pylint:disable=E1130
 
         self._param_generator = rg.PlainUniformGenerator(
             (scale_factor, "scale", None, None), (bias_factor, "bias", None, None)
@@ -154,7 +154,7 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
         self.flags = {
             "epsilon": torch.tensor([epsilon]),
             "M": self.HED_REFERENCE,
-            "M_inv": torch.linalg.inv(self.HED_REFERENCE),
+            "M_inv": torch.linalg.inv(self.HED_REFERENCE),  # pylint:disable=E1102
             "clamp_output_range": clamp_output_range,
         }
 
