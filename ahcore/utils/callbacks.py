@@ -16,7 +16,7 @@ from dlup.tiling import Grid, GridOrder, TilingMode
 from shapely.geometry import MultiPoint, Point
 from torch.utils.data import Dataset
 
-from ahcore.readers import H5FileImageReader
+from ahcore.readers import FileImageReader
 from ahcore.transforms.pre_transforms import one_hot_encoding
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
@@ -34,7 +34,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         self,
         data_description: Optional[DataDescription],
         native_mpp: float,
-        reader: H5FileImageReader,
+        reader: FileImageReader,
         annotations: Optional[WsiAnnotations] = None,
         mask: Optional[WsiAnnotations] = None,
         region_size: tuple[int, int] = (1024, 1024),
@@ -229,10 +229,10 @@ def _get_uuid_for_filename(input_path: Path) -> str:
     return hex_dig
 
 
-def get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:
+def get_output_filename(dump_dir: Path, input_path: Path, model_name: str, counter: str) -> Path:
     hex_dig = _get_uuid_for_filename(input_path=input_path)
 
     # Return the hashed filename with the new extension
-    if step is not None:
-        return dump_dir / "outputs" / model_name / f"step_{step}" / f"{hex_dig}.h5"
-    return dump_dir / "outputs" / model_name / f"{hex_dig}.h5"
+    if counter is not None:
+        return dump_dir / "outputs" / model_name / f"{counter}" / f"{hex_dig}.cache"
+    return dump_dir / "outputs" / model_name / f"{hex_dig}.cache"

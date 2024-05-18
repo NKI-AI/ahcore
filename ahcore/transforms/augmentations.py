@@ -121,25 +121,32 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
             Medical image analysis 58 (2019): 101544.
         """
         super().__init__(p=p, p_batch=p_batch, same_on_batch=same_on_batch, keepdim=keepdim)
-        if (isinstance(scale_sigma, (list, ListConfig)) and len(scale_sigma) != 3) or (
-            isinstance(bias_sigma, (list, ListConfig)) and len(bias_sigma) != 3
-        ):
+
+        if isinstance(scale_sigma, ListConfig):
+            scale_sigma = list(scale_sigma)
+        if isinstance(bias_sigma, ListConfig):
+            bias_sigma = list(bias_sigma)
+
+        if isinstance(scale_sigma, float):
+            scale_sigma = [scale_sigma] * 3
+
+        if isinstance(bias_sigma, float):
+            bias_sigma = [bias_sigma] * 3
+
+        if len(scale_sigma) not in [1, 3] or len(bias_sigma) not in [1, 3]:
             raise ValueError(
                 f"scale_sigma and bias_sigma should have either 1 or 3 values, "
                 f"got {scale_sigma} and {bias_sigma} instead."
             )
 
-        if isinstance(scale_sigma, float):
-            scale_sigma = [scale_sigma for _ in range(3)]
+        assert isinstance(scale_sigma, list)
+        assert isinstance(bias_sigma, list)
 
-        if isinstance(bias_sigma, float):
-            bias_sigma = [bias_sigma for _ in range(3)]
+        _scale_sigma = torch.Tensor(scale_sigma).float()
+        _bias_sigma = torch.Tensor(bias_sigma).float()
 
-        _scale_sigma = torch.tensor(scale_sigma)
-        _bias_sigma = torch.tensor(bias_sigma)
-
-        scale_factor = torch.stack([1 - _scale_sigma, 1 + _scale_sigma])
-        bias_factor = torch.stack([-_bias_sigma, _bias_sigma])
+        scale_factor = torch.stack([1.0 - _scale_sigma, 1.0 + _scale_sigma], dim=0)
+        bias_factor = torch.stack([-_bias_sigma, _bias_sigma], dim=0)  # pylint:disable=E1130
 
         self._param_generator = rg.PlainUniformGenerator(
             (scale_factor, "scale", None, None), (bias_factor, "bias", None, None)
@@ -147,7 +154,7 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
         self.flags = {
             "epsilon": torch.tensor([epsilon]),
             "M": self.HED_REFERENCE,
-            "M_inv": torch.linalg.inv(self.HED_REFERENCE),
+            "M_inv": torch.linalg.inv(self.HED_REFERENCE),  # pylint:disable=E1102
             "clamp_output_range": clamp_output_range,
         }
 
@@ -178,8 +185,11 @@ class HEDColorAugmentation(K.IntensityAugmentationBase2D):
 
         augmented_hed_tensor = alpha * hed_tensor + beta
         # Same problem that mypy doesn't understand
-        augmented_rgb_tensor = cast(torch.Tensor, torch.exp(-augmented_hed_tensor @ reference_matrix) - epsilon)
+        augmented_rgb_tensor = torch.exp(-augmented_hed_tensor @ reference_matrix) - epsilon
         augmented_sample = augmented_rgb_tensor.permute(0, 3, 1, 2)
+
+        # The linter seems to require this
+        assert isinstance(augmented_sample, torch.Tensor)
 
         if flags["clamp_output_range"] is not None:
             augmented_sample = torch.clamp(augmented_sample, *flags["clamp_output_range"])

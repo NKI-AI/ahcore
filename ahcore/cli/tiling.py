@@ -12,7 +12,7 @@ from logging import getLogger
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pformat
-from typing import Any, Generator, Literal, NamedTuple
+from typing import Any, Generator, Literal, NamedTuple, Type
 
 import imageio.v3 as iio
 import numpy as np
@@ -28,7 +28,9 @@ from pydantic import BaseModel
 from rich.progress import Progress
 
 from ahcore.cli import dir_path, file_path
-from ahcore.writers import H5FileImageWriter
+from ahcore.writers import H5FileImageWriter, Writer, ZarrFileImageWriter
+
+_WriterClass = Type[Writer]
 
 logger = getLogger(__name__)
 
@@ -278,7 +280,7 @@ def _generator(
 
 def save_tiles(
     dataset: TiledWsiDataset,
-    h5_writer: H5FileImageWriter,
+    writer_class: Writer,
     compression: Literal["jpg", "png", "none"],
     quality: int | None = 85,
 ) -> None:
@@ -289,8 +291,8 @@ def save_tiles(
     ----------
     dataset : TiledROIsSlideImageDataset
         The image slide dataset containing tiles of a single whole slide image.
-    h5_writer : H5FileImageWriter
-        The H5 writer to write the tiles to.
+    writer_class : _WriterClass
+        The writer class to write the tiles with.
     compression : Literal["jpg", "png", "none"]
         Either "jpg", "png" or "none".
     quality : int | None
@@ -301,7 +303,7 @@ def save_tiles(
     _quality = None if _compression != "JPEG" else quality
 
     generator = _generator(dataset, _quality, _compression)
-    h5_writer.consume(generator)
+    writer_class.consume(batch_generator=generator)
 
 
 def _tiling_pipeline(
@@ -310,10 +312,18 @@ def _tiling_pipeline(
     output_file: Path,
     dataset_cfg: DatasetConfigs,
     compression: Literal["png", "jpg", "none"],
+    writer_class: Literal["h5", "zarr"],
     quality: int,
     save_thumbnail: bool = False,
 ) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    _writer_class: type[H5FileImageWriter] | type[ZarrFileImageWriter]
+    if writer_class == "h5":
+        _writer_class = H5FileImageWriter
+    elif writer_class == "zarr":
+        _writer_class = ZarrFileImageWriter
+    else:
+        raise ValueError(f"Invalid writer class {writer_class}")
 
     try:
         # TODO: Come up with a way to inject the mask later on as well.
@@ -325,7 +335,7 @@ def _tiling_pipeline(
         )
         _scaling = dataset.slide_image.get_scaling(dataset_cfg.mpp)
 
-        color_profile = None
+        color_profile: bytes | None = None
         if not dataset_cfg.color_profile_applied and dataset.slide_image.color_profile:
             color_profile = dataset.slide_image.color_profile.tobytes()  # type: ignore
 
@@ -333,7 +343,7 @@ def _tiling_pipeline(
             "color_profile_applied": dataset_cfg.color_profile_applied,
         }
 
-        h5_writer = H5FileImageWriter(
+        writer = _writer_class(
             filename=output_file,
             size=dataset.slide_image.get_scaled_slide_bounds(_scaling)[1],
             mpp=dataset_cfg.mpp,
@@ -344,7 +354,7 @@ def _tiling_pipeline(
             color_profile=color_profile,
             extra_metadata=extra_metadata,
         )
-        save_tiles(dataset, h5_writer, compression=compression, quality=quality)
+        save_tiles(dataset, writer, compression=compression, quality=quality)
         if save_thumbnail:
             thumbnail_obj = _save_thumbnail(image_path, dataset_cfg, mask)
 
@@ -360,7 +370,7 @@ def _tiling_pipeline(
                 description += ", overlay"
                 images.append(("overlay", thumbnail_obj.overlay))
 
-            h5_writer.add_associated_images(
+            writer.add_associated_images(
                 images=tuple(images),
                 description=description,
             )
@@ -375,6 +385,7 @@ def _tiling_pipeline(
 def _wrapper(
     dataset_cfg: DatasetConfigs,
     compression: Literal["jpg", "png", "none"],
+    writer_class: Literal["h5", "zarr"],
     quality: int,
     save_thumbnail: bool,
     args: tuple[Path, Path, Path],
@@ -385,6 +396,7 @@ def _wrapper(
         mask_path=mask_path,
         output_file=output_file,
         dataset_cfg=dataset_cfg,
+        writer_class=writer_class,
         compression=compression,
         quality=quality,
         save_thumbnail=save_thumbnail,
@@ -437,9 +449,12 @@ def _do_tiling(args: argparse.Namespace) -> None:
     )
 
     logger.info(f"Dataset configurations: {pformat(dataset_cfg)}")
+    writer_class: Literal["h5", "zarr"] = args.output_type
     if args.num_workers > 0:
         # Create a partially applied function with dataset_cfg
-        partial_wrapper = partial(_wrapper, dataset_cfg, args.compression, args.quality, args.save_thumbnail)
+        partial_wrapper = partial(
+            _wrapper, dataset_cfg, writer_class, args.compression, args.quality, args.save_thumbnail
+        )
 
         with Progress() as progress:
             task = progress.add_task("[cyan]Tiling...", total=len(images_list))
@@ -455,6 +470,7 @@ def _do_tiling(args: argparse.Namespace) -> None:
                     mask_path=mask_path,
                     output_file=output_file,
                     dataset_cfg=dataset_cfg,
+                    writer_class=writer_class,
                     compression=args.compression,
                     quality=args.quality,
                     save_thumbnail=args.save_thumbnail,
@@ -471,8 +487,8 @@ def register_parser(parser: argparse._SubParsersAction[Any]) -> None:
     tiling_subparsers.dest = "subcommand"
 
     _parser: argparse.ArgumentParser = tiling_subparsers.add_parser(
-        "tile-to-h5",
-        help="Tiling WSI images to h5",
+        "tile-to-file",
+        help="Tiling WSI images to a file, e.g. h5 or zarr.",
     )
 
     # Assume a comma separated format from image_file,mask_file
@@ -503,6 +519,9 @@ def register_parser(parser: argparse._SubParsersAction[Any]) -> None:
         help="Overlap of the tile in pixels (default=0).",
     )
     _parser.add_argument(
+        "--output-type", choices=["h5", "zarr"], default="zarr", help="Output file type (default=zarr)"
+    )
+    _parser.add_argument(
         "--mask-threshold",
         type=float,
         default=0.6,
@@ -530,7 +549,6 @@ def register_parser(parser: argparse._SubParsersAction[Any]) -> None:
         default=85,
         help="Quality of the saved tiles in jpg (default: 80)",
     )
-
     _parser.add_argument(
         "--compression",
         type=str,

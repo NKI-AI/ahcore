@@ -324,6 +324,10 @@ class WSIMetricFactory:
 
         self._metrics = metrics
 
+    @property
+    def metrics(self) -> list[WSIMetric]:
+        return self._metrics
+
     @classmethod
     def for_segmentation(cls, *args: Any, **kwargs: Any) -> WSIMetricFactory:
         dices = WSIDiceMetric(*args, **kwargs)

@@ -1,3 +1,5 @@
 compute_wsi_metrics_callback:
   _target_: ahcore.callbacks.ComputeWsiMetricsCallback
+  reader_class:
+    _target_: ahcore.readers.ZarrFileImageReader
   save_per_image: True

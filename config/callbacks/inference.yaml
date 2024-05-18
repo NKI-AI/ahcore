@@ -1,18 +1,24 @@
 defaults:
   - model_summary.yaml
   - rich_progress_bar.yaml
-  - write_h5_callback.yaml
-  - write_tiff_callback.yaml
+  - write_file_callback.yaml
   - _self_
 
 model_summary:
   max_depth: -1
 
-write_h5_callback:
-  dump_dir: ${oc.env:SCRATCH}/${task_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+write_file_callback:
   queue_size: 16
-  max_concurrent_queues: 3
-
-write_tiff_callback:
-  max_concurrent_writers: 2
-  max_patience_on_unfinished_files: 100
+  writer_class:
+    _target_: ahcore.writers.ZarrFileImageWriter
+    _partial_: true
+  callbacks:
+    - _target_: ahcore.callbacks.converters.tiff_callback.TiffConverterCallback
+      reader_class:
+        _target_: ahcore.readers.ZarrFileImageReader
+        _partial_: true
+      max_concurrent_tasks: 2
+      colormap:
+        0: black
+        1: green
+  max_concurrent_queues: 2
