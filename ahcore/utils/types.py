@@ -64,3 +64,35 @@ class InferencePrecision(str, Enum):
             return 255.0
         else:
             raise NotImplementedError(f"Precision {self} is not supported for {self.__class__.__name__}.")
+
+
+class JitOutputMode(str, Enum):
+    """Output modes for Ahcore foundation models.
+    Since the JIT models are a general class of models that can be used in different contexts,
+    the output of the model can be in different formats. This enum is used to specify the output type."""
+
+    # Feature extraction modes from foundation models such as ViT.
+    EMBED_CLS_ONLY = "embed_cls_only"
+    EMBED_PATCH_ONLY = "embed_patch_only"
+    EMBED_CONCAT = "embed_concat"
+
+    # Segmentation mode
+    SEGMENTATION = "segmentation"  # Segmentation outputs with activated outputs (eg: softmax is applied).
+    SEGMENTATION_LOGITS = "segmentation_logits"  # Segmentation outputs without activation function.
+
+    # Classification mode
+    CLASSIFICATION = "classification"  # Classification outputs with activated outputs (eg: softmax is applied).
+    CLASSIFICATION_LOGITS = "classification_logits"  # Classification outputs without activation function.
+
+    # Detection mode
+    BOUNDING_BOXES = "bounding_boxes"
+
+    def __str__(self):
+        return self.value
+
+
+class FMEmbedType(str, Enum):
+    """Feature map embedding types for the Ahcore foundation models."""
+
+    CLS_TOKEN = "x_norm_clstoken"
+    PATCH_TOKEN = "x_norm_patchtokens"
