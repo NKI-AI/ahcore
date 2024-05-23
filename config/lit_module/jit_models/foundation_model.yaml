@@ -1,7 +1,7 @@
 _target_: ahcore.lit_module.AhCoreLightningModule
 
 model:
-  _target_: ahcore.models.jit_model.FoundationalModel.from_jit_path
+  _target_: ahcore.models.jit_model.FoundationModel.from_jit_path
   jit_path: null
   model_type: "Dino_v2"
   # output mode can be one of "embed_cls_only", "embed_patch_only", "embed_concat" and "general_embedding"
