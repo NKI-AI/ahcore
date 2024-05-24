@@ -1,13 +1,20 @@
-from ahcore.readers import ZarrFileImageReader, FileImageReader, StitchingMode
-from ahcore.utils.types import FMEmbedType
 from pathlib import Path
-from typing import Dict, Any, Type, Optional
+from typing import Any, Dict, Optional, Type, TypedDict
+
+import numpy as np
+from dlup.tiling import Grid, GridOrder, TilingMode
 from torch.utils.data import Dataset
-from dlup.tiling import Grid, TilingMode, GridOrder
+
+from ahcore.readers import FileImageReader, StitchingMode, ZarrFileImageReader
+from ahcore.utils.types import FMEmbedType, GenericNumberArray
+
+
+class WSIEmbeddingSample(TypedDict):
+    wsi_embeddings: GenericNumberArray  # placeholder
 
 
 class BaseEmbeddingDataset(Dataset):
-    def __init__(self, filename: Path, classification_label: list, reader_class:  Type[FileImageReader]) -> None:
+    def __init__(self, filename: Path, classification_label: list, reader_class: Type[FileImageReader]) -> None:
         """
         Base class for datasets of feature embeddings.
 
@@ -26,32 +33,85 @@ class BaseEmbeddingDataset(Dataset):
         self._filename = filename
         self._wsi_classification_label = classification_label
         self._reader_class = reader_class
-        self._embedding_type: FMEmbedType = FMEmbedType.CLS_TOKEN
 
-        self._file: Optional[Any] = None
-        self._dataset_metadata = None
-        self._mpp = None
+        self.__empty_feature: GenericNumberArray | None = None
+
+        self._embedding_type = None
+        self._embed_mode = None
+        self._wsi_metadata = None
         self._num_embeddings = None
-        self._feature_length = None
-        self._dtype = None
+        self._embedding_length = None
+        self._grid = None
+
+        self._init_dataset()
+        self._regions = self._generate_regions()
 
     @property
     def wsi_labels(self) -> list:
         return self._wsi_classification_label
 
-    def init_dataset(self):
-        with self._reader_class(self._filename, stitching_mode=StitchingMode.CROP) as cache_reader:
-            self._mpp = cache_reader.mpp
-            self._num_embeddings = cache_reader._metadata["num_samples"]
-
-
+    @property
+    def feature_length(self) -> int:
+        return self._embedding_length
 
     @property
     def embedding_type(self) -> FMEmbedType:
         return self._embedding_type
 
-    def __len__(self):
+    def _empty_feature(self) -> GenericNumberArray:
+        """
+        This method should return an empty feature of the same dtype as the embeddings in the dataset.
+
+        Returns
+        -------
+        GenericNumberArray
+            An empty feature of the same dtype as the embeddings in the dataset.
+        """
+        if self.__empty_feature is not None:
+            return self.__empty_feature
+
+        # When this happens we would already be in the read_region, and self._num_channels would be populated.
+        assert self._embedding_length
+
+        self.__empty_feature = np.zeros(self._embedding_length, dtype=self._wsi_metadata["dtype"])
+        return self.__empty_feature
+
+    def _init_dataset(self) -> None:
+        """
+        Initialize the feature embedding dataset.
+        -------
+        None
+        """
+        # This method should set the following attributes:
+
+        # self._embedding_type
+        # self._wsi_metadata
+        # self._num_embeddings
+        # self._embedding_length
+        # self._grid
+
+        # With a context manager, we read the cache file to get the metadata of the WSI.
+        # We then set the self._wsi_metadata attribute to the metadata of the WSI.
+        # We then set the self._num_embeddings attribute to the number of embeddings in the dataset.
+        # We then set the self._embedding_length attribute to the length of the embeddings.
+        # The self._embedding_type attribute should be set based on the shape of the embeddings.
+        # We should initialize the self._grid attribute here using the size parameter found in the metadata.
+        pass
+
+    def _get_feature_embedding(self, location: tuple[int, int]) -> Any:
         raise NotImplementedError
+
+    def _generate_regions(self) -> list[tuple[int, int]]:
+        """
+        This function should generate the coordinates of the regions for which the embeddings are available.
+        A careful consideration should be given to coordinates which maybe filled with "empty_tile".
+        """
+        # We loop the coordinates of the grid and check if the tile is empty. If it is not empty, we add the
+        # coordinates to the regions list.
+        pass
+
+    def __len__(self):
+        return self._num_embeddings
 
     def __getitem__(self, idx):
         raise NotImplementedError
@@ -63,18 +123,35 @@ class WSIEmbeddingDataset(BaseEmbeddingDataset):
         Dataset class for feature
         """
         super().__init__(filename, classification_label, reader_class)
-        self.init_dataset()
-
-    def __getitem__(self, index):
+        """
+        The following attributes are initialized in the constructor:
+        - self._filename: The path to the cache file containing the feature embeddings.
+        - self._wsi_classification_label: Slide level labels for the embedding dataset. This could be in the manifest we
+         generate.
+        - self._reader_class: The reader used to read the feature embeddings. This could be in the manifest we generate.
+        - self._embedding_type: The type of embedding to return. This is inferred based on the shape of features.
+        - self._wsi_metadata: The metadata of the WSI.
+        - self._num_embeddings: The number of embeddings in the dataset.
+        - self._embedding_length: The length of the embeddings.
+        """
         pass
 
-    def __len__(self):
-        raise NotImplementedError
+    def _get_feature_embedding(self, location: tuple[int, int]) -> Any:
+        """
+        This method should return the feature embeddings for a given region (size) starting from the defined location
+        in the WSI. The embed_type should be used to determine the type of embedding to return. For example, if the
+        embed_type is CLS_TOKEN, the method should return the CLS tokens for the given region.
+        Check ahcore.utils.types to understand more about FMEmbedTypes.
+        One flag we could add is the mode in which the embeddings are returned. For example, they could be 2D or 3D.
+        """
+        # First, there is a call made to reader class method via context managers to read the embeddings.
+        # This can be achieved using read_region_raw() method of the reader class. Note that the size will be (1,1).
+        # If the self._embedding_type is FMEmbedType.CLS_TOKEN, the method should return the CLS tokens for the given
+        # region. If the self._embedding_type is FMEmbedType.PATCH_TOKEN, the method should return the PATCH tokens in
+        # the right mode specified by self._embed_mode. This is either a 2D or 3D array.
+        pass
 
-
-
-
-if __name__ == '__main__':
-    dataset = WSIEmbeddingDataset(Path('/processing/a.karkala/feature_extraction/2024-05-21_22-21-53/outputs/AhcoreJitModel/0_0/0ec1eb99ad42782386bb8e24d0604775be2389e3deb9916ef0d010a4ea7c1d06.cache')
-                                  , classification_label = [0], reader_class=ZarrFileImageReader)
-    print(dataset[0])
+    def __getitem__(self, index) -> WSIEmbeddingSample:
+        coordinates = self._regions[index]
+        sample: WSIEmbeddingSample = {"wsi_embeddings": self._get_feature_embedding(location=coordinates)}
+        return sample
