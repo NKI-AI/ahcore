@@ -70,7 +70,7 @@ class BaseEmbeddingDataset(Dataset):
         if self.__empty_feature is not None:
             return self.__empty_feature
 
-        # When this happens we would already be in the read_region, and self._num_channels would be populated.
+        # When this happens we would already be in the read_region, and self._num_embeddings would be populated.
         assert self._embedding_length
 
         self.__empty_feature = np.zeros(self._embedding_length, dtype=self._wsi_metadata["dtype"])
