@@ -8,7 +8,7 @@ from ahcore.models.jit_model import AhcoreJitModel
 from ahcore.utils.types import OutputModeBase
 
 
-class DinoV2(AhcoreJitModel):
+class DinoV2JitModel(AhcoreJitModel):
     """
     This class is a wrapper for the DinoV2 foundation model in Ahcore.
     """

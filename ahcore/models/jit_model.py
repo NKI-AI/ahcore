@@ -84,7 +84,7 @@ class AhcoreJitModel(ScriptModule):
         raise NotImplementedError
 
 
-class SegmentationModel(AhcoreJitModel):
+class SegmentationJitModel(AhcoreJitModel):
     """
     This class is a wrapper for the segmentation models in Ahcore.
     It provides a general interface for the jit compiled segmentation models.
