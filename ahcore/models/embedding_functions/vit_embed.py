@@ -71,36 +71,36 @@ class ViTEmbed(AhCoreFeatureEmbedding):
             raise NotImplementedError(f"Embedding mode {self._embedding_mode} is not supported.")
 
     @staticmethod
-    def get_output_tokens(lit_module_prediction_sample: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor]:
-        cls_token = lit_module_prediction_sample[ViTTokenNames.CLS_TOKEN_NAME]
-        patch_tokens = lit_module_prediction_sample[ViTTokenNames.PATCH_TOKEN_NAME]
+    def get_output_tokens(jit_model_prediction_sample: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor]:
+        cls_token = jit_model_prediction_sample[ViTTokenNames.CLS_TOKEN_NAME]
+        patch_tokens = jit_model_prediction_sample[ViTTokenNames.PATCH_TOKEN_NAME]
         return cls_token, patch_tokens
 
-    def embed_cls_only(self, lit_module_prediction_sample: dict[str, Any]) -> torch.Tensor:
-        cls_token, _ = self.get_output_tokens(lit_module_prediction_sample)
+    def embed_cls_only(self, jit_model_prediction_sample: dict[str, Any]) -> torch.Tensor:
+        cls_token, _ = self.get_output_tokens(jit_model_prediction_sample)
         return cls_token
 
-    def embed_patch_only(self, lit_module_prediction_sample: dict[str, Any]) -> torch.Tensor:
-        _, patch_tokens = self.get_output_tokens(lit_module_prediction_sample)
+    def embed_patch_only(self, jit_model_prediction_sample: dict[str, Any]) -> torch.Tensor:
+        _, patch_tokens = self.get_output_tokens(jit_model_prediction_sample)
         return patch_tokens
 
-    def embed_mean(self, lit_module_prediction_sample: dict[str, Any]) -> torch.Tensor:
-        cls_token, patch_tokens = self.get_output_tokens(lit_module_prediction_sample)
+    def embed_mean(self, jit_model_prediction_sample: dict[str, Any]) -> torch.Tensor:
+        cls_token, patch_tokens = self.get_output_tokens(jit_model_prediction_sample)
         cls_token = cls_token.unsqueeze(1)
         tokens = torch.cat([cls_token, patch_tokens], dim=1)
         output = tokens.mean(dim=1)
         return output
 
-    def embed_concat_mean(self, lit_module_prediction_sample: dict[str, Any]) -> torch.Tensor:
-        cls_token, patch_tokens = self.get_output_tokens(lit_module_prediction_sample)
+    def embed_concat_mean(self, jit_model_prediction_sample: dict[str, Any]) -> torch.Tensor:
+        cls_token, patch_tokens = self.get_output_tokens(jit_model_prediction_sample)
         cls_token = cls_token.unsqueeze(1)
         mean_patch_token = patch_tokens.mean(dim=1).unsqueeze(1)
         tokens = torch.cat([cls_token, mean_patch_token], dim=1)
         output = tokens.mean(dim=1)
         return output
 
-    def embed_concat(self, lit_module_prediction_sample: dict[str, Any]) -> torch.Tensor:
-        cls_token, patch_tokens = self.get_output_tokens(lit_module_prediction_sample)
+    def embed_concat(self, jit_model_prediction_sample: dict[str, Any]) -> torch.Tensor:
+        cls_token, patch_tokens = self.get_output_tokens(jit_model_prediction_sample)
         mean_patch_token = patch_tokens.mean(dim=1)
         output = torch.cat([cls_token, mean_patch_token], dim=1)
         return output
