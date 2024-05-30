@@ -27,10 +27,10 @@ class AhCoreFeatureEmbedding(ABC):
         return self._embedding_mode.value
 
     @property
-    @abstractmethod
     def token_names(self) -> Any:
         raise NotImplementedError
 
+    @abstractmethod
     def _set_embed_function(self) -> None:
         raise NotImplementedError
 

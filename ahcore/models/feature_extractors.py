@@ -4,11 +4,11 @@ import torch
 from torch.jit import ScriptModule
 
 from ahcore.models.embedding_functions.vit_embed import ViTEmbed
-from ahcore.models.jit_model import AhcoreJitModel
-from ahcore.utils.types import OutputModeBase
+from ahcore.models.jit_model import BaseAhcoreJitModel
+from ahcore.utils.types import OutputModeBase, ViTEmbedMode
 
 
-class DinoV2JitModel(AhcoreJitModel):
+class DinoV2JitModel(BaseAhcoreJitModel):
     """
     This class is a wrapper for the DinoV2 foundation model in Ahcore.
     """
@@ -34,7 +34,10 @@ class DinoV2JitModel(AhcoreJitModel):
         self._set_forward_function()
 
     def _set_forward_function(self) -> None:
-        self._forward_function = ViTEmbed(self._output_mode).embed_fn
+        if self._output_mode == ViTEmbedMode.DEFAULT:  # Assume that the JIT model returns a tensor
+            self._forward_function = lambda x: x
+        else:
+            self._forward_function = ViTEmbed(self._output_mode).embed_fn  # More complex forward function
 
     def forward(self, x: torch.Tensor) -> Any:
         output = self._model(x)

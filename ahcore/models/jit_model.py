@@ -8,7 +8,7 @@ from torch.nn import Module
 from ahcore.utils.types import OutputModeBase, SegmentationOutputMode
 
 
-class AhcoreJitModel(ScriptModule):
+class BaseAhcoreJitModel(ScriptModule):
     """
     Base class for the jit compiled models in Ahcore.
     """
@@ -54,16 +54,6 @@ class AhcoreJitModel(ScriptModule):
         model = load(jit_path)  # type: ignore
         return cls(model, output_mode)
 
-    def _set_forward_function(self) -> None:
-        """
-        Set the forward function of the model.
-
-        Returns
-        -------
-        None
-        """
-        raise NotImplementedError
-
     def extend_model(self, modules: dict[str, Module]) -> None:
         """
         Add modules to a jit compiled model.
@@ -80,17 +70,14 @@ class AhcoreJitModel(ScriptModule):
         for key, value in modules.items():
             self._model.add_module(name=key, module=value)
 
-    def forward(self, x: torch.Tensor) -> Any:
-        raise NotImplementedError
 
-
-class SegmentationJitModel(AhcoreJitModel):
+class SegmentationJitModel(BaseAhcoreJitModel):
     """
     This class is a wrapper for the segmentation models in Ahcore.
     It provides a general interface for the jit compiled segmentation models.
     """
 
-    def __init__(self, model: ScriptModule, output_mode: SegmentationOutputMode) -> None:
+    def __init__(self, model: ScriptModule, output_mode: OutputModeBase) -> None:
         """
         Constructor for the SegmentationModel class.
 
@@ -106,7 +93,7 @@ class SegmentationJitModel(AhcoreJitModel):
         self._set_forward_function()
 
     def _set_forward_function(self) -> None:
-        if self._output_mode == SegmentationOutputMode.SEGMENTATION:
+        if self._output_mode == SegmentationOutputMode.DEFAULT:
             self._forward_function = self._segmentation
         else:
             raise NotImplementedError(f"Output mode {self._output_mode} is not supported for {self.__class__.__name__}")

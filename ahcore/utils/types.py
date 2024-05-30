@@ -78,7 +78,8 @@ class SegmentationOutputMode(OutputModeBase):
     Segmentation output modes for JIT compiled models.
     """
 
-    SEGMENTATION = "segmentation"  # Segmentation outputs with activated outputs (eg: softmax is applied).
+    DEFAULT = "default"
+    # The default output mode assumes that the JIT model returns a torch tensor.
     SEGMENTATION_LOGITS = "segmentation_logits"  # Segmentation outputs without activation.
     # Extend as necessary
 
@@ -88,8 +89,11 @@ class ViTEmbedMode(OutputModeBase):
     Embedding modes for feature extractors based on Vision Transformers.
     """
 
+    DEFAULT = "default"
+    # The default output mode assumes that the JIT model returns a torch tensor.
     CLS_ONLY = "embed_cls_only"
     PATCH_ONLY = "embed_patch_only"
     MEAN = "embed_mean"
     CONCAT_MEAN = "embed_concat_mean"
     CONCAT = "embed_concat"
+    # Extend as necessary
