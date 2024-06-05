@@ -67,3 +67,24 @@ class DataDescription(BaseModel):
     convert_mask_to_rois: bool = True
     use_roi: bool = True
     apply_color_profile: bool = False
+
+
+class OnTheFlyDataDescription(BaseModel):
+    # Required
+    data_dir: Path
+    glob_pattern: str
+    num_classes: NonNegativeInt
+    inference_grid: GridDescription
+
+    # Preset?
+    convert_mask_to_rois: bool = True
+    use_roi: bool = True
+    apply_color_profile: bool = False
+
+    # Explicitly optional
+    annotations_dir: Optional[Path] = None  # May be used to provde a mask.
+    mask_label: Optional[str] = None
+    mask_threshold: Optional[float] = None  # This is only used for training
+    roi_name: Optional[str] = None
+    index_map: Optional[Dict[str, int]]
+    remap_labels: Optional[Dict[str, str]] = None

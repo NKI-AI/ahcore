@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql import exists
 
 from ahcore.exceptions import RecordNotFoundError
-from ahcore.utils.data import DataDescription
+from ahcore.utils.data import DataDescription, OnTheFlyDataDescription
 from ahcore.utils.database_models import (
     Base,
     CategoryEnum,
@@ -31,11 +31,13 @@ from ahcore.utils.database_models import (
     ImageAnnotations,
     Manifest,
     Mask,
+    MinimalImage,
     Patient,
     Split,
     SplitDefinitions,
 )
 from ahcore.utils.io import get_enum_key_from_value, get_logger
+from ahcore.utils.on_the_fly_database_generation import get_populated_in_memory_db
 from ahcore.utils.rois import compute_rois
 from ahcore.utils.types import PositiveFloat, PositiveInt, Rois
 
@@ -156,15 +158,30 @@ def _get_rois(mask: WsiAnnotations | None, data_description: DataDescription, st
 
 
 class DataManager:
-    def __init__(self, database_uri: str) -> None:
-        self._database_uri = database_uri
+    def __init__(self, data_description: DataDescription | OnTheFlyDataDescription) -> None:
+        self._data_description = data_description
+        self._on_the_fly = isinstance(data_description, OnTheFlyDataDescription)
+        self._image_table: type[Image] | type[MinimalImage]
+        if self._on_the_fly:
+            self._database_engine = get_populated_in_memory_db(
+                data_description.data_dir, glob_pattern=data_description.glob_pattern  # type: ignore
+            )
+            self._image_table = MinimalImage
+        else:
+            self._database_uri = data_description.manifest_database_uri  # type: ignore
+            self._image_table = Image
+
         self.__session: Optional[Session] = None
         self._logger = get_logger(type(self).__name__)
 
     @property
     def _session(self) -> Session:
         if self.__session is None:
-            self.__session = open_db(self._database_uri)
+            if self._on_the_fly:
+                self.__session = open_db_from_engine(engine=self._database_engine)
+            else:
+                self.__session = open_db_from_uri(uri=self._database_uri)
+
         return self.__session
 
     @staticmethod
@@ -173,13 +190,31 @@ class DataManager:
         if not record:
             raise RecordNotFoundError(f"{description} not found.")
 
+    def get_all_images(
+        self,
+    ) -> Generator[MinimalImage, None, None]:
+        """
+        Queries the db minimal image table for all the provided images.
+
+        This is an ultimately minimal query that is only meaningful for a `MinimalImage` table, since
+        connections to other information about the images in a fully populated table would be lost
+        """
+        assert (
+            self._on_the_fly
+        ), "This function should only be called when doing on-the-fly inference with a MinimalImage table \
+            from an OnTheFlyDataDescription."
+        images = self._session.query(self._image_table).all()
+        self._logger.info(f"Found {len(images)} images in {self._data_description.data_dir}")
+        for image in images:
+            yield image  # type: ignore
+
     def get_records_by_split(
         self,
         manifest_name: str,
         split_version: str,
         split_category: Optional[str] = None,
     ) -> Generator[Patient, None, None]:
-        manifest = self._session.query(Manifest).filter_by(name=manifest_name).first()
+        manifest = self._session.query(Manifest).filter_by(name=manifest_name).first()  # type: ignore
         try:
             self._ensure_record(manifest, f"Manifest with name {manifest_name}")
         except RecordNotFoundError as e:
@@ -321,6 +356,76 @@ class DataManager:
 
 def datasets_from_data_description(
     db_manager: DataManager,
+    data_description: DataDescription | OnTheFlyDataDescription,
+    transform: Callable[[TileSample], RegionFromWsiDatasetSample] | None,
+    stage: Optional[str] = None,
+) -> Generator[TiledWsiDataset, None, None]:
+    """
+    I think a factory is not necessary here. We simply generate it, and we can use the
+        class of the datadescription to decide how to do this.
+
+    See the required parameters and typing  in
+        `ahcore.utils.manifest.datasets_from_on_the_fly_data_description` or
+        `ahcore.utils.manifest.datasets_from_data_description_with_uri`
+    """
+    # This is the same as checking if isinstance(data_description, DataDescription) vs
+    # isinstance(data_description, OnTheFlyDataDescription)
+
+    if isinstance(data_description, DataDescription):
+        return datasets_from_data_description_with_uri(
+            db_manager=db_manager,
+            data_description=data_description,
+            transform=transform,
+            stage=stage,  # type: ignore
+        )
+    if isinstance(data_description, OnTheFlyDataDescription):
+        return datasets_from_on_the_fly_data_description(
+            db_manager=db_manager,
+            data_description=data_description,
+            transform=transform,
+        )
+    else:
+        raise ValueError(
+            f"Can't create datasets with current config. engine={db_manager._database_uri}, \
+                uri={db_manager._database_engine}"
+        )
+
+
+def datasets_from_on_the_fly_data_description(
+    db_manager: DataManager,
+    data_description: OnTheFlyDataDescription,
+    transform: Callable[[TileSample], RegionFromWsiDatasetSample] | None,
+) -> Generator[TiledWsiDataset, None, None]:
+    # TODO Add masks for inference of, e.g., feature extraction
+    image_root = data_description.data_dir
+    grid_description = data_description.inference_grid
+    images = db_manager.get_all_images()
+    for image in images:
+        mask_threshold = 0.0  # Only set differently for `fit` in original method
+        dataset = TiledWsiDataset.from_standard_tiling(
+            path=image_root / image.filename,
+            mpp=grid_description.mpp,
+            tile_size=grid_description.tile_size,
+            tile_overlap=grid_description.tile_overlap,
+            tile_mode=TilingMode.overflow,
+            grid_order=GridOrder.C,
+            crop=False,
+            mask=None,
+            mask_threshold=mask_threshold,
+            output_tile_size=getattr(grid_description, "output_tile_size", None),
+            labels=None,  # type: ignore
+            transform=transform,
+            backend=ImageBackend[str(image.reader)],
+            overwrite_mpp=(image.mpp, image.mpp),
+            limit_bounds=True,
+            apply_color_profile=data_description.apply_color_profile,
+        )
+
+        yield dataset
+
+
+def datasets_from_data_description_with_uri(
+    db_manager: DataManager,
     data_description: DataDescription,
     transform: Callable[[TileSample], RegionFromWsiDatasetSample] | None,
     stage: str,
@@ -389,22 +494,19 @@ class ImageMetadata(BaseModel):
     mpp: PositiveFloat
 
 
-def open_db(database_uri: str, ensure_exists: bool = True) -> Session:
-    """Open a database connection.
+def open_db_from_engine(engine: Engine) -> Session:
+    SessionLocal = sessionmaker(bind=engine)
+    return SessionLocal()
 
-    Parameters
-    ----------
-    database_uri : str
-        The URI of the database.
-    ensure_exists : bool, default=True
-        Whether to raise an exception of the database does not exist.
 
-    Returns
-    -------
-    Session
-        The database session.
-    """
-    engine = create_engine(database_uri)
+def open_db_from_uri(
+    uri: str,
+    ensure_exists: bool = True,
+) -> Session:
+    """Open a database connection from a uri"""
+
+    # Set up the engine if no engine is given and uri is given.
+    engine = create_engine(uri)
 
     if not ensure_exists:
         # Create tables if they don't exist
@@ -421,8 +523,7 @@ def open_db(database_uri: str, ensure_exists: bool = True) -> Session:
             if not result.scalar():
                 raise RuntimeError("Manifest table is empty. Likely you have set the wrong URI.")
 
-    SessionLocal = sessionmaker(bind=engine)
-    return SessionLocal()
+    return open_db_from_engine(engine)
 
 
 def create_tables(engine: Engine) -> None:

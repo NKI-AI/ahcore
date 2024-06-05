@@ -210,3 +210,28 @@ class Split(Base):
     split_definition: Mapped["SplitDefinitions"] = relationship("SplitDefinitions", back_populates="splits")
 
     __table_args__ = (UniqueConstraint("split_definition_id", "patient_id", name="uq_patient_split_key"),)
+
+
+class OnTheFlyBase(DeclarativeBase):
+    """
+    Base for creating an in-memory DB on-the-fly for, e.g., segmentation inference on a directory of WSIs.
+    """
+
+    pass
+
+
+class MinimalImage(OnTheFlyBase):
+    """Minimal image table for an in-memory db for instant inference"""
+
+    # TODO Link to annotations or masks
+    __tablename__ = "image"
+    id = Column(Integer, primary_key=True)
+    # pylint: disable=E1102
+    created = Column(DateTime(timezone=True), default=func.now())
+    last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+    filename = Column(String, unique=True, nullable=False)
+    relative_filename = Column(String, unique=True, nullable=False)
+    reader = Column(String)
+    height = Column(Integer)
+    width = Column(Integer)
+    mpp = Column(Float)

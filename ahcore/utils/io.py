@@ -85,6 +85,7 @@ def print_config(
     config: DictConfig,
     fields: Sequence[str] = (
         "trainer",
+        "data_description",
         "model",
         "experiment",
         "transforms",
@@ -241,7 +242,7 @@ def load_weights(model: LightningModule, config: DictConfig) -> LightningModule:
         return model
     else:
         # Load checkpoint weights
-        lit_ckpt = torch.load(config.ckpt_path)
+        lit_ckpt = torch.load(config.ckpt_path, map_location="cpu")
         model.load_state_dict(lit_ckpt["state_dict"], strict=True)
     return model
 
