@@ -61,7 +61,7 @@ def get_populated_in_memory_db(image_folder: Path, glob_pattern: str) -> Engine:
 
     Parameters
     ----------
-    image_folder : str
+    image_folder : Path
         The root directory of the images
     glob_pattern : str
         The glob pattern to find images within the root directory
