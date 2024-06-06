@@ -32,6 +32,7 @@ from ahcore.utils.database_models import (
     Manifest,
     Mask,
     MinimalImage,
+    OnTheFlyBase,
     Patient,
     Split,
     SplitDefinitions,
@@ -510,7 +511,7 @@ def open_db_from_uri(
 
     if not ensure_exists:
         # Create tables if they don't exist
-        create_tables(engine)
+        create_tables(engine, base=Base)
     else:
         # Check if the "manifest" table exists
         inspector = inspect(engine)
@@ -526,9 +527,9 @@ def open_db_from_uri(
     return open_db_from_engine(engine)
 
 
-def create_tables(engine: Engine) -> None:
+def create_tables(engine: Engine, base: type[Base] | type[OnTheFlyBase]) -> None:
     """Create the database tables."""
-    Base.metadata.create_all(bind=engine)
+    base.metadata.create_all(bind=engine)
 
 
 def fetch_image_metadata(image: Image) -> ImageMetadata:

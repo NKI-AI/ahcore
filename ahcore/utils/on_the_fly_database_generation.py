@@ -10,9 +10,10 @@ import sqlalchemy
 from dlup import SlideImage
 from dlup.experimental_backends import ImageBackend
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from ahcore.utils.database_models import MinimalImage, OnTheFlyBase
+from ahcore.utils.manifest import create_tables, open_db_from_engine
 
 
 def populate_from_directory_and_glob_pattern(session: Session, image_folder: Path | str, glob_pattern: str) -> None:
@@ -54,25 +55,6 @@ def populate_from_directory_and_glob_pattern(session: Session, image_folder: Pat
         session.commit
 
 
-def open_session_for_engine(engine: sqlalchemy.Engine) -> Session:
-    """
-    Creates an engine, populates it with the database model for a minimal image,
-    generates a session and returns this
-
-    Parameters
-    ----------
-    engine : Engine
-        The in-memory engine that is to be populated.
-    Returns
-    -------
-    Session
-        The session bound to the engine to populate it with.
-    """
-    OnTheFlyBase.metadata.create_all(bind=engine)
-    session = sessionmaker(bind=engine)
-    return session()
-
-
 def get_populated_in_memory_db(image_folder: Path, glob_pattern: str) -> Engine:
     """
     Callable function to get the populated in-memory DB as an Engine
@@ -97,8 +79,9 @@ def get_populated_in_memory_db(image_folder: Path, glob_pattern: str) -> Engine:
 
     # An empty URL will create a `:memory:` database
     engine = sqlalchemy.create_engine("sqlite://")
+    create_tables(engine=engine, base=OnTheFlyBase)
 
-    with open_session_for_engine(engine) as session:
+    with open_db_from_engine(engine) as session:
         # Populate the DB through the session. Happens in-place
         populate_from_directory_and_glob_pattern(session, image_folder, glob_pattern)
 
