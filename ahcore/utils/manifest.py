@@ -38,7 +38,7 @@ from ahcore.utils.database_models import (
     SplitDefinitions,
 )
 from ahcore.utils.io import get_enum_key_from_value, get_logger
-from ahcore.utils.on_the_fly_database_generation import get_populated_in_memory_db
+from ahcore.utils.on_the_fly_database_generation import create_tables, get_populated_in_memory_db
 from ahcore.utils.rois import compute_rois
 from ahcore.utils.types import PositiveFloat, PositiveInt, Rois
 
