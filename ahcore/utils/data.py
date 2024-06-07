@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from pydantic import BaseModel
+from sqlalchemy import create_engine, exists
+from sqlalchemy.engine import Engine
+from sqlalchemy.inspection import inspect
+from sqlalchemy.orm import Session, sessionmaker
 
+from ahcore.utils.database_models import Base, Manifest, OnTheFlyBase
 from ahcore.utils.types import NonNegativeInt, PositiveFloat, PositiveInt
 
 
@@ -40,6 +45,43 @@ def basemodel_to_uuid(base_model: BaseModel) -> uuid.UUID:
     unique_id = uuid.uuid5(uuid.NAMESPACE_DNS, obj_hash.hex())
 
     return unique_id
+
+
+def open_db_from_engine(engine: Engine) -> Session:
+    SessionLocal = sessionmaker(bind=engine)
+    return SessionLocal()
+
+
+def open_db_from_uri(
+    uri: str,
+    ensure_exists: bool = True,
+) -> Session:
+    """Open a database connection from a uri"""
+
+    # Set up the engine if no engine is given and uri is given.
+    engine = create_engine(uri)
+
+    if not ensure_exists:
+        # Create tables if they don't exist
+        create_tables(engine, base=Base)
+    else:
+        # Check if the "manifest" table exists
+        inspector = inspect(engine)
+        if "manifest" not in inspector.get_table_names():
+            raise RuntimeError("Manifest table does not exist. Likely you have set the wrong URI.")
+
+        # Check if the "manifest" table is not empty
+        with engine.connect() as connection:
+            result = connection.execute(exists().where(Manifest.id.isnot(None)).select())
+            if not result.scalar():
+                raise RuntimeError("Manifest table is empty. Likely you have set the wrong URI.")
+
+    return open_db_from_engine(engine)
+
+
+def create_tables(engine: Engine, base: type[Base] | type[OnTheFlyBase]) -> None:
+    """Create the database tables."""
+    base.metadata.create_all(bind=engine)
 
 
 class GridDescription(BaseModel):

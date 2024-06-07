@@ -12,13 +12,8 @@ from dlup.experimental_backends import ImageBackend
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from ahcore.utils.database_models import Base, MinimalImage, OnTheFlyBase
-from ahcore.utils.manifest import open_db_from_engine
-
-
-def create_tables(engine: Engine, base: type[Base] | type[OnTheFlyBase]) -> None:
-    """Create the database tables."""
-    base.metadata.create_all(bind=engine)
+from ahcore.utils.data import create_tables, open_db_from_engine
+from ahcore.utils.database_models import MinimalImage, OnTheFlyBase
 
 
 def populate_from_directory_and_glob_pattern(session: Session, image_folder: Path | str, glob_pattern: str) -> None:

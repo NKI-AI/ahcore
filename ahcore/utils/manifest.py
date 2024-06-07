@@ -16,29 +16,23 @@ from dlup.data.dataset import RegionFromWsiDatasetSample, TiledWsiDataset, TileS
 from dlup.experimental_backends import ImageBackend  # type: ignore
 from dlup.tiling import GridOrder, TilingMode
 from pydantic import BaseModel
-from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine
-from sqlalchemy.inspection import inspect
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.sql import exists
+from sqlalchemy.orm import Session
 
 from ahcore.exceptions import RecordNotFoundError
-from ahcore.utils.data import DataDescription, OnTheFlyDataDescription
+from ahcore.utils.data import DataDescription, OnTheFlyDataDescription, open_db_from_engine, open_db_from_uri
 from ahcore.utils.database_models import (
-    Base,
     CategoryEnum,
     Image,
     ImageAnnotations,
     Manifest,
     Mask,
     MinimalImage,
-    OnTheFlyBase,
     Patient,
     Split,
     SplitDefinitions,
 )
 from ahcore.utils.io import get_enum_key_from_value, get_logger
-from ahcore.utils.on_the_fly_database_generation import create_tables, get_populated_in_memory_db
+from ahcore.utils.on_the_fly_database_generation import get_populated_in_memory_db
 from ahcore.utils.rois import compute_rois
 from ahcore.utils.types import PositiveFloat, PositiveInt, Rois
 
@@ -493,43 +487,6 @@ class ImageMetadata(BaseModel):
     height: PositiveInt
     width: PositiveInt
     mpp: PositiveFloat
-
-
-def open_db_from_engine(engine: Engine) -> Session:
-    SessionLocal = sessionmaker(bind=engine)
-    return SessionLocal()
-
-
-def open_db_from_uri(
-    uri: str,
-    ensure_exists: bool = True,
-) -> Session:
-    """Open a database connection from a uri"""
-
-    # Set up the engine if no engine is given and uri is given.
-    engine = create_engine(uri)
-
-    if not ensure_exists:
-        # Create tables if they don't exist
-        create_tables(engine, base=Base)
-    else:
-        # Check if the "manifest" table exists
-        inspector = inspect(engine)
-        if "manifest" not in inspector.get_table_names():
-            raise RuntimeError("Manifest table does not exist. Likely you have set the wrong URI.")
-
-        # Check if the "manifest" table is not empty
-        with engine.connect() as connection:
-            result = connection.execute(exists().where(Manifest.id.isnot(None)).select())
-            if not result.scalar():
-                raise RuntimeError("Manifest table is empty. Likely you have set the wrong URI.")
-
-    return open_db_from_engine(engine)
-
-
-def create_tables(engine: Engine, base: type[Base] | type[OnTheFlyBase]) -> None:
-    """Create the database tables."""
-    base.metadata.create_all(bind=engine)
 
 
 def fetch_image_metadata(image: Image) -> ImageMetadata:
