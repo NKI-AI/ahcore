@@ -208,12 +208,8 @@ class ImageToTensor:
 
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
         tile: pyvips.Image = sample["image"]
-        # Create a white background image with the same dimensions
-        tile_ = pyvips.Image.black(tile.width, tile.height).new_from_image([255, 255, 255])
-        # Composite the images using the alpha channel as the mask with no offset
-        tile_ = tile_.composite(tile, "over", x=0, y=0)
         # Flatten the image to remove the alpha channel, using white as the background color
-        tile_ = tile_.flatten(background=[255, 255, 255])
+        tile_ = tile.flatten(background=[255, 255, 255])
 
         # Convert VIPS image to a numpy array then to a torch tensor
         np_image = tile_.numpy()
