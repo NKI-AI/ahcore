@@ -9,11 +9,10 @@ from typing import Any, Callable
 
 import numpy as np
 import numpy.typing as npt
-import PIL
+import pyvips
 import torch
 from dlup.data.dataset import TileSample
-from dlup.data.transforms import ContainsPolygonToLabel, ConvertAnnotationsToMask, RenameLabels
-from torchvision.transforms import functional as F
+from dlup.data.transforms import ConvertAnnotationsToMask, RenameLabels
 
 from ahcore.exceptions import ConfigurationError
 from ahcore.utils.data import DataDescription
@@ -99,12 +98,6 @@ class PreTransformTaskFactory:
         transforms.append(LabelToClassIndex(index_map=index_map))
 
         return cls(transforms)
-
-    @classmethod
-    def for_tile_classification(cls, roi_name: str, label: str, threshold: float) -> PreTransformTaskFactory:
-        """Tile classification is based on a transform which checks if a polygon is present for a given threshold"""
-        convert_annotations = ContainsPolygonToLabel(roi_name=roi_name, label=label, threshold=threshold)
-        return cls([convert_annotations])
 
     def __call__(self, data: DlupDatasetSample) -> DlupDatasetSample:
         for transform in self._transforms:
@@ -214,11 +207,17 @@ class ImageToTensor:
     """
 
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
-        tile = sample["image"]
-        tile_ = PIL.Image.new("RGB", tile.size, (255, 255, 255))  # Create a white background
-        tile_.paste(tile, mask=tile.split()[3])  # Paste the image using the alpha channel as mask
+        tile: pyvips.Image = sample["image"]
+        # Create a white background image with the same dimensions
+        tile_ = pyvips.Image.black(tile.width, tile.height).new_from_image([255, 255, 255])
+        # Composite the images using the alpha channel as the mask with no offset
+        tile_ = tile_.composite(tile, "over", x=0, y=0)
+        # Flatten the image to remove the alpha channel, using white as the background color
+        tile_ = tile_.flatten(background=[255, 255, 255])
 
-        sample["image"] = F.pil_to_tensor(tile_).float()
+        # Convert VIPS image to a numpy array then to a torch tensor
+        np_image = tile_.numpy()
+        sample["image"] = torch.from_numpy(np_image).permute(2, 0, 1).float()
 
         if sample["image"].sum() == 0:
             raise RuntimeError(f"Empty tile for {sample['path']} at {sample['coordinates']}")
