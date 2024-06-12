@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Callable, Iterator, Type
 
 import numpy as np
-from dlup._image import Resampling
 from dlup.writers import TiffCompression, TifffileImageWriter
 from numpy import typing as npt
 
@@ -125,7 +124,6 @@ def _write_tiff(
             pyramid=True,
             compression=TiffCompression.ZSTD,
             quality=100,
-            interpolator=Resampling.NEAREST,
             colormap=colormap,
         )
         writer.from_tiles_iterator(iterator_from_reader(cache_reader, tile_size))

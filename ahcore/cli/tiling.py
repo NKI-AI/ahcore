@@ -20,8 +20,8 @@ import numpy.typing as npt
 import PIL.Image
 import PIL.ImageCms
 from dlup import SlideImage
+from dlup.backends import ImageBackend
 from dlup.data.dataset import TiledWsiDataset
-from dlup.experimental_backends import ImageBackend  # type: ignore
 from dlup.tiling import GridOrder, TilingMode
 from PIL import Image
 from pydantic import BaseModel
