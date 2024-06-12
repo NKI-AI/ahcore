@@ -38,6 +38,7 @@ install_requires = [
     "imagecodecs==2024.1.1",
     "zarr==2.17.2",
     "sqlalchemy>=2.0.21",
+    "imageio>=2.34.0",
 ]
 
 
