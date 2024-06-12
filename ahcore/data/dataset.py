@@ -87,10 +87,12 @@ class ConcatDataset(Dataset[DlupDatasetSample]):
         return self.cumulative_sizes[-1]
 
     @overload
-    def __getitem__(self, index: int) -> DlupDatasetSample: ...
+    def __getitem__(self, index: int) -> DlupDatasetSample:
+        ...
 
     @overload
-    def __getitem__(self, index: slice) -> list[DlupDatasetSample]: ...
+    def __getitem__(self, index: slice) -> list[DlupDatasetSample]:
+        ...
 
     def __getitem__(self, index: Union[int, slice]) -> DlupDatasetSample | list[DlupDatasetSample]:
         """Returns the sample at the given index."""
