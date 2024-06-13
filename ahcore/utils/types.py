@@ -66,31 +66,25 @@ class InferencePrecision(str, Enum):
             raise NotImplementedError(f"Precision {self} is not supported for {self.__class__.__name__}.")
 
 
-class OutputModeBase(str, Enum):
-    """Base class for embedding modes for any JIT compiled model."""
-
+class EmbedTokenNames(str, Enum):
     def __str__(self) -> Any:
         return self.value
 
 
-class SegmentationOutputMode(OutputModeBase):
+class SegmentationOutputMode(str, Enum):
     """
     Segmentation output modes for JIT compiled models.
     """
 
-    DEFAULT = "default"
-    # The default output mode assumes that the JIT model returns a torch tensor.
-    SEGMENTATION_LOGITS = "segmentation_logits"  # Segmentation outputs without activation.
+    ACTIVATED_OUTPUTS = "activated_outputs"  # Segmentation outputs with activation.
     # Extend as necessary
 
 
-class ViTEmbedMode(OutputModeBase):
+class ViTEmbedMode(str, Enum):
     """
     Embedding modes for feature extractors based on Vision Transformers.
     """
 
-    DEFAULT = "default"
-    # The default output mode assumes that the JIT model returns a torch tensor.
     CLS_ONLY = "embed_cls_only"
     PATCH_ONLY = "embed_patch_only"
     MEAN = "embed_mean"

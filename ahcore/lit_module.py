@@ -16,7 +16,7 @@ from torch import nn
 
 from ahcore.exceptions import ConfigurationError
 from ahcore.metrics import MetricFactory, WSIMetricFactory
-from ahcore.models.jit_model import BaseAhcoreJitModel
+from ahcore.models.base_jit_model import BaseAhcoreJitModel
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample

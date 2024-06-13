@@ -1,10 +1,11 @@
 _target_: ahcore.lit_module.AhCoreLightningModule
 
 model:
-  _target_: ahcore.models.feature_extractors.DinoV2JitModel.from_jit_path
+  _target_: ahcore.models.jit_feature_extractors.DinoV2JitModel.from_jit_path
   jit_path: null
   # output mode can be one of "embed_cls_only", "embed_patch_only", "embed_mean", "embed_concat_mean" and "embed_concat"
   output_mode: "embed_patch_only"
+  cls_only_model: False
 
 optimizer: null
 

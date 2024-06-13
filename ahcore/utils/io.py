@@ -28,7 +28,7 @@ from omegaconf.errors import InterpolationKeyError
 from pytorch_lightning import LightningModule
 from pytorch_lightning.utilities import rank_zero_only
 
-from ahcore.models.jit_model import BaseAhcoreJitModel
+from ahcore.models.base_jit_model import BaseAhcoreJitModel
 
 
 def get_logger(name: str = __name__) -> logging.Logger:
