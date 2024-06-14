@@ -25,7 +25,8 @@ class SegmentationJitModel(BaseAhcoreJitModel):
         output_mode: OutputModeBase
             The output mode of the model. This is used to determine the forward function of the model.
         """
-        super().__init__(model=model, output_mode=output_mode)
+        self._output_mode = SegmentationOutputMode(output_mode)
+        super().__init__(model=model)
         self._set_forward_function()
 
     def _set_forward_function(self) -> None:

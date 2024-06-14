@@ -6,18 +6,16 @@ from torch.jit import ScriptModule, load
 
 from ahcore.models.base_jit_model import BaseAhcoreJitModel
 from ahcore.models.embedding_functions.vit_embed import ViTEmbed
-from ahcore.utils.types import EmbedTokenNames
-
-
-class DinoV2TokenNames(EmbedTokenNames):
-    CLS_TOKEN_NAME = "x_norm_clstoken"
-    PATCH_TOKEN_NAME = "x_norm_patchtokens"
+from ahcore.utils.types import ViTEmbedMode
 
 
 class DinoV2JitModel(BaseAhcoreJitModel):
     """
     This class is a wrapper for the DinoV2 foundation model in Ahcore.
     """
+
+    CLS_TOKEN_NAME = "x_norm_clstoken"
+    PATCH_TOKEN_NAME = "x_norm_patchtokens"
 
     def __init__(self, model: ScriptModule, output_mode: str, cls_only_model: bool = False) -> None:
         """
@@ -39,7 +37,8 @@ class DinoV2JitModel(BaseAhcoreJitModel):
         -------
         None
         """
-        super().__init__(model=model, output_mode=output_mode)
+        super().__init__(model=model)
+        self._output_mode = ViTEmbedMode(output_mode)
         self._cls_only_model = cls_only_model
         self._set_forward_function()
 
@@ -75,6 +74,6 @@ class DinoV2JitModel(BaseAhcoreJitModel):
             patch_tokens = None
         else:
             output = self._model(x)
-            cls_token = output[DinoV2TokenNames.CLS_TOKEN_NAME]
-            patch_tokens = output[DinoV2TokenNames.PATCH_TOKEN_NAME]
+            cls_token = output[self.CLS_TOKEN_NAME]
+            patch_tokens = output[self.PATCH_TOKEN_NAME]
         return self._forward_function(cls_token=cls_token, patch_tokens=patch_tokens)

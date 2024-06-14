@@ -66,11 +66,6 @@ class InferencePrecision(str, Enum):
             raise NotImplementedError(f"Precision {self} is not supported for {self.__class__.__name__}.")
 
 
-class EmbedTokenNames(str, Enum):
-    def __str__(self) -> Any:
-        return self.value
-
-
 class SegmentationOutputMode(str, Enum):
     """
     Segmentation output modes for JIT compiled models.

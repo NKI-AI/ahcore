@@ -7,8 +7,9 @@ from ahcore.utils.types import ViTEmbedMode
 
 
 class ViTEmbed(AhCoreFeatureEmbedding):
-    def __init__(self, embedding_mode: str):
-        super().__init__(embedding_mode=embedding_mode)
+    def __init__(self, embedding_mode: ViTEmbedMode):
+        super().__init__()
+        self._embedding_mode = embedding_mode
         self._set_embed_function()
 
     @property

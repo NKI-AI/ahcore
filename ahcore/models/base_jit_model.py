@@ -10,7 +10,7 @@ class BaseAhcoreJitModel(ScriptModule):
     Base class for the jit compiled models in Ahcore.
     """
 
-    def __init__(self, model: ScriptModule, output_mode: str) -> None:
+    def __init__(self, model: ScriptModule) -> None:
         """
         Constructor for the AhcoreJitModel class.
 
@@ -19,16 +19,12 @@ class BaseAhcoreJitModel(ScriptModule):
         model: ScriptModule
             The jit compiled model.
 
-        output_mode: str
-            The output mode of the model. This is used to determine the forward function of the model.
-
         Returns
         -------
         None
         """
         super().__init__()  # type: ignore
         self._model = model
-        self._output_mode = output_mode
 
     @classmethod
     def from_jit_path(cls, jit_path: Path, output_mode: str) -> Any:
@@ -48,7 +44,7 @@ class BaseAhcoreJitModel(ScriptModule):
         An instance of the AhcoreJitModel class.
         """
         model = load(jit_path)  # type: ignore
-        return cls(model, output_mode)
+        return cls(model)
 
     def extend_model(self, modules: dict[str, Module]) -> None:
         """
