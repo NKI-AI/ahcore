@@ -71,6 +71,8 @@ setup(
             "numpydoc",
             "myst-parser",
             "sphinx-book-theme",
+            "pre-commit",
+            "tox",
         ],
     },
     license="Apache Software License 2.0",

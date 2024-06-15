@@ -14,7 +14,7 @@ import torch
 from dlup.data.dataset import Dataset, TiledWsiDataset
 from torch.utils.data import DataLoader, DistributedSampler, Sampler
 
-from ahcore.utils.data import DataDescription, basemodel_to_uuid
+from ahcore.utils.data import DataDescription, OnTheFlyDataDescription, basemodel_to_uuid
 from ahcore.utils.io import fullname, get_cache_dir, get_logger
 from ahcore.utils.manifest import DataManager, datasets_from_data_description
 from ahcore.utils.types import DlupDatasetSample, _DlupDataset
@@ -111,7 +111,7 @@ class DlupDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        data_description: DataDescription,
+        data_description: DataDescription | OnTheFlyDataDescription,
         pre_transform: Callable[[bool], Callable[[DlupDatasetSample], DlupDatasetSample]],
         batch_size: int = 32,  # noqa,pylint: disable=unused-argument
         validate_batch_size: int | None = None,  # noqa,pylint: disable=unused-argument
@@ -124,8 +124,8 @@ class DlupDataModule(pl.LightningDataModule):
 
         Parameters
         ----------
-        data_description : DataDescription
-            See `ahcore.utils.data.DataDescription` for more information.
+        data_description : DataDescription | OnTheFlyDataDescription
+            See `ahcore.utils.data.DataDescription` and `ahcore.utils.data.DataDescription` for more information.
         pre_transform : Callable
             A pre-transform is a callable which is directly applied to the output of the dataset before collation in
             the dataloader. The transforms typically convert the image in the output to a tensor, convert the
@@ -159,9 +159,9 @@ class DlupDataModule(pl.LightningDataModule):
         )  # save all relevant hyperparams
 
         # Data settings
-        self.data_description: DataDescription = data_description
+        self.data_description = data_description
 
-        self._data_manager = DataManager(database_uri=data_description.manifest_database_uri)
+        self._data_manager = DataManager(data_description)
 
         self._batch_size = self.hparams.batch_size  # type: ignore
         self._validate_batch_size = self.hparams.validate_batch_size  # type: ignore

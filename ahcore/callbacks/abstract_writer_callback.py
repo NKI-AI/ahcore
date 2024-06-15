@@ -179,8 +179,9 @@ class AbstractWriterCallback(abc.ABC, Callback):
         current_dataset: TiledWsiDataset
         assert self._total_dataset
         for current_dataset in self._total_dataset.datasets:  # type: ignore
-            assert current_dataset.slide_image.identifier
-            self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
+            curr_filename = current_dataset._path
+            assert curr_filename
+            self._dataset_sizes[str(curr_filename)] = len(current_dataset)
 
         self._start_callback_workers()
 
