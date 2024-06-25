@@ -131,9 +131,7 @@ class FileImageReader(abc.ABC):
 
         if self._metadata["has_color_profile"]:
             _color_profile = self._file["color_profile"][()].tobytes()
-            raise NotImplementedError(
-                f"Color profiles are not yet implemented, but {_color_profile} is present in {self._filename}."
-            )
+            logger.warning(f"Color profiles are not yet implemented, but {_color_profile} is present in {self._filename}.")
 
     def __enter__(self) -> "FileImageReader":
         if self._file is None:

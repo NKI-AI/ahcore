@@ -24,6 +24,7 @@ from dlup.backends import ImageBackend
 from dlup.data.dataset import TiledWsiDataset
 from dlup.tiling import GridOrder, TilingMode
 from PIL import Image
+from PIL.ImageCms import ImageCmsProfile
 from pydantic import BaseModel
 from rich.progress import Progress
 
@@ -143,7 +144,7 @@ def _save_thumbnail(
     """
     # Let's figure out an appropriate target_mpp, our thumbnail has to be at least 512px in size
     _scaling = 1.0
-    with SlideImage.from_file_path(image_fn, backend=ImageBackend.OPENSLIDE) as slide_image:
+    with SlideImage.from_file_path(image_fn, backend=ImageBackend.PYVIPS, internal_handler="vips") as slide_image:
         scaled_size = max(slide_image.size)
         while scaled_size >= 1024:
             scaled_size = max(slide_image.get_scaled_size(_scaling))
@@ -153,13 +154,14 @@ def _save_thumbnail(
         target_size = slide_image.get_scaled_size(_scaling)
 
         thumbnail_io = io.BytesIO()
-        thumbnail = slide_image.get_thumbnail(target_size)
-        # If the color_profile is not applied, we need to add it to the metadata of the thumbnail
-        if slide_image.color_profile:
+        thumbnail = PIL.Image.fromarray(np.asarray(slide_image.get_thumbnail(target_size)))
+
+        # If the color_profile is applied to the filtered tiles, apply it to the thumbnail too
+        if dataset_cfg.color_profile_applied and slide_image.color_profile:
             to_profile = PIL.ImageCms.createProfile("sRGB")
-            intent = PIL.ImageCms.getDefaultIntent(slide_image.color_profile)  # type: ignore
+            intent = PIL.ImageCms.getDefaultIntent(ImageCmsProfile(slide_image.color_profile))
             rgb_color_transform = PIL.ImageCms.buildTransform(
-                slide_image.color_profile, to_profile, "RGB", "RGB", intent, 0
+                ImageCmsProfile(slide_image.color_profile), to_profile, "RGB", "RGB", intent, 0
             )
             PIL.ImageCms.applyTransform(thumbnail, rgb_color_transform, True)
 
@@ -180,7 +182,8 @@ def _save_thumbnail(
         tile_mode=TilingMode.overflow,
         mask_threshold=dataset_cfg.mask_threshold,
         apply_color_profile=dataset_cfg.color_profile_applied,
-        backend=ImageBackend.OPENSLIDE,
+        backend=ImageBackend.PYVIPS,
+        internal_handler="vips"
     )
 
     scaled_region_view = dataset.slide_image.get_scaled_view(dataset.slide_image.get_scaling(target_mpp))
@@ -189,7 +192,7 @@ def _save_thumbnail(
 
     overlay_io = io.BytesIO()
     for d in dataset:
-        tile = d["image"]
+        tile = PIL.Image.fromarray(np.asarray(d["image"]))
         coords = np.array(d["coordinates"])
         box = tuple(np.array((*coords, *(coords + tile_size))).astype(int))
         overlay.paste(tile, (box[0], box[1]))
@@ -199,21 +202,21 @@ def _save_thumbnail(
 
     # If the below were true, it would already be embedded into the tile.
     if not dataset_cfg.color_profile_applied:
-        overlay.info["icc_profile"] = dataset.slide_image.color_profile.tobytes()  # type: ignore
+        overlay.info["icc_profile"] = dataset.slide_image.color_profile.getvalue()
 
     overlay.convert("RGB").save(overlay_io, format="JPEG", quality=75)
 
     _thumbnail = np.frombuffer(thumbnail_io.getvalue(), dtype="uint8")
     _overlay = np.frombuffer(overlay_io.getvalue(), dtype="uint8")
 
-    return Thumbnail(thumbnail=_thumbnail, mask=mask.astype(np.uint8) if mask is not None else None, overlay=_overlay)
+    return Thumbnail(thumbnail=_thumbnail, mask=mask.astype(np.uint8) if mask is not None else None,overlay=_overlay)
 
 
 def create_slide_image_dataset(
-    slide_image_path: Path,
-    mask: SlideImage | npt.NDArray[np.int_] | None,
-    cfg: DatasetConfigs,
-    overwrite_mpp: tuple[float, float] | None = None,
+        slide_image_path: Path,
+        mask: SlideImage | npt.NDArray[np.int_] | None,
+        cfg: DatasetConfigs,
+        overwrite_mpp: tuple[float, float] | None = None,
 ) -> TiledWsiDataset:
     """
     Initializes and returns a slide image dataset.
@@ -248,7 +251,8 @@ def create_slide_image_dataset(
         mask_threshold=cfg.mask_threshold,
         overwrite_mpp=overwrite_mpp,
         apply_color_profile=cfg.color_profile_applied,
-        backend=ImageBackend.OPENSLIDE,
+        backend=ImageBackend.PYVIPS,
+        internal_handler="vips"
     )
 
 
@@ -258,7 +262,7 @@ def _generator(
     for idx in range(len(dataset)):
         # TODO: This should be working iterating over the dataset
         sample = dataset[idx]
-        tile: PIL.Image.Image = sample["image"]
+        tile: PIL.Image.Image = PIL.Image.fromarray(np.asarray(sample["image"]))
         # If we just cast the PIL.Image to RGB, the alpha channel is set to black
         # which is a bit unnatural if you look in the image pyramid where it would be white in lower resolutions
         # this is why we take the following approach.
@@ -274,6 +278,9 @@ def _generator(
 
         # Now we have the image bytes
         coordinates = sample["coordinates"]
+
+        # Writer class expects channels first
+        array = array.transpose((2, 0, 1))
 
         yield [coordinates], array[np.newaxis, :]
 
@@ -337,10 +344,12 @@ def _tiling_pipeline(
 
         color_profile: bytes | None = None
         if not dataset_cfg.color_profile_applied and dataset.slide_image.color_profile:
-            color_profile = dataset.slide_image.color_profile.tobytes()  # type: ignore
+            color_profile = dataset.slide_image.color_profile.getvalue()
 
         extra_metadata = {
             "color_profile_applied": dataset_cfg.color_profile_applied,
+            "crop": False,
+            "mask_threshold": dataset_cfg.mask_threshold,
         }
 
         writer = _writer_class(
@@ -353,10 +362,11 @@ def _tiling_pipeline(
             is_compressed_image=compression != "none",
             color_profile=color_profile,
             extra_metadata=extra_metadata,
+            grid=dataset.grids[0][0],
         )
         save_tiles(dataset, writer, compression=compression, quality=quality)
         if save_thumbnail:
-            thumbnail_obj = _save_thumbnail(image_path, dataset_cfg, mask)
+            thumbnail_obj = _save_thumbnail(image_path, dataset_cfg, mask, store_overlay=False)
 
             description = "thumbnail"
             images = [
@@ -366,7 +376,7 @@ def _tiling_pipeline(
                 description += ", mask"
                 images.append(("mask", thumbnail_obj.mask))
 
-            if thumbnail_obj.overlay:
+            if thumbnail_obj.overlay is not None:
                 description += ", overlay"
                 images.append(("overlay", thumbnail_obj.overlay))
 
@@ -383,12 +393,12 @@ def _tiling_pipeline(
 
 
 def _wrapper(
-    dataset_cfg: DatasetConfigs,
-    compression: Literal["jpg", "png", "none"],
-    writer_class: Literal["h5", "zarr"],
-    quality: int,
-    save_thumbnail: bool,
-    args: tuple[Path, Path, Path],
+        args: tuple[Path, Path, Path],
+        dataset_cfg: DatasetConfigs,
+        compression: Literal["jpg", "png", "none"],
+        writer_class: Literal["h5", "zarr"],
+        quality: int,
+        save_thumbnail: bool,
 ) -> None:
     image_path, mask_path, output_file = args
     return _tiling_pipeline(
@@ -453,7 +463,8 @@ def _do_tiling(args: argparse.Namespace) -> None:
     if args.num_workers > 0:
         # Create a partially applied function with dataset_cfg
         partial_wrapper = partial(
-            _wrapper, dataset_cfg, writer_class, args.compression, args.quality, args.save_thumbnail
+            _wrapper, dataset_cfg=dataset_cfg, compression=args.compression,
+            writer_class=writer_class, quality=args.quality, save_thumbnail=args.save_thumbnail
         )
 
         with Progress() as progress:
