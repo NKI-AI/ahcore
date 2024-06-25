@@ -183,7 +183,7 @@ def _save_thumbnail(
         mask_threshold=dataset_cfg.mask_threshold,
         apply_color_profile=dataset_cfg.color_profile_applied,
         backend=ImageBackend.PYVIPS,
-        internal_handler="vips"
+        internal_handler="vips",
     )
 
     scaled_region_view = dataset.slide_image.get_scaled_view(dataset.slide_image.get_scaling(target_mpp))
@@ -209,14 +209,14 @@ def _save_thumbnail(
     _thumbnail = np.frombuffer(thumbnail_io.getvalue(), dtype="uint8")
     _overlay = np.frombuffer(overlay_io.getvalue(), dtype="uint8")
 
-    return Thumbnail(thumbnail=_thumbnail, mask=mask.astype(np.uint8) if mask is not None else None,overlay=_overlay)
+    return Thumbnail(thumbnail=_thumbnail, mask=mask.astype(np.uint8) if mask is not None else None, overlay=_overlay)
 
 
 def create_slide_image_dataset(
-        slide_image_path: Path,
-        mask: SlideImage | npt.NDArray[np.int_] | None,
-        cfg: DatasetConfigs,
-        overwrite_mpp: tuple[float, float] | None = None,
+    slide_image_path: Path,
+    mask: SlideImage | npt.NDArray[np.int_] | None,
+    cfg: DatasetConfigs,
+    overwrite_mpp: tuple[float, float] | None = None,
 ) -> TiledWsiDataset:
     """
     Initializes and returns a slide image dataset.
@@ -252,7 +252,7 @@ def create_slide_image_dataset(
         overwrite_mpp=overwrite_mpp,
         apply_color_profile=cfg.color_profile_applied,
         backend=ImageBackend.PYVIPS,
-        internal_handler="vips"
+        internal_handler="vips",
     )
 
 
@@ -393,12 +393,12 @@ def _tiling_pipeline(
 
 
 def _wrapper(
-        args: tuple[Path, Path, Path],
-        dataset_cfg: DatasetConfigs,
-        compression: Literal["jpg", "png", "none"],
-        writer_class: Literal["h5", "zarr"],
-        quality: int,
-        save_thumbnail: bool,
+    args: tuple[Path, Path, Path],
+    dataset_cfg: DatasetConfigs,
+    compression: Literal["jpg", "png", "none"],
+    writer_class: Literal["h5", "zarr"],
+    quality: int,
+    save_thumbnail: bool,
 ) -> None:
     image_path, mask_path, output_file = args
     return _tiling_pipeline(
@@ -463,8 +463,12 @@ def _do_tiling(args: argparse.Namespace) -> None:
     if args.num_workers > 0:
         # Create a partially applied function with dataset_cfg
         partial_wrapper = partial(
-            _wrapper, dataset_cfg=dataset_cfg, compression=args.compression,
-            writer_class=writer_class, quality=args.quality, save_thumbnail=args.save_thumbnail
+            _wrapper,
+            dataset_cfg=dataset_cfg,
+            compression=args.compression,
+            writer_class=writer_class,
+            quality=args.quality,
+            save_thumbnail=args.save_thumbnail,
         )
 
         with Progress() as progress:
