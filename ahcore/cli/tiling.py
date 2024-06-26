@@ -159,7 +159,7 @@ def _save_thumbnail(
         # If the color_profile is applied to the filtered tiles, apply it to the thumbnail too
         if dataset_cfg.color_profile_applied and slide_image.color_profile:
             to_profile = PIL.ImageCms.createProfile("sRGB")
-            intent = PIL.ImageCms.getDefaultIntent(ImageCmsProfile(slide_image.color_profile))
+            intent = PIL.ImageCms.getDefaultIntent(ImageCmsProfile(slide_image.color_profile))  # type: ignore
             rgb_color_transform = PIL.ImageCms.buildTransform(
                 ImageCmsProfile(slide_image.color_profile), to_profile, "RGB", "RGB", intent, 0
             )
@@ -201,7 +201,7 @@ def _save_thumbnail(
         # draw.rectangle(box, outline="red")
 
     # If the below were true, it would already be embedded into the tile.
-    if not dataset_cfg.color_profile_applied:
+    if not dataset_cfg.color_profile_applied and dataset.slide_image.color_profile:
         overlay.info["icc_profile"] = dataset.slide_image.color_profile.getvalue()
 
     overlay.convert("RGB").save(overlay_io, format="JPEG", quality=75)
