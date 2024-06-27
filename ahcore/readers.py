@@ -33,6 +33,7 @@ class StitchingMode(str, Enum):
     CROP = "crop"
     AVERAGE = "average"
     MAXIMUM = "maximum"
+    NONE = "none"  # Direct reading of features
 
 
 def crop_to_bbox(array: GenericNumberArray, bbox: BoundingBoxType) -> GenericNumberArray:
@@ -52,6 +53,7 @@ class FileImageReader(abc.ABC):
         self._mpp = None
         self._tile_size = None
         self._tile_overlap = None
+        self._offset = None
         self._size = None
         self._num_channels = None
         self._dtype = None
@@ -65,11 +67,30 @@ class FileImageReader(abc.ABC):
         return cls(filename=filename, stitching_mode=stitching_mode)
 
     @property
+    def dimensions(self) -> tuple[int, int]:
+        _dimensions = self._size
+        # FIXME: naming of dimensions and size is confusing. 
+        # Size should be at level zero, but is not the same as dimenisons
+        if self._offset is not None:
+            _dimensions = (self._offset[0] + self._size[0], self._offset[1] + self._size[1])
+        return _dimensions
+
+    @property
     def size(self) -> tuple[int, int]:
         if not self._size:
             self._open_file()
             assert self._size
         return self._size
+
+    @property
+    def slide_bounds(self) -> tuple[tuple[int, int], tuple[int, int]]:
+        """Returns the bounds of the slide. These can be smaller than the image itself.
+        These bounds are in the format (x, y), (width, height), and are defined at level 0 of the image.
+        """
+        size = self._size
+        if self._offset is None:
+            offset = (0, 0)
+        return offset, size
 
     @property
     def mpp(self) -> float:
@@ -96,6 +117,49 @@ class FileImageReader(abc.ABC):
             return 1.0
         return self._mpp / mpp
 
+    def get_scaled_size(self, scaling: float, limit_bounds: Optional[bool] = False) -> tuple[int, int]:
+        """Compute slide image size at specific scaling.
+
+        Parameters
+        -----------
+        scaling: float
+            The factor by which the image needs to be scaled.
+
+        limit_bounds: Optional[bool]
+            If True, the scaled size will be calculated using the slide bounds of the whole slide image.
+            This is generally the specific area within a whole slide image where we can find the tissue specimen.
+
+        Returns
+        -------
+        size: tuple[int, int]
+            The scaled size of the image.
+        """
+        if limit_bounds:
+            _, bounded_size = self.slide_bounds
+            size = int(bounded_size[0] * scaling), int(bounded_size[1] * scaling)
+        else:
+            size = int(self.dimensions[0] * scaling), int(self.dimensions[1] * scaling)
+        return size
+
+    def get_scaled_slide_bounds(self, scaling: float) -> tuple[tuple[int, int], tuple[int, int]]:
+        """Returns the bounds of the slide at a specific scaling level. This takes the slide bounds into account
+        and scales them to the appropriate scaling level.
+
+        Parameters
+        ----------
+        scaling : float
+            The scaling level to use.
+
+        Returns
+        -------
+        tuple[tuple[int, int], tuple[int, int]]
+            The slide bounds at the given scaling level.
+        """
+        offset, size = self.slide_bounds
+        offset = (int(scaling * offset[0]), int(scaling * offset[1]))
+        size = (int(scaling * size[0]), int(scaling * size[1]))
+        return offset, size
+
     @abc.abstractmethod
     def _open_file_handle(self, filename: Path) -> Any:
         pass
@@ -118,6 +182,7 @@ class FileImageReader(abc.ABC):
         self._mpp = self._metadata["mpp"]
         self._tile_size = self._metadata["tile_size"]
         self._tile_overlap = self._metadata["tile_overlap"]
+        self._offset = self._metadata.get("offset")
         self._size = self._metadata["size"]
         self._num_channels = self._metadata["num_channels"]
         self._dtype = self._metadata["dtype"]
@@ -264,9 +329,14 @@ class FileImageReader(abc.ABC):
         end_row = min((y + h - 1) // self._stride[1] + 1, total_rows)
         start_col = x // self._stride[0]
         end_col = min((x + w - 1) // self._stride[0] + 1, total_cols)
+        if self._stitching_mode == StitchingMode.NONE:
+            if end_row - start_row != 1 or end_col - start_col != 1:
+                logger.error(f"Requested region spans more than single tile: {location}, {self._size}")
+                raise ValueError("Requested region spans more than single tile.")
 
         if self._stitching_mode == StitchingMode.AVERAGE:
             divisor_array = np.zeros((h, w), dtype=np.uint8)
+
         stitched_image = np.zeros((self._num_channels, h, w), dtype=self._dtype)
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
@@ -300,7 +370,8 @@ class FileImageReader(abc.ABC):
                     )
                     cropped_tile = crop_to_bbox(tile, bbox)
                     stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = cropped_tile
-
+                elif self._stitching_mode == StitchingMode.NONE:
+                    stitched_image = tile
                 elif self._stitching_mode == StitchingMode.AVERAGE:
                     raise NotImplementedError
                     tile_start_y = max(0, -start_y)
