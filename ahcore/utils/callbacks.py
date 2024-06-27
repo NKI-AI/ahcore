@@ -187,7 +187,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         if self._data_description.remap_labels:
             _annotations = rename_labels(_annotations, remap_labels=self._data_description.remap_labels)
 
-        points, boxes, region, roi = convert_annotations(
+        points, region, roi = convert_annotations(
             _annotations,
             self._region_size,
             index_map=self._data_description.index_map,
