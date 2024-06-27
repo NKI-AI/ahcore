@@ -1,2 +1,3 @@
 _target_: ahcore.transforms.pre_transforms.PreTransformTaskFactory.for_segmentation
 _partial_: true
+one_hot_encode: true
