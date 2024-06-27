@@ -83,7 +83,9 @@ class PreTransformTaskFactory:
             transforms.append(RenameLabels(remap_labels=data_description.remap_labels))
 
         transforms.append(
-            ConvertAnnotationsToMask(roi_name=data_description.roi_name, index_map=data_description.index_map)
+            ConvertAnnotationsToMask(
+                roi_name=data_description.roi_name, index_map=data_description.index_map, multiclass=not one_hot_encode
+            )
         )
 
         if one_hot_encode:
