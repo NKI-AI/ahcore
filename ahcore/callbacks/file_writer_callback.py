@@ -27,6 +27,7 @@ class WriteFileCallback(AbstractWriterCallback):
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
         callbacks: list[ConvertCallbacks] | None = None,
+        add_extra_metadata: bool = False,
     ):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
@@ -46,6 +47,8 @@ class WriteFileCallback(AbstractWriterCallback):
             The normalization type to use for the predictions. One of "sigmoid", "softmax" or "logits".
         precision : str
             The precision to use for the predictions. One of "float16", "float32" or "uint8".
+        add_extra_metadata : bool
+            Flag to add metadata of the original slideimage to the metadata.
         """
         self._current_filename = None
         self._dump_dir = Path(dump_dir)
@@ -54,6 +57,7 @@ class WriteFileCallback(AbstractWriterCallback):
         self._suffix = ".cache"
         self._normalization_type: NormalizationType = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)
+        self._add_extra_metadata: bool = add_extra_metadata
 
         super().__init__(
             writer_class=writer_class,
@@ -109,7 +113,10 @@ class WriteFileCallback(AbstractWriterCallback):
         if mpp is None:
             mpp = slide_image.mpp
 
-        _, size = slide_image.get_scaled_slide_bounds(slide_image.get_scaling(mpp))
+        offset, size = slide_image.get_scaled_slide_bounds(slide_image.get_scaling(mpp))
+        extra_metadata = None
+        if self._add_extra_metadata:
+            extra_metadata = {"offset": offset}
 
         # Let's get the data_description, so we can figure out the tile size and things like that
         tile_size = inference_grid.tile_size
@@ -132,6 +139,7 @@ class WriteFileCallback(AbstractWriterCallback):
             progress=None,
             precision=InferencePrecision(self._precision),
             grid=grid,
+            extra_metadata=extra_metadata
         )
 
         return writer

@@ -64,7 +64,7 @@ _AnnotationReaders: _AnnotationReadersDict = {
 
 
 def parse_annotations_from_record(
-    annotations_root: Path, record: list[Mask] | list[ImageAnnotations]
+    annotations_root: Path, record: list[Mask] | list[ImageAnnotations], scaling: Optional[float] = None,
 ) -> _AnnotationReturnTypes | None:
     """
     Parse the annotations from a record of type ImageAnnotations.
@@ -75,6 +75,8 @@ def parse_annotations_from_record(
         The root directory of the annotations.
     record : list[Type[ImageAnnotations]]
         The record containing the annotations.
+    scaling : Optional[float]
+        The scaling to apply to the annotations in WsiAnnotations, by default None.
 
     Returns
     -------
@@ -87,7 +89,7 @@ def parse_annotations_from_record(
 
     valid_readers = list(_AnnotationReaders.keys())
     reader_name = cast(
-        Literal["ASAP_XML", "GEOJSON", "PYVIPS", "TIFFFILE", "OPENSLIDE"],
+        Literal["ASAP_XML", "GEOJSON", "DARWIN_JSON", "PYVIPS", "TIFFFILE", "OPENSLIDE"],
         record[0].reader,
     )
 
@@ -99,6 +101,9 @@ def parse_annotations_from_record(
 
     try:
         reader_func = _AnnotationReaders[reader_name]
+        # Add scaling for geometry readers
+        if reader_name in ["ASAP_XML", "GEOJSON", "DARWIN_JSON"]:
+            reader_func = functools.partial(reader_func, scaling=scaling)
     except KeyError:
         raise NotImplementedError(f"Reader {reader_name} not implemented.")
 
@@ -106,7 +111,7 @@ def parse_annotations_from_record(
 
 
 def get_mask_and_annotations_from_record(
-    annotations_root: Path, record: Image
+    annotations_root: Path, record: Image, scaling: Optional[float] = None
 ) -> tuple[_AnnotationReturnTypes | None, _AnnotationReturnTypes | None]:
     """
     Get the mask and annotations from a record of type Image.
@@ -117,14 +122,17 @@ def get_mask_and_annotations_from_record(
         The root directory of the annotations.
     record : Type[Image]
         The record containing the mask and annotations.
+    scaling : Optional[float]
+        The scaling to apply to the annotations in WsiAnnotations. This scaling will only be applied to annotations and 
+         mask made from geometries, by default None.
 
     Returns
     -------
     tuple[WsiAnnotations, WsiAnnotations]
         The mask and annotations.
     """
-    _masks = parse_annotations_from_record(annotations_root, record.masks)
-    _annotations = parse_annotations_from_record(annotations_root, record.annotations)
+    _masks = parse_annotations_from_record(annotations_root, record.masks, scaling=scaling)
+    _annotations = parse_annotations_from_record(annotations_root, record.annotations, scaling=scaling)
     return _masks, _annotations
 
 
@@ -346,7 +354,9 @@ def datasets_from_data_description(
         patient_labels = get_labels_from_record(patient)
 
         for image in patient.images:
-            mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
+            # TODO: Get Scaling from file_reader.
+            scaling = None
+            mask, annotations = get_mask_and_annotations_from_record(annotations_root, image, scaling=scaling)
             assert isinstance(mask, WsiAnnotations) or (mask is None)
             image_labels = get_labels_from_record(image)
             labels = None if patient_labels is image_labels is None else (patient_labels or []) + (image_labels or [])
