@@ -29,6 +29,7 @@ from ahcore.utils.database_models import (
     CategoryEnum,
     Image,
     ImageAnnotations,
+    ImageCache,
     Manifest,
     Mask,
     Patient,
@@ -152,6 +153,9 @@ def get_labels_from_record(record: Image | Patient) -> list[tuple[str, str]] | N
     _labels = [(str(label.key), str(label.value)) for label in record.labels] if record.labels else None
     return _labels
 
+def get_features_from_record(record: ImageCache):
+    # This function should retrieve relevant information for reading back features.
+    pass
 
 def _get_rois(mask: WsiAnnotations | None, data_description: DataDescription, stage: str) -> Optional[Rois]:
     if (mask is None) or (stage != "fit") or (not data_description.convert_mask_to_rois):
@@ -354,7 +358,10 @@ def datasets_from_data_description(
         patient_labels = get_labels_from_record(patient)
 
         for image in patient.images:
-            # TODO: Get Scaling from file_reader.
+            # TODO: implement get_features_from_record(). If ImageCache is specified
+            _ = get_features_from_record(image)
+            # FIXME: If we only want to read out features (without the image data), annotations must be read out at the
+            # scaling that the features were generated
             scaling = None
             mask, annotations = get_mask_and_annotations_from_record(annotations_root, image, scaling=scaling)
             assert isinstance(mask, WsiAnnotations) or (mask is None)
@@ -363,6 +370,14 @@ def datasets_from_data_description(
             rois = _get_rois(mask, data_description, stage)
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
 
+            # TODO: Create wrapper function around (?) TiledWsiDataset for features stored as ImageCache. 
+            # Currently there are 2 cases:
+            # 1. Segmentation problem on tile level. For this we can re-create the Grid on which the ImageCache was 
+            # created. After doing this, we attach feature vectors by extending DLUP's TileSample. (Sometimes) we want 
+            # to discard image data, if we are only interested in using the features as input. 
+            # 2. Whole Slide classification problem. For this we want to sample N feature vectors (where N <= number of
+            # tiles in the original dataset) and concatenate all features. Slide level classification labels can be pre-
+            # processed as labels in the image_record.
             dataset = TiledWsiDataset.from_standard_tiling(
                 path=image_root / image.filename,
                 mpp=grid_description.mpp,
