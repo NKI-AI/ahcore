@@ -31,13 +31,14 @@ install_requires = [
     "hydra-submitit-launcher>=1.2.0",
     "hydra-optuna-sweeper>=1.3.0.dev0",
     "hydra-colorlog>=1.2.0",
-    "dlup>=0.3.38",
+    "dlup>=0.4.0",
     "kornia>=0.7.2",
     "h5py>=3.8.0",
     "monai[einops]>=1.3.0",
     "imagecodecs==2024.1.1",
     "zarr==2.17.2",
     "sqlalchemy>=2.0.21",
+    "imageio>=2.34.0",
 ]
 
 

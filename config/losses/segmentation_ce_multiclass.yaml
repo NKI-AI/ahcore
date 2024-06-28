@@ -1,0 +1,10 @@
+_target_: ahcore.losses.LossFactory
+weights:
+  - 1.0
+losses:
+  - cross_entropy:
+      _target_: ahcore.losses.cross_entropy
+      _partial_: true
+      ignore_index: null
+      topk: null
+      multiclass: true

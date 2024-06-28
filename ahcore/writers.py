@@ -346,11 +346,11 @@ class Writer(abc.ABC):
             )
 
         if self._color_profile:
-            data = (np.frombuffer(self._color_profile, dtype=np.uint8),)
+            data = np.frombuffer(self._color_profile, dtype=np.uint8)
             self.create_dataset(
                 file,
                 name="color_profile",
-                shape=(data[0].size,),
+                shape=(data.size,),
                 compression="gzip",
                 dtype="uint8",
             )

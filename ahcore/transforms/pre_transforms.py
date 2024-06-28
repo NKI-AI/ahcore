@@ -9,11 +9,10 @@ from typing import Any, Callable
 
 import numpy as np
 import numpy.typing as npt
-import PIL
+import pyvips
 import torch
 from dlup.data.dataset import TileSample
-from dlup.data.transforms import ContainsPolygonToLabel, ConvertAnnotationsToMask, RenameLabels
-from torchvision.transforms import functional as F
+from dlup.data.transforms import ConvertAnnotationsToMask, RenameLabels
 
 from ahcore.exceptions import ConfigurationError
 from ahcore.utils.data import DataDescription
@@ -49,7 +48,10 @@ class PreTransformTaskFactory:
 
     @classmethod
     def for_segmentation(
-        cls, data_description: DataDescription, requires_target: bool = True
+        cls,
+        data_description: DataDescription,
+        requires_target: bool = True,
+        multiclass: bool = True,
     ) -> PreTransformTaskFactory:
         """
         Pre-transforms for segmentation tasks. If the target is required these transforms are applied as follows:
@@ -61,6 +63,8 @@ class PreTransformTaskFactory:
         ----------
         data_description : DataDescription
         requires_target : bool
+        multiclass : bool
+            Set this to false if you have a categorical mask and you want to one-hot encode it.
 
         Returns
         -------
@@ -78,9 +82,13 @@ class PreTransformTaskFactory:
             transforms.append(RenameLabels(remap_labels=data_description.remap_labels))
 
         transforms.append(
-            ConvertAnnotationsToMask(roi_name=data_description.roi_name, index_map=data_description.index_map)
+            ConvertAnnotationsToMask(
+                roi_name=data_description.roi_name, index_map=data_description.index_map, multiclass=multiclass
+            )
         )
-        transforms.append(OneHotEncodeMask(index_map=data_description.index_map))
+
+        if not multiclass:
+            transforms.append(OneHotEncodeMask(index_map=data_description.index_map))
 
         return cls(transforms)
 
@@ -99,12 +107,6 @@ class PreTransformTaskFactory:
         transforms.append(LabelToClassIndex(index_map=index_map))
 
         return cls(transforms)
-
-    @classmethod
-    def for_tile_classification(cls, roi_name: str, label: str, threshold: float) -> PreTransformTaskFactory:
-        """Tile classification is based on a transform which checks if a polygon is present for a given threshold"""
-        convert_annotations = ContainsPolygonToLabel(roi_name=roi_name, label=label, threshold=threshold)
-        return cls([convert_annotations])
 
     def __call__(self, data: DlupDatasetSample) -> DlupDatasetSample:
         for transform in self._transforms:
@@ -214,11 +216,13 @@ class ImageToTensor:
     """
 
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
-        tile = sample["image"]
-        tile_ = PIL.Image.new("RGB", tile.size, (255, 255, 255))  # Create a white background
-        tile_.paste(tile, mask=tile.split()[3])  # Paste the image using the alpha channel as mask
+        tile: pyvips.Image = sample["image"]
+        # Flatten the image to remove the alpha channel, using white as the background color
+        tile_ = tile.flatten(background=[255, 255, 255])
 
-        sample["image"] = F.pil_to_tensor(tile_).float()
+        # Convert VIPS image to a numpy array then to a torch tensor
+        np_image = tile_.numpy()
+        sample["image"] = torch.from_numpy(np_image).permute(2, 0, 1).float()
 
         if sample["image"].sum() == 0:
             raise RuntimeError(f"Empty tile for {sample['path']} at {sample['coordinates']}")
