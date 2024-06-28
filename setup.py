@@ -72,6 +72,9 @@ setup(
             "myst-parser",
             "sphinx-book-theme",
         ],
+        "vector_db": [
+            "pymilvus>=2.4.1",
+        ],
     },
     license="Apache Software License 2.0",
     include_package_data=True,

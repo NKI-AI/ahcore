@@ -1,0 +1,9 @@
+milvus_vector_db:
+  _target_: ahcore.callbacks.milvus_vector_db_callback.MilvusVectorDBCallback
+  host: ${oc.env:MILVUS_HOST}
+  port: ${oc.env:MILVUS_PORT}
+  user: ${oc.env:MILVUS_USER}
+  password: ${oc.env:MILVUS_PASSWORD}
+  collection_name: "path_fomo_cls_debug_coll"
+  collection_type: "path_fomo_cls"
+  embedding_dim: ???
