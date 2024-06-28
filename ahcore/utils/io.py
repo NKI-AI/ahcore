@@ -28,7 +28,7 @@ from omegaconf.errors import InterpolationKeyError
 from pytorch_lightning import LightningModule
 from pytorch_lightning.utilities import rank_zero_only
 
-from ahcore.models.jit_model import AhcoreJitModel
+from ahcore.models.base_jit_model import BaseAhcoreJitModel
 
 
 def get_logger(name: str = __name__) -> logging.Logger:
@@ -237,7 +237,7 @@ def load_weights(model: LightningModule, config: DictConfig) -> LightningModule:
         The model loaded from the checkpoint file.
     """
     _model = getattr(model, "_model")
-    if isinstance(_model, AhcoreJitModel):
+    if isinstance(_model, BaseAhcoreJitModel):
         return model
     else:
         # Load checkpoint weights

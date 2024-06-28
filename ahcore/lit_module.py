@@ -16,7 +16,7 @@ from torch import nn
 
 from ahcore.exceptions import ConfigurationError
 from ahcore.metrics import MetricFactory, WSIMetricFactory
-from ahcore.models.jit_model import AhcoreJitModel
+from ahcore.models.base_jit_model import BaseAhcoreJitModel
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
@@ -38,7 +38,7 @@ class AhCoreLightningModule(pl.LightningModule):
 
     def __init__(
         self,
-        model: nn.Module | AhcoreJitModel,
+        model: nn.Module | BaseAhcoreJitModel,
         optimizer: torch.optim.Optimizer,  # noqa
         data_description: DataDescription,
         loss: nn.Module | None = None,
@@ -58,7 +58,7 @@ class AhCoreLightningModule(pl.LightningModule):
                 "loss",
             ],
         )  # TODO: we should send the hyperparams to the logger elsewhere
-        if isinstance(model, AhcoreJitModel):
+        if isinstance(model, BaseAhcoreJitModel):
             self._model = model
         elif isinstance(model, functools.partial):
             try:
