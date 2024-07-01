@@ -179,6 +179,14 @@ class PatientLabels(Base):
     __table_args__ = (UniqueConstraint("key", "patient_id", name="uq_patient_label_key"),)
 
 
+class FeatureEmbedding(Base):
+    """Feature embedding table."""
+
+    # Here we need a table for feature embeddings.
+    # It should be an optional table that can be used to store embeddings for each whole slide image.
+    pass
+
+
 class SplitDefinitions(Base):
     """Split definitions table."""
 
