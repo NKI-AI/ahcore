@@ -35,9 +35,9 @@ _DlupDataset = Dataset[DlupDatasetSample]
 
 
 class NormalizationType(str, Enum):
-    SIGMOID = "sigmoid"
-    SOFTMAX = "softmax"
-    LOGITS = "logits"
+    SIGMOID = "SIGMOID"
+    SOFTMAX = "SOFTMAX"
+    LOGITS = "LOGITS"
 
     def normalize(self) -> Callable[[torch.Tensor], torch.Tensor]:
         if self == NormalizationType.SIGMOID:
