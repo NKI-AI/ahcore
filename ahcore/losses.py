@@ -90,6 +90,7 @@ def cross_entropy(
     topk: float | None = None,
     label_smoothing: float = 0.0,
     limit: float | None = None,
+    multiclass: bool = False,
 ) -> torch.Tensor:
     """
     Compute a ROI weighted cross entropy function. The resulting output is a per-sample cross entropy.
@@ -114,6 +115,9 @@ def cross_entropy(
         Default: :math:`0.0`.
     limit : float, optional
         If set this will be the value the cross entropy is clipped (from below). This has to be a negative value.
+    multiclass : bool
+        If true, a binary_cross_entropy_with_logits is applied rather than a cross_entropy. The difference is that
+        for a sigmoid rather than a softmax is applied.
 
     Returns
     -------
@@ -141,14 +145,23 @@ def cross_entropy(
         ignore_index = -100
 
     # compute cross_entropy pixel by pixel
-    _cross_entropy = F.cross_entropy(
-        input,
-        target.argmax(dim=1),
-        ignore_index=ignore_index,
-        weight=None if weight is None else weight.to(input.device),
-        reduction="none",
-        label_smoothing=label_smoothing,
-    )
+    if not multiclass:
+        _cross_entropy = F.cross_entropy(
+            input,
+            target.argmax(dim=1),
+            ignore_index=ignore_index,
+            weight=None if weight is None else weight.to(input.device),
+            reduction="none",
+            label_smoothing=label_smoothing,
+        )
+    else:
+        _cross_entropy = F.binary_cross_entropy_with_logits(
+            input,
+            target,
+            weight=None if weight is None else weight.to(input.device),
+            reduction="none",
+            pos_weight=None,
+        )
 
     if limit is not None:
         _cross_entropy = torch.clip(_cross_entropy, limit, None)

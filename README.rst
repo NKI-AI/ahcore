@@ -1,11 +1,8 @@
-AI for Oncology Core for Computational Pathology
-================================================
+AI for Oncology Core for Computational Pathology (ahcore)
+=========================================================
 
 .. image:: https://github.com/NKI-AI/ahcore/actions/workflows/precommit_checks.yml/badge.svg
    :target: https://github.com/NKI-AI/ahcore/actions/workflows/precommit_checks.yml
-
-.. image:: https://codecov.io/gh/NKI-AI/ahcore/branch/main/graph/badge.svg?token=OIJ7F9G7OO
-   :target: https://codecov.io/gh/NKI-AI/ahcore
 
 Ahcore are the `AI for Oncology <https://aiforoncology.nl>`_ core components for computational pathology. It provides a set of tools for working with pathology images and annotations. It also offers standard computational pathology algorithms.
 

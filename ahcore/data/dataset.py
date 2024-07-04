@@ -15,6 +15,7 @@ from dlup.data.dataset import Dataset, TiledWsiDataset
 from torch.utils.data import DataLoader, DistributedSampler, Sampler
 
 from ahcore.utils.data import DataDescription, basemodel_to_uuid
+from ahcore.utils.debug_utils import time_it
 from ahcore.utils.io import fullname, get_cache_dir, get_logger
 from ahcore.utils.manifest import DataManager, datasets_from_data_description
 from ahcore.utils.types import DlupDatasetSample, _DlupDataset
@@ -201,6 +202,7 @@ class DlupDataModule(pl.LightningDataModule):
     def data_manager(self) -> DataManager:
         return self._data_manager
 
+    @time_it
     def setup(self, stage: str) -> None:
         if stage not in ("fit", "validate", "test", "predict"):
             raise ValueError(f"Stage should be one of fit, validate or test, found {stage}.")
@@ -224,6 +226,7 @@ class DlupDataModule(pl.LightningDataModule):
 
         setattr(self, f"_{stage}_data_iterator", dataset_iterator())
 
+    @time_it
     def _construct_concatenated_dataloader(
         self, data_iterator: Iterator[_DlupDataset], batch_size: int, stage: str, distributed: bool = False
     ) -> Optional[DataLoader[DlupDatasetSample]]:
@@ -280,6 +283,7 @@ class DlupDataModule(pl.LightningDataModule):
             pin_memory=self._pin_memory,
         )
 
+    @time_it
     def _load_from_cache(self, func: Callable[[], Any], stage: str, *args: Any, **kwargs: Any) -> Any:
         name = fullname(func)
         path = get_cache_dir() / stage / name

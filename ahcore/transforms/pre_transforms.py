@@ -48,7 +48,10 @@ class PreTransformTaskFactory:
 
     @classmethod
     def for_segmentation(
-        cls, data_description: DataDescription, requires_target: bool = True
+        cls,
+        data_description: DataDescription,
+        requires_target: bool = True,
+        multiclass: bool = True,
     ) -> PreTransformTaskFactory:
         """
         Pre-transforms for segmentation tasks. If the target is required these transforms are applied as follows:
@@ -60,6 +63,8 @@ class PreTransformTaskFactory:
         ----------
         data_description : DataDescription
         requires_target : bool
+        multiclass : bool
+            Set this to false if you have a categorical mask and you want to one-hot encode it.
 
         Returns
         -------
@@ -77,9 +82,13 @@ class PreTransformTaskFactory:
             transforms.append(RenameLabels(remap_labels=data_description.remap_labels))
 
         transforms.append(
-            ConvertAnnotationsToMask(roi_name=data_description.roi_name, index_map=data_description.index_map)
+            ConvertAnnotationsToMask(
+                roi_name=data_description.roi_name, index_map=data_description.index_map, multiclass=multiclass
+            )
         )
-        transforms.append(OneHotEncodeMask(index_map=data_description.index_map))
+
+        if not multiclass:
+            transforms.append(OneHotEncodeMask(index_map=data_description.index_map))
 
         return cls(transforms)
 
