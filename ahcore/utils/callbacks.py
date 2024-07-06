@@ -27,6 +27,24 @@ logger = get_logger(__name__)
 logging.getLogger("pyvips").setLevel(logging.ERROR)
 
 
+def _validate_annotations(data_description, annotations: Optional[WsiAnnotations]) -> Optional[WsiAnnotations]:
+    if annotations is None:
+        return None
+
+    if isinstance(annotations, WsiAnnotations):
+        if data_description is None:
+            raise ValueError(
+                "Annotations as a `WsiAnnotations` class are provided but no data description is given."
+                "This is required to map the labels to indices."
+            )
+    elif isinstance(annotations, SlideImage):
+        pass  # We do not need a specific test for this
+    else:
+        raise NotImplementedError(f"Annotations of type {type(annotations)} are not supported.")
+
+    return annotations
+
+
 class _ValidationDataset(Dataset[DlupDatasetSample]):
     """Helper dataset to compute the validation metrics."""
 
@@ -59,8 +77,8 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         self._region_size = region_size
         self._logger = get_logger(type(self).__name__)
 
-        self._annotations = self._validate_annotations(annotations)
-        self._mask = self._validate_annotations(mask)
+        self._annotations = _validate_annotations(data_description, annotations)
+        self._mask = _validate_annotations(data_description, mask)
 
         self._grid = Grid.from_tiling(
             (0, 0),
@@ -73,23 +91,6 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
 
         self._regions = self._generate_regions()
         self._logger.debug(f"Number of validation regions: {len(self._regions)}")
-
-    def _validate_annotations(self, annotations: Optional[WsiAnnotations]) -> Optional[WsiAnnotations]:
-        if annotations is None:
-            return None
-
-        if isinstance(annotations, WsiAnnotations):
-            if self._data_description is None:
-                raise ValueError(
-                    "Annotations as a `WsiAnnotations` class are provided but no data description is given."
-                    "This is required to map the labels to indices."
-                )
-        elif isinstance(annotations, SlideImage):
-            pass  # We do not need a specific test for this
-        else:
-            raise NotImplementedError(f"Annotations of type {type(annotations)} are not supported.")
-
-        return annotations
 
     def _generate_regions(self) -> list[tuple[int, int]]:
         """Generate the regions to use. These regions are filtered grid cells where there is a mask.
@@ -156,7 +157,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         if x + width > self._reader.size[0] or y + height > self._reader.size[1]:
             region = self._read_and_pad_region(coordinates)
         else:
-            region = self._reader.read_region_raw(coordinates, self._region_size)
+            region = self._reader.read_region(coordinates, 0, self._region_size).numpy().transpose((2, 0, 1))
         return region
 
     def _read_and_pad_region(self, coordinates: tuple[int, int]) -> npt.NDArray[Any]:
@@ -164,7 +165,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         width, height = self._region_size
         new_width = min(width, self._reader.size[0] - x)
         new_height = min(height, self._reader.size[1] - y)
-        clipped_region = self._reader.read_region_raw((x, y), (new_width, new_height))
+        clipped_region = self._reader.read_region((x, y), 0, (new_width, new_height))
 
         prediction = np.zeros((clipped_region.shape[0], *self._region_size), dtype=clipped_region.dtype)
         prediction[:, :new_height, :new_width] = clipped_region
