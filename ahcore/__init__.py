@@ -1,6 +1,6 @@
 """Main ahcore module"""
 
-__version__ = "0.5.0"
+__version__ = "0.0.1"
 
 import ahcore.writers as writers
 
