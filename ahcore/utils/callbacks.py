@@ -1,7 +1,7 @@
 """Ahcore's callbacks"""
 
 from __future__ import annotations
-
+import pyvips
 import hashlib
 import logging
 from pathlib import Path
@@ -160,15 +160,16 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
             region = self._reader.read_region(coordinates, 0, self._region_size).numpy().transpose((2, 0, 1))
         return region
 
-    def _read_and_pad_region(self, coordinates: tuple[int, int]) -> npt.NDArray[Any]:
+    def _read_and_pad_region(self, coordinates: tuple[int, int]) -> pyvips.Image:
         x, y = coordinates
         width, height = self._region_size
         new_width = min(width, self._reader.size[0] - x)
         new_height = min(height, self._reader.size[1] - y)
         clipped_region = self._reader.read_region((x, y), 0, (new_width, new_height))
 
-        prediction = np.zeros((clipped_region.shape[0], *self._region_size), dtype=clipped_region.dtype)
-        prediction[:, :new_height, :new_width] = clipped_region
+        prediction = pyvips.Image.black(self._region_size[0], self._region_size[1])
+        prediction = prediction.insert(clipped_region, 0, 0)
+
         return prediction
 
     def _get_annotation_data(
