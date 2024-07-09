@@ -2,6 +2,6 @@
 
 defaults:
   - override /pre_transform: segmentation.yaml
-  - override /augmentations: segmentation.yaml
+  - override /augmentations: inference_norm.yaml
 
 task_name: "feature_extraction"

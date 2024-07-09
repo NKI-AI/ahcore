@@ -1,0 +1,11 @@
+_target_: ahcore.transforms.augmentations.AugmentationFactory
+
+# These transforms will be applied in order as a first step.
+initial_transforms:
+  - _target_: ahcore.transforms.augmentations.MeanStdNormalizer
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+intensity_augmentations: null
+geometric_augmentations: null
+final_transforms: null

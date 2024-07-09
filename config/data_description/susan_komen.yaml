@@ -1,0 +1,30 @@
+_target_: ahcore.utils.data.DataDescription
+data_dir: ${oc.env:DATA_DIR}
+annotations_dir: ${oc.env:ANNOTATIONS_DIR} 
+manifest_database_uri: sqlite:////home/e.marcus/projects/ahcore/testdb/debug.db
+manifest_name: v20240708vDEBUG
+split_version: "v1"
+mask_label: null
+mask_threshold: 0.6
+roi_name: null # This is the name of the label that carries the ROI
+use_roi: false 
+# Eg. 512 x 512 is: tile_size 726 x 726 and tile_overlap 107 x 107
+# Tiles are cropped in the transforms downstream, to ensure the patch is completely visible, they are extracted
+# slightly larger (sqrt 2) with sufficient overlap so we have a 512 stride.
+training_grid:
+  mpp: 4.0
+  output_tile_size: [1456, 1456]
+  tile_overlap: [0, 0]
+  tile_size: [1024, 1024]
+inference_grid:
+  mpp: 0.5
+  output_tile_size: null
+  tile_size: [224, 224]
+  tile_overlap: [0, 0]
+
+num_classes: 2
+use_class_weights: false   # Use the class weights in the loss
+apply_color_profile: false
+
+index_map:
+  specimen: 1

@@ -6,4 +6,4 @@ milvus_vector_db:
   password: ${oc.env:MILVUS_PASSWORD}
   collection_name: "path_fomo_cls_debug_coll"
   collection_type: "path_fomo_cls"
-  embedding_dim: ???
+  embedding_dim: 768

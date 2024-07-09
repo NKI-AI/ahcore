@@ -7,10 +7,10 @@ defaults:
   - datamodule: dataset.yaml
   - pre_transform: ???
   - augmentations: ???
-  - task: segmentation_inference.yaml
+  - task: feature_extraction.yaml
   - logger: null
   - lit_module: ???
-  - callbacks: inference.yaml
+  - callbacks: inference_milvus.yaml
   - trainer: default.yaml
   - hydra: default.yaml  # if we want to setup different hydra logging dirs / color log
   - paths: default.yaml
