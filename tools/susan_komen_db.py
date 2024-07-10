@@ -6,6 +6,7 @@ from dlup.backends import ImageBackend  # type: ignore
 from ahcore.utils.database_models import (
     CategoryEnum,
     Image,
+    ImageAnnotations,
     Manifest,
     Mask,
     Patient,
@@ -23,6 +24,7 @@ def populate_from_annotated_sk(
     session,
     image_folder: Path,
     mask_folder: Path,
+    annotation_folder: Path,
 ):
     """This is a basic example, adjust to your needs."""
     # TODO: We should do the mpp as well here
@@ -36,16 +38,12 @@ def populate_from_annotated_sk(
     session.flush()
 
     for iter, file in enumerate(image_folder.glob("*.svs")):
-        #-rw-r--r-- 1 j.teuwen j.teuwen  86K Jan 12 16:55  K102483.svs.geojson
-        #-rw-r--r-- 1 j.teuwen j.teuwen 112K Jan 12 16:55  K102487.svs.geojson
-        #-rw-r--r-- 1 j.teuwen j.teuwen 133K Jan 12 16:55  K102489.svs.geojson
-        #-rw-r--r-- 1 j.teuwen j.teuwen  40K Jan 12 16:56  K102490.svs.geojson
-        #-rw-r--r-- 1 j.teuwen j.teuwen  83K Jan 12 16:56  K102491.svs.geojson
         if file.name not in ["K102483.svs", "K102487.svs", "K102489.svs", "K102490.svs", "K102491.svs"]:
             continue
         patient_code = get_patient_from_sk_id(file.name)
 
         mask_path = mask_folder / file.name.replace(".svs", ".tiff")
+        annotation_path = annotation_folder / file.name.replace(".svs", ".svs.geojson")
 
         # Only add patient if it doesn't exist
         existing_patient = session.query(Patient).filter_by(patient_code=patient_code).first()  # type: ignore
@@ -67,7 +65,7 @@ def populate_from_annotated_sk(
             session.flush()
 
         with SlideImage.from_file_path(
-            image_folder / file.name, backend=ImageBackend.PYVIPS # type: ignore
+            image_folder / file.name, backend=ImageBackend.PYVIPS  # type: ignore
         ) as slide:  # type: ignore
             mpp = slide.mpp
             width, height = slide.size
@@ -87,9 +85,16 @@ def populate_from_annotated_sk(
         session.add(mask)
         session.commit()
 
+        # check if annotation exists, if so add it
+        if annotation_path.exists():
+            image_annotation = ImageAnnotations(filename=str(annotation_path), reader="GEOJSON", image=image)
+            session.add(image_annotation)
+            session.commit()
+
 
 if __name__ == "__main__":
-    annotation_folder = Path("SusanKomen/")
+    mask_folder = Path("SusanKomen/")
+    annotation_folder = Path("/data/groups/aiforoncology/derived/pathology/HendrikMessal_SusanKomen/v20250625/")
     image_folder = Path("/data/groups/aiforoncology/archive/pathology/SusanKomen/images/")
     with open_db("sqlite:////home/e.marcus/projects/ahcore/testdb/debug.db", False) as session:
-        populate_from_annotated_sk(session, image_folder, annotation_folder)
+        populate_from_annotated_sk(session, image_folder, mask_folder, annotation_folder)
