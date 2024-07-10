@@ -17,6 +17,10 @@ register_additional_config_search_path()
 def main(config: DictConfig) -> None:
     # Imports can be nested inside @hydra.main to optimize tab completion
     # https://github.com/facebookresearch/hydra/issues/934
+    import torch.multiprocessing as mp
+
+    mp.set_start_method("spawn", force=True)
+
     from ahcore.entrypoints import inference
     from ahcore.utils.io import extras, print_config, validate_config
 
