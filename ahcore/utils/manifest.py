@@ -351,7 +351,7 @@ def datasets_from_data_description(
             image_labels = get_labels_from_record(image)
             labels = None if patient_labels is image_labels is None else (patient_labels or []) + (image_labels or [])
             rois = _get_rois(mask, data_description, stage)
-            mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
+            mask_threshold = data_description.mask_threshold if data_description.mask_threshold is not None else 0.0
 
             dataset = TiledWsiDataset.from_standard_tiling(
                 path=image_root / image.filename,
