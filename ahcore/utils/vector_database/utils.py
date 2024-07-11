@@ -18,6 +18,23 @@ from ahcore.utils.manifest import DataManager, _get_rois, parse_annotations_from
 dotenv.load_dotenv(override=True)
 
 
+def calculate_overlap(x1: int, y1: int, size1: int, x2: int, y2: int, size2: int) -> float:
+    # Calculate the intersection coordinates
+    ix1 = max(x1, x2)
+    iy1 = max(y1, y2)
+    ix2 = min(x1 + size1, x2 + size2)
+    iy2 = min(y1 + size1, y2 + size2)
+
+    # Calculate intersection area
+    intersection_area = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+
+    # Calculate union area
+    union_area = 2 * size1 * size1 - intersection_area
+
+    # Return the overlap ratio
+    return intersection_area / union_area if union_area != 0 else 0
+
+
 def plot_tile(filename: str, mpp: float, x: int, y: int, width: int, height: int) -> None:
     """Plots a tile from a SlideImage."""
     image = SlideImage.from_file_path(filename)
@@ -52,8 +69,8 @@ class CoordinateCollate:
             if key == "path":
                 output["filename"] = str(Path(sample["path"]).name)
             if key == "coordinates":
-                output["coordinates_x"] = sample["coordinates"][0]
-                output["coordinates_y"] = sample["coordinates"][1]
+                output["coordinate_x"] = sample["coordinates"][0]
+                output["coordinate_y"] = sample["coordinates"][1]
             if key == "image":
                 output["image"] = sample["image"]
             if key == "mpp":

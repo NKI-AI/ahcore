@@ -79,7 +79,7 @@ class PrepareDataFactory:
         image = batch["image"]
         predictions = outputs["prediction"]
         unprocessed_fnames = [Path(fname) for fname in outputs["path"]]
-        prepared_fnames = [f"{local_fname.parent.name}/{local_fname.name}" for local_fname in unprocessed_fnames]
+        prepared_fnames = [f"{local_fname.name}" for local_fname in unprocessed_fnames]
         prepared_coordinates_x = outputs["coordinates"][0].cpu().numpy().tolist()
         prepared_coordinates_y = outputs["coordinates"][1].cpu().numpy().tolist()
         prepared_tile_sizes = [image.shape[-1] for i in range(image.shape[0])]  # assumes square tiles
