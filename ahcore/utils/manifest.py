@@ -146,11 +146,15 @@ def get_labels_from_record(record: Image | Patient) -> list[tuple[str, str]] | N
 
 
 def _get_rois(mask: WsiAnnotations | None, data_description: DataDescription, stage: str) -> Optional[Rois]:
-    if (mask is None) or (stage != "fit") or (not data_description.convert_mask_to_rois):
+    if (mask is None) or (not data_description.convert_mask_to_rois):
         return None
 
-    tile_size = data_description.training_grid.tile_size
-    tile_overlap = data_description.training_grid.tile_overlap
+    if stage == "fit":
+        tile_size = data_description.training_grid.tile_size
+        tile_overlap = data_description.training_grid.tile_overlap
+    else:
+        tile_size = data_description.inference_grid.tile_size
+        tile_overlap = data_description.inference_grid.tile_overlap
 
     return compute_rois(mask, tile_size=tile_size, tile_overlap=tile_overlap, centered=True)
 
