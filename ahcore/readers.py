@@ -216,7 +216,7 @@ class FileImageReader(abc.ABC):
         end_col = min((x + w - 1) // self._stride[0] + 1, total_cols)
 
         if self._stitching_mode == StitchingMode.AVERAGE:
-            overlap_count = np.ones((h, w), dtype=np.uint8)
+            overlap_count = np.zeros((h, w), dtype=np.uint8)
         stitched_image = np.zeros((self._num_channels, h, w), dtype=self._dtype)
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
@@ -268,6 +268,7 @@ class FileImageReader(abc.ABC):
                     raise ValueError("Unsupported stitching mode")
 
         if self._stitching_mode == StitchingMode.AVERAGE:
+            overlap_count[overlap_count == 0] = 1
             # Perform division to average the accumulated pixel values
             stitched_image = stitched_image / overlap_count[np.newaxis, :, :]
 
