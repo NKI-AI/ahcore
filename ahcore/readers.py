@@ -16,11 +16,11 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Literal, Optional, Type
 
+import cv2
 import h5py
 import numpy as np
 import PIL
 import pyvips
-import cv2
 import zarr
 from zarr.storage import ZipStore
 
@@ -232,6 +232,9 @@ class FileImageReader(abc.ABC):
                 img_start_x = max(0, start_x)
                 img_end_x = min(w, end_x)
 
+                for channel in range(self._num_channels):
+                    tile[channel] = cv2.GaussianBlur(tile[channel], (5, 5), 0)
+
                 if self._stitching_mode == StitchingMode.CROP:
                     crop_start_y = img_start_y - start_y
                     crop_end_y = img_end_y - start_y
@@ -252,8 +255,9 @@ class FileImageReader(abc.ABC):
                     tile_end_x = min(self._tile_size[0], w - start_x)
 
                     overlap_count[img_start_y:img_end_y, img_start_x:img_end_x] += 1
-                    stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] += \
-                        tile[:, tile_start_y:tile_end_y, tile_start_x:tile_end_x]
+                    stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] += tile[
+                        :, tile_start_y:tile_end_y, tile_start_x:tile_end_x
+                    ]
                 else:
                     raise ValueError("Unsupported stitching mode")
 
@@ -263,8 +267,9 @@ class FileImageReader(abc.ABC):
 
         # Adjust the precision and convert to float32 if necessary
         if self._precision != str(InferencePrecision.FP32) or self._stitching_mode == StitchingMode.AVERAGE:
-            stitched_image = (stitched_image / self._multiplier if self._precision != str(
-                InferencePrecision.FP32) else stitched_image).astype(np.float32)
+            stitched_image = (
+                stitched_image / self._multiplier if self._precision != str(InferencePrecision.FP32) else stitched_image
+            ).astype(np.float32)
 
         return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
 
