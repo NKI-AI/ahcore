@@ -192,8 +192,8 @@ class FileImageReader(abc.ABC):
         if self._file is None:
             self._open_file()
         assert self._file, "File is not open. Should not happen"
-        assert self._tile_size
-        assert self._tile_overlap
+        assert self._tile_size is not None, "self._tile_size should not be None"
+        assert self._tile_overlap is not None, "self._tile_overlap should not be None"
 
         image_dataset = self._file["data"]
         num_tiles = self._metadata["num_tiles"]
