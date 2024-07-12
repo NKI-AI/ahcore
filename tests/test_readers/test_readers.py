@@ -11,8 +11,7 @@ import pytest
 from ahcore.readers import FileImageReader, StitchingMode
 
 
-# A concrete implementation of FileImageReader for testing purposes
-class ConcreteFileImageReader(FileImageReader):
+class TestFileImageReader(FileImageReader):
     def _open_file_handle(self, filename: Path) -> h5py.File:
         return h5py.File(filename, "r")
 
@@ -102,7 +101,7 @@ def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
 def sample_image_reader(temp_h5_file: Path):
     stitching_mode = StitchingMode.AVERAGE
     tile_filter = (5, 5)
-    return ConcreteFileImageReader(temp_h5_file, stitching_mode, tile_filter)
+    return TestFileImageReader(temp_h5_file, stitching_mode, tile_filter)
 
 
 def test_initialization(sample_image_reader):
@@ -112,7 +111,7 @@ def test_initialization(sample_image_reader):
 
 
 def test_from_file_path(temp_h5_file: Path):
-    reader = ConcreteFileImageReader.from_file_path(temp_h5_file)
+    reader = TestFileImageReader.from_file_path(temp_h5_file)
     assert reader._filename == temp_h5_file
     assert reader._stitching_mode == StitchingMode.AVERAGE
     assert reader._tile_filter == (5, 5)
