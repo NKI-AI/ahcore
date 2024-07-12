@@ -20,6 +20,7 @@ import h5py
 import numpy as np
 import PIL
 import pyvips
+import cv2
 import zarr
 from zarr.storage import ZipStore
 
@@ -43,7 +44,7 @@ def crop_to_bbox(array: GenericNumberArray, bbox: BoundingBoxType) -> GenericNum
 class FileImageReader(abc.ABC):
     def __init__(self, filename: Path, stitching_mode: StitchingMode) -> None:
         self._filename = filename
-        self._stitching_mode = stitching_mode
+        self._stitching_mode = "AVERAGE"
 
         self.__empty_tile: GenericNumberArray | None = None
 
@@ -209,7 +210,7 @@ class FileImageReader(abc.ABC):
         end_col = min((x + w - 1) // self._stride[0] + 1, total_cols)
 
         if self._stitching_mode == StitchingMode.AVERAGE:
-            divisor_array = np.zeros((h, w), dtype=np.uint8)
+            overlap_count = np.ones((h, w), dtype=np.uint8)
         stitched_image = np.zeros((self._num_channels, h, w), dtype=self._dtype)
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
@@ -245,26 +246,25 @@ class FileImageReader(abc.ABC):
                     stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = cropped_tile
 
                 elif self._stitching_mode == StitchingMode.AVERAGE:
-                    raise NotImplementedError
                     tile_start_y = max(0, -start_y)
-                    tile_end_y = img_end_y - img_start_y
+                    tile_end_y = min(self._tile_size[1], h - start_y)
                     tile_start_x = max(0, -start_x)
-                    tile_end_x = img_end_x - img_start_x
+                    tile_end_x = min(self._tile_size[0], w - start_x)
 
-                    # TODO: Replace this with crop_to_bbox
-                    cropped_tile = tile[tile_start_y:tile_end_y, tile_start_x:tile_end_x]
-                    stitched_image[img_start_y:img_end_y, img_start_x:img_end_x] += cropped_tile
-                    divisor_array[img_start_y:img_end_y, img_start_x:img_end_x] += 1
+                    overlap_count[img_start_y:img_end_y, img_start_x:img_end_x] += 1
+                    stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] += \
+                        tile[:, tile_start_y:tile_end_y, tile_start_x:tile_end_x]
                 else:
                     raise ValueError("Unsupported stitching mode")
 
         if self._stitching_mode == StitchingMode.AVERAGE:
-            stitched_image = (stitched_image / divisor_array[..., np.newaxis]).astype(float)
+            # Perform division to average the accumulated pixel values
+            stitched_image = stitched_image / overlap_count[np.newaxis, :, :]
 
-        if self._precision != str(InferencePrecision.FP32):
-            # Always convert to float32.
-            stitched_image = stitched_image / self._multiplier
-            stitched_image = stitched_image.astype(np.float32)
+        # Adjust the precision and convert to float32 if necessary
+        if self._precision != str(InferencePrecision.FP32) or self._stitching_mode == StitchingMode.AVERAGE:
+            stitched_image = (stitched_image / self._multiplier if self._precision != str(
+                InferencePrecision.FP32) else stitched_image).astype(np.float32)
 
         return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
 
