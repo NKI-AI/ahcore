@@ -122,7 +122,7 @@ def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
     tile_size = (200, 200)  # Size of each tile
     tile_overlap = (50, 50)  # Overlap between tiles
     num_channels = 3
-    dtype = np.uint8
+    dtype = "uint8"
     precision = "FP32"
     multiplier = 1.0
     is_binary = False
@@ -142,7 +142,7 @@ def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
         f.attrs["has_color_profile"] = has_color_profile
         f.attrs["num_tiles"] = num_tiles
         f.create_dataset("data", (num_tiles, num_channels, tile_size[0], tile_size[1]), dtype=dtype)
-        f.create_dataset("tile_indices", (num_tiles,), dtype=dtype)
+        f.create_dataset("tile_indices", (num_tiles,), dtype=np.uint8)
 
         red_colored, green_colored, blue_colored, yellow_colored = create_colored_tiles(tile_size)
 
