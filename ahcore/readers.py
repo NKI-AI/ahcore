@@ -42,9 +42,10 @@ def crop_to_bbox(array: GenericNumberArray, bbox: BoundingBoxType) -> GenericNum
 
 
 class FileImageReader(abc.ABC):
-    def __init__(self, filename: Path, stitching_mode: StitchingMode) -> None:
+    def __init__(self, filename: Path, stitching_mode: StitchingMode, tile_filter: tuple[int, int]) -> None:
         self._filename = filename
-        self._stitching_mode = "AVERAGE"
+        self._stitching_mode = stitching_mode
+        self._tile_filter = tile_filter
 
         self.__empty_tile: GenericNumberArray | None = None
 
@@ -62,8 +63,13 @@ class FileImageReader(abc.ABC):
         self._is_binary = None
 
     @classmethod
-    def from_file_path(cls, filename: Path, stitching_mode: StitchingMode = StitchingMode.CROP) -> "FileImageReader":
-        return cls(filename=filename, stitching_mode=stitching_mode)
+    def from_file_path(
+        cls,
+        filename: Path,
+        stitching_mode: StitchingMode = StitchingMode.AVERAGE,
+        tile_filter: tuple[int, int] = (5, 5),
+    ) -> "FileImageReader":
+        return cls(filename=filename, stitching_mode=stitching_mode, tile_filter=tile_filter)
 
     @property
     def size(self) -> tuple[int, int]:
@@ -233,7 +239,7 @@ class FileImageReader(abc.ABC):
                 img_end_x = min(w, end_x)
 
                 for channel in range(self._num_channels):
-                    tile[channel] = cv2.GaussianBlur(tile[channel], (5, 5), 0)
+                    tile[channel] = cv2.GaussianBlur(tile[channel], self._tile_filter, 0)
 
                 if self._stitching_mode == StitchingMode.CROP:
                     crop_start_y = img_start_y - start_y
