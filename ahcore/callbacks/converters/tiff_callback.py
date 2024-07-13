@@ -122,7 +122,7 @@ def _write_tiff(
             mpp=cache_reader.mpp,
             tile_size=tile_size,
             pyramid=True,
-            compression=TiffCompression.LZW,
+            compression=TiffCompression.ZSTD,
             quality=100,
             colormap=colormap,
         )
