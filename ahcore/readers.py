@@ -215,10 +215,6 @@ class FileImageReader(abc.ABC):
         if self._stitching_mode == StitchingMode.AVERAGE:
             average_mask = np.zeros((h, w), dtype=self._dtype)
 
-        # Since deep learning models can output negative values, we need to reinitialize the image with -inf
-        elif self._stitching_mode == StitchingMode.MAXIMUM:
-            stitched_image = stitched_image - np.inf
-
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
                 tile_idx = (i * total_cols) + j
@@ -268,6 +264,11 @@ class FileImageReader(abc.ABC):
                     tile_end_y = min(self._tile_size[1], h - start_y)
                     tile_start_x = max(0, -start_x)
                     tile_end_x = min(self._tile_size[0], w - start_x)
+
+                    if i == start_row and j == start_col:
+                        stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = tile[
+                            :, tile_start_y:tile_end_y, tile_start_x:tile_end_x
+                        ]
 
                     stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = np.maximum(
                         stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x],
