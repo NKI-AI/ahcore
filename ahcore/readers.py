@@ -16,7 +16,6 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Literal, Optional, Type
 
-import cv2
 import h5py
 import numpy as np
 import PIL
@@ -209,7 +208,10 @@ class FileImageReader(abc.ABC):
         end_col = min((x + w - 1) // self._stride[0] + 1, total_cols)
 
         if self._stitching_mode == StitchingMode.AVERAGE:
-            average_mask = np.zeros((h, w), dtype=np.uint8)
+            average_mask = np.zeros((h, w), dtype=self._dtype)
+        # Since deep learning models can output negative values, we need to initialize the maximum_mask image with -inf
+        elif self._stitching_mode == StitchingMode.MAXIMUM:
+            maximum_mask = np.zeros((self._num_channels, h, w), dtype=self._dtype) - np.inf
         stitched_image = np.zeros((self._num_channels, h, w), dtype=self._dtype)
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
@@ -254,19 +256,34 @@ class FileImageReader(abc.ABC):
                     stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] += tile[
                         :, tile_start_y:tile_end_y, tile_start_x:tile_end_x
                     ]
+
+                elif self._stitching_mode == StitchingMode.MAXIMUM:
+                    tile_start_y = max(0, -start_y)
+                    tile_end_y = min(self._tile_size[1], h - start_y)
+                    tile_start_x = max(0, -start_x)
+                    tile_end_x = min(self._tile_size[0], w - start_x)
+
+                    # Update maximum mask
+                    maximum_mask[:, img_start_y:img_end_y, img_start_x:img_end_x] = np.maximum(
+                        maximum_mask[:, img_start_y:img_end_y, img_start_x:img_end_x],
+                        tile[:, tile_start_y:tile_end_y, tile_start_x:tile_end_x],
+                    )
+
                 else:
                     raise ValueError("Unsupported stitching mode")
+
+        # Adjust the precision and convert to float32 before averaging to avoid loss of precision.
+        stitched_image = (
+            stitched_image / self._multiplier if self._precision != str(InferencePrecision.FP32) else stitched_image
+        ).astype(np.float32)
 
         if self._stitching_mode == StitchingMode.AVERAGE:
             overlap_regions = average_mask > 0
             # Perform division to average the accumulated pixel values
-            stitched_image[:, overlap_regions] /= average_mask[overlap_regions]
+            stitched_image[:, overlap_regions] = stitched_image[:, overlap_regions] / average_mask[overlap_regions]
 
-        # Adjust the precision and convert to float32 if necessary
-        if self._precision != str(InferencePrecision.FP32):
-            stitched_image = (
-                stitched_image / self._multiplier if self._precision != str(InferencePrecision.FP32) else stitched_image
-            ).astype(np.float32)
+        elif self._stitching_mode == StitchingMode.MAXIMUM:
+            stitched_image = maximum_mask
 
         return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
 

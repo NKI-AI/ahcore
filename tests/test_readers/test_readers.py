@@ -195,7 +195,7 @@ def test_get_scaling(sample_image_reader: TestFileImageReader) -> None:
     assert sample_image_reader.get_scaling(0.25) == 2.0
 
 
-def test_read_region(sample_image_reader: TestFileImageReader) -> None:
+def test_average_stitching_mode(sample_image_reader: TestFileImageReader) -> None:
     sample_image_reader._open_file()
     with patch("pyvips.Image.new_from_array") as mock_pyvips:
         # Reading a region that covers all 4 tiles
@@ -243,6 +243,67 @@ def test_read_region(sample_image_reader: TestFileImageReader) -> None:
             + blue_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
             + yellow_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
         ) / 4
+
+        assert np.all(stitched_image[:, :150, 150:200] == overlap_color_top)  # Top overlap
+        assert np.all(stitched_image[:, 150:200, :150] == overlap_color_left)  # Left overlap
+        assert np.all(stitched_image[:, 200:350, 150:200] == overlap_color_bottom)  # Bottom overlap
+        assert np.all(stitched_image[:, 150:200, 200:350] == overlap_color_right)  # Right overlap
+        assert np.all(stitched_image[:, 150:200, 150:200] == overlap_color_center)  # Center overlap
+
+
+def test_maximum_stitching_mode(temp_h5_file: Path) -> None:
+    stitching_mode = StitchingMode.MAXIMUM
+    reader = TestFileImageReader(temp_h5_file, stitching_mode)
+    reader._open_file()
+
+    with patch("pyvips.Image.new_from_array") as mock_pyvips:
+        # Reading a region that covers all 4 tiles
+        region = reader.read_region((0, 0), 0, (350, 350))
+        mock_pyvips.assert_called_once()
+
+        stitched_image = mock_pyvips.call_args[0][0]
+
+        assert stitched_image.shape == (350, 350, 3)  # Shape should match the requested region
+
+        # Convert stitched_image from (H, W, C) to (C, H, W) for easier color checks
+        stitched_image = stitched_image.transpose(2, 0, 1)
+
+        # Check the non-overlapping regions
+        red_colored, green_colored, blue_colored, yellow_colored = create_colored_tiles((200, 200))
+
+        expected_red, expected_green, expected_blue, expected_yellow = (
+            red_colored[:150, :150, :],
+            green_colored[:150, :150, :],
+            blue_colored[:150, :150, :],
+            yellow_colored[:150, :150, :],
+        )
+
+        assert np.all(stitched_image[:, :150, :150] == expected_red.transpose(2, 0, 1))  # Top-left tile (Red)
+        assert np.all(stitched_image[:, :150, 200:] == expected_green.transpose(2, 0, 1))  # Top-right tile (Green)
+        assert np.all(stitched_image[:, 200:, :150] == expected_blue.transpose(2, 0, 1))  # Bottom-left tile (Blue)
+        assert np.all(stitched_image[:, 200:, 200:] == expected_yellow.transpose(2, 0, 1))  # Bottom-right tile (Yellow)
+
+        # Check the overlapping regions for maximum value
+        overlap_color_top = np.maximum(
+            red_colored.transpose(2, 0, 1)[:, :150, 150:200], green_colored.transpose(2, 0, 1)[:, :150, 150:200]
+        )
+        overlap_color_left = np.maximum(
+            red_colored.transpose(2, 0, 1)[:, 150:200, :150], blue_colored.transpose(2, 0, 1)[:, 150:200, :150]
+        )
+        overlap_color_bottom = np.maximum(
+            blue_colored.transpose(2, 0, 1)[:, :150, 150:200], yellow_colored.transpose(2, 0, 1)[:, :150, 150:200]
+        )
+        overlap_color_right = np.maximum(
+            green_colored.transpose(2, 0, 1)[:, 150:200, :150], yellow_colored.transpose(2, 0, 1)[:, 150:200, :150]
+        )
+        overlap_color_center = np.maximum.reduce(
+            [
+                red_colored.transpose(2, 0, 1)[:, 150:200, 150:200],
+                green_colored.transpose(2, 0, 1)[:, 150:200, 150:200],
+                blue_colored.transpose(2, 0, 1)[:, 150:200, 150:200],
+                yellow_colored.transpose(2, 0, 1)[:, 150:200, 150:200],
+            ]
+        )
 
         assert np.all(stitched_image[:, :150, 150:200] == overlap_color_top)  # Top overlap
         assert np.all(stitched_image[:, 150:200, :150] == overlap_color_left)  # Left overlap
