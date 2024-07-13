@@ -60,7 +60,7 @@ class FileImageReader(abc.ABC):
         self._is_binary = None
 
     @classmethod
-    def from_file_path(cls, filename: Path, stitching_mode: StitchingMode = StitchingMode.AVERAGE) -> "FileImageReader":
+    def from_file_path(cls, filename: Path, stitching_mode: StitchingMode = StitchingMode.CROP) -> "FileImageReader":
         return cls(filename=filename, stitching_mode=stitching_mode)
 
     @property
