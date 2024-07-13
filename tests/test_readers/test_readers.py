@@ -33,7 +33,7 @@ def colorize(image_array: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
 
 
 def create_colored_tiles(
-        tile_size: tuple[int, int],
+    tile_size: tuple[int, int],
 ) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8], npt.NDArray[np.uint8], npt.NDArray[np.uint8]]:
     # Create class index images
     red_image = np.full((tile_size[0], tile_size[1]), 2, dtype=np.uint8)
@@ -164,21 +164,18 @@ def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
 @pytest.fixture
 def sample_image_reader(temp_h5_file: Path) -> TestFileImageReader:
     stitching_mode = StitchingMode.AVERAGE
-    tile_filter = (5, 5)
-    return TestFileImageReader(temp_h5_file, stitching_mode, tile_filter)
+    return TestFileImageReader(temp_h5_file, stitching_mode)
 
 
 def test_initialization(sample_image_reader: TestFileImageReader) -> None:
     assert sample_image_reader._filename.is_file()
     assert sample_image_reader._stitching_mode == StitchingMode.AVERAGE
-    assert sample_image_reader._tile_filter == (5, 5)
 
 
 def test_from_file_path(temp_h5_file: Path) -> None:
     reader = TestFileImageReader.from_file_path(temp_h5_file)
     assert reader._filename == temp_h5_file
     assert reader._stitching_mode == StitchingMode.AVERAGE
-    assert reader._tile_filter == (5, 5)
 
 
 def test_mpp(sample_image_reader: TestFileImageReader) -> None:
@@ -229,31 +226,23 @@ def test_read_region(sample_image_reader: TestFileImageReader) -> None:
 
         # Check the overlapping regions
         overlap_color_top = (
-                                    red_colored.transpose(2, 0, 1)[:, :150, 150:200] + green_colored.transpose(2, 0, 1)[
-                                                                                       :, :150, 150:200]
-                            ) / 2
+            red_colored.transpose(2, 0, 1)[:, :150, 150:200] + green_colored.transpose(2, 0, 1)[:, :150, 150:200]
+        ) / 2
         overlap_color_left = (
-                                     red_colored.transpose(2, 0, 1)[:, 150:200, :150] + blue_colored.transpose(2, 0, 1)[
-                                                                                        :, 150:200, :150]
-                             ) / 2
+            red_colored.transpose(2, 0, 1)[:, 150:200, :150] + blue_colored.transpose(2, 0, 1)[:, 150:200, :150]
+        ) / 2
         overlap_color_bottom = (
-                                       blue_colored.transpose(2, 0, 1)[:, :150, 150:200] + yellow_colored.transpose(2,
-                                                                                                                    0,
-                                                                                                                    1)[
-                                                                                           :, :150, 150:200]
-                               ) / 2
+            blue_colored.transpose(2, 0, 1)[:, :150, 150:200] + yellow_colored.transpose(2, 0, 1)[:, :150, 150:200]
+        ) / 2
         overlap_color_right = (
-                                      green_colored.transpose(2, 0, 1)[:, 150:200, :150] + yellow_colored.transpose(2,
-                                                                                                                    0,
-                                                                                                                    1)[
-                                                                                           :, 150:200, :150]
-                              ) / 2
+            green_colored.transpose(2, 0, 1)[:, 150:200, :150] + yellow_colored.transpose(2, 0, 1)[:, 150:200, :150]
+        ) / 2
         overlap_color_center = (
-                                       red_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
-                                       + green_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
-                                       + blue_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
-                                       + yellow_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
-                               ) / 4
+            red_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
+            + green_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
+            + blue_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
+            + yellow_colored.transpose(2, 0, 1)[:, 150:200, 150:200]
+        ) / 4
 
         assert np.all(stitched_image[:, :150, 150:200] == overlap_color_top)  # Top overlap
         assert np.all(stitched_image[:, 150:200, :150] == overlap_color_left)  # Left overlap

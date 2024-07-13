@@ -42,11 +42,9 @@ def crop_to_bbox(array: GenericNumberArray, bbox: BoundingBoxType) -> GenericNum
 
 
 class FileImageReader(abc.ABC):
-    def __init__(self, filename: Path, stitching_mode: StitchingMode, tile_filter: tuple[int, int]) -> None:
+    def __init__(self, filename: Path, stitching_mode: StitchingMode) -> None:
         self._filename = filename
         self._stitching_mode = stitching_mode
-        self._tile_filter = tile_filter
-
         self.__empty_tile: GenericNumberArray | None = None
 
         self._file: Optional[Any] = None
@@ -63,13 +61,8 @@ class FileImageReader(abc.ABC):
         self._is_binary = None
 
     @classmethod
-    def from_file_path(
-        cls,
-        filename: Path,
-        stitching_mode: StitchingMode = StitchingMode.AVERAGE,
-        tile_filter: tuple[int, int] = (5, 5),
-    ) -> "FileImageReader":
-        return cls(filename=filename, stitching_mode=stitching_mode, tile_filter=tile_filter)
+    def from_file_path(cls, filename: Path, stitching_mode: StitchingMode = StitchingMode.AVERAGE) -> "FileImageReader":
+        return cls(filename=filename, stitching_mode=stitching_mode)
 
     @property
     def size(self) -> tuple[int, int]:
@@ -216,7 +209,7 @@ class FileImageReader(abc.ABC):
         end_col = min((x + w - 1) // self._stride[0] + 1, total_cols)
 
         if self._stitching_mode == StitchingMode.AVERAGE:
-            overlap_count = np.zeros((h, w), dtype=np.uint8)
+            average_mask = np.zeros((h, w), dtype=np.uint8)
         stitched_image = np.zeros((self._num_channels, h, w), dtype=self._dtype)
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
@@ -238,9 +231,6 @@ class FileImageReader(abc.ABC):
                 img_start_x = max(0, start_x)
                 img_end_x = min(w, end_x)
 
-                for channel in range(self._num_channels):
-                    tile[channel] = cv2.GaussianBlur(tile[channel], self._tile_filter, 0)
-
                 if self._stitching_mode == StitchingMode.CROP:
                     crop_start_y = img_start_y - start_y
                     crop_end_y = img_end_y - start_y
@@ -260,7 +250,7 @@ class FileImageReader(abc.ABC):
                     tile_start_x = max(0, -start_x)
                     tile_end_x = min(self._tile_size[0], w - start_x)
 
-                    overlap_count[img_start_y:img_end_y, img_start_x:img_end_x] += 1
+                    average_mask[img_start_y:img_end_y, img_start_x:img_end_x] += 1
                     stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] += tile[
                         :, tile_start_y:tile_end_y, tile_start_x:tile_end_x
                     ]
@@ -268,12 +258,12 @@ class FileImageReader(abc.ABC):
                     raise ValueError("Unsupported stitching mode")
 
         if self._stitching_mode == StitchingMode.AVERAGE:
-            overlap_count[overlap_count == 0] = 1
+            overlap_regions = average_mask > 0
             # Perform division to average the accumulated pixel values
-            stitched_image = stitched_image / overlap_count[np.newaxis, :, :]
+            stitched_image[:, overlap_regions] /= average_mask[overlap_regions]
 
         # Adjust the precision and convert to float32 if necessary
-        if self._precision != str(InferencePrecision.FP32) or self._stitching_mode == StitchingMode.AVERAGE:
+        if self._precision != str(InferencePrecision.FP32):
             stitched_image = (
                 stitched_image / self._multiplier if self._precision != str(InferencePrecision.FP32) else stitched_image
             ).astype(np.float32)
