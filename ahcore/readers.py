@@ -266,6 +266,7 @@ class FileImageReader(abc.ABC):
                     tile_end_x = min(self._tile_size[0], w - start_x)
 
                     if i == start_row and j == start_col:
+                        # The first tile cannot be compared with anything. So, we just copy it.
                         stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = tile[
                             :, tile_start_y:tile_end_y, tile_start_x:tile_end_x
                         ]
