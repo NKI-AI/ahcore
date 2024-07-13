@@ -202,17 +202,23 @@ class FileImageReader(abc.ABC):
             logger.error(f"Requested region is out of bounds: {location}, {self._size}")
             raise ValueError("Requested region is out of bounds")
 
+        if self._stitching_mode not in StitchingMode:
+            raise ValueError(f"Stitching mode {self._stitching_mode} is not supported.")
+
         start_row = y // self._stride[1]
         end_row = min((y + h - 1) // self._stride[1] + 1, total_rows)
         start_col = x // self._stride[0]
         end_col = min((x + w - 1) // self._stride[0] + 1, total_cols)
 
+        stitched_image = np.zeros((self._num_channels, h, w), dtype=self._dtype)
+
         if self._stitching_mode == StitchingMode.AVERAGE:
             average_mask = np.zeros((h, w), dtype=self._dtype)
-        # Since deep learning models can output negative values, we need to initialize the maximum_mask image with -inf
+
+        # Since deep learning models can output negative values, we need to reinitialize the image with -inf
         elif self._stitching_mode == StitchingMode.MAXIMUM:
-            maximum_mask = np.zeros((self._num_channels, h, w), dtype=self._dtype) - np.inf
-        stitched_image = np.zeros((self._num_channels, h, w), dtype=self._dtype)
+            stitched_image = stitched_image - np.inf
+
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
                 tile_idx = (i * total_cols) + j
@@ -263,14 +269,10 @@ class FileImageReader(abc.ABC):
                     tile_start_x = max(0, -start_x)
                     tile_end_x = min(self._tile_size[0], w - start_x)
 
-                    # Update maximum mask
-                    maximum_mask[:, img_start_y:img_end_y, img_start_x:img_end_x] = np.maximum(
-                        maximum_mask[:, img_start_y:img_end_y, img_start_x:img_end_x],
+                    stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = np.maximum(
+                        stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x],
                         tile[:, tile_start_y:tile_end_y, tile_start_x:tile_end_x],
                     )
-
-                else:
-                    raise ValueError("Unsupported stitching mode")
 
         # Adjust the precision and convert to float32 before averaging to avoid loss of precision.
         stitched_image = (
@@ -281,9 +283,6 @@ class FileImageReader(abc.ABC):
             overlap_regions = average_mask > 0
             # Perform division to average the accumulated pixel values
             stitched_image[:, overlap_regions] = stitched_image[:, overlap_regions] / average_mask[overlap_regions]
-
-        elif self._stitching_mode == StitchingMode.MAXIMUM:
-            stitched_image = maximum_mask
 
         return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
 
