@@ -277,9 +277,8 @@ class FileImageReader(abc.ABC):
                     )
 
         # Adjust the precision and convert to float32 before averaging to avoid loss of precision.
-        stitched_image = (
-            stitched_image / self._multiplier if self._precision != str(InferencePrecision.FP32) else stitched_image
-        ).astype(np.float32)
+        stitched_image = stitched_image / self._multiplier
+        stitched_image = stitched_image.astype(InferencePrecision.FP32.value)
 
         if self._stitching_mode == StitchingMode.AVERAGE:
             overlap_regions = average_mask > 0
