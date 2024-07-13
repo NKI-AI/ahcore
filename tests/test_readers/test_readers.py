@@ -175,7 +175,7 @@ def test_initialization(sample_image_reader: TestFileImageReader) -> None:
 def test_from_file_path(temp_h5_file: Path) -> None:
     reader = TestFileImageReader.from_file_path(temp_h5_file)
     assert reader._filename == temp_h5_file
-    assert reader._stitching_mode == StitchingMode.AVERAGE
+    assert reader._stitching_mode == StitchingMode.CROP
 
 
 def test_mpp(sample_image_reader: TestFileImageReader) -> None:
