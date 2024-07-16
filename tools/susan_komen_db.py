@@ -81,20 +81,20 @@ def populate_from_annotated_sk(
         session.add(image)
         session.flush()  # Flush so that Image ID is populated for future records
 
-        mask = Mask(filename=str(mask_path), reader="TIFFFILE", image=image)
+        mask = Mask(filename=str(mask_path.name), reader="TIFFFILE", image=image)
         session.add(mask)
         session.commit()
 
         # check if annotation exists, if so add it
         if annotation_path.exists():
-            image_annotation = ImageAnnotations(filename=str(annotation_path), reader="GEOJSON", image=image)
+            image_annotation = ImageAnnotations(filename=str(annotation_path.name), reader="GEOJSON", image=image)
             session.add(image_annotation)
             session.commit()
 
 
 if __name__ == "__main__":
-    mask_folder = Path("SusanKomen/")
-    annotation_folder = Path("/data/groups/aiforoncology/derived/pathology/HendrikMessal_SusanKomen/v20250625/")
-    image_folder = Path("/data/groups/aiforoncology/archive/pathology/SusanKomen/images/")
+    mask_folder = Path("/processing/e.marcus/susankomen_data/masks/SusanKomen")
+    annotation_folder = Path("/processing/e.marcus/susankomen_data/annotations/v20250625/")
+    image_folder = Path("/processing/e.marcus/susankomen_data/images/")
     with open_db("sqlite:////home/e.marcus/projects/ahcore/testdb/debug.db", False) as session:
         populate_from_annotated_sk(session, image_folder, mask_folder, annotation_folder)
