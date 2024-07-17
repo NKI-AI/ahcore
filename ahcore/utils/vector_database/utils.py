@@ -4,15 +4,11 @@ from typing import Any, Generator
 
 import dotenv
 import hydra
-import matplotlib.pyplot as plt
-import numpy as np
-from dlup import SlideImage
 from dlup.backends import ImageBackend
 from dlup.data.dataset import TiledWsiDataset
 from dlup.tiling import GridOrder, TilingMode
 from omegaconf import OmegaConf
 from pymilvus import Collection, connections, utility
-from pymilvus.client.abstract import Hit
 from torch.utils.data import DataLoader
 
 from ahcore.data.dataset import ConcatDataset
@@ -38,27 +34,6 @@ def calculate_overlap(x1: int, y1: int, size1: int, x2: int, y2: int, size2: int
 
     # Return the overlap ratio
     return intersection_area / union_area if union_area != 0 else 0
-
-
-def plot_tile(hit: Hit) -> None:
-    """Plots a tile from a SlideImage."""
-    filename, x, y, width, height, mpp = (
-        hit.filename,
-        hit.coordinate_x,
-        hit.coordinate_y,
-        hit.tile_size,
-        hit.tile_size,
-        hit.mpp,
-    )
-    data_dir = os.environ.get("DATA_DIR")
-    filename = Path(data_dir) / filename
-
-    image = SlideImage.from_file_path(filename)
-    scaling = image.get_scaling(mpp)
-    tile = image.read_region((x, y), scaling, (width, height))
-    tile = tile.numpy().astype(np.uint8)
-    plt.imshow(tile)
-    plt.savefig("/home/e.marcus/projects/ahcore/debug_tile_plots/tile.png")
 
 
 def delete_collection(collection_name: str) -> None:

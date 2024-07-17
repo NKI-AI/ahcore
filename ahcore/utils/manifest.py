@@ -354,7 +354,7 @@ def datasets_from_data_description(
             assert isinstance(mask, WsiAnnotations) or (mask is None) or isinstance(mask, SlideImage)
             image_labels = get_labels_from_record(image)
             labels = None if patient_labels is image_labels is None else (patient_labels or []) + (image_labels or [])
-            rois = _get_rois(mask, data_description, stage)
+            rois = _get_rois(mask, data_description, stage) if data_description.use_roi else None
             mask_threshold = data_description.mask_threshold if data_description.mask_threshold is not None else 0.0
 
             dataset = TiledWsiDataset.from_standard_tiling(

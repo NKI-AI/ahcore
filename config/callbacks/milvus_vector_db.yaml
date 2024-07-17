@@ -4,6 +4,6 @@ milvus_vector_db:
   port: ${oc.env:MILVUS_PORT}
   user: ${oc.env:MILVUS_USER}
   password: ${oc.env:MILVUS_PASSWORD}
-  collection_name: "path_fomo_cls_debug_coll"
+  collection_name: ??? #"path_fomo_5wsi_annotated_test"
   collection_type: "path_fomo_cls"
   embedding_dim: 768

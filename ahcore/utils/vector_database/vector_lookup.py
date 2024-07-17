@@ -2,14 +2,19 @@ import os
 from typing import Any
 
 import dotenv
+import numpy as np
+import numpy.typing as npt
+import shapely
 from dlup import SlideImage
+from dlup.annotations import AnnotationClass
+from dlup.annotations import Polygon as DlupPolygon
 from dlup.annotations import WsiAnnotations
 from pymilvus import Collection, connections
 from pymilvus.client.abstract import Hit, SearchResult
 from shapely import box
 
 from ahcore.utils.data import DataDescription
-from ahcore.utils.debug_utils import time_it
+from ahcore.utils.vector_database.plot_utils import plot_wsi_and_annotation_overlay
 from ahcore.utils.vector_database.utils import (
     calculate_overlap,
     construct_dataloader,
@@ -27,8 +32,12 @@ def connect_to_milvus(host: str, port: int, alias: str, user: str, password: str
 
 
 def query_annotated_vectors(
-    data_description: DataDescription, collection: Collection, min_overlap: float = 0.25
+    data_description: DataDescription, collection: Collection, min_overlap: float = 0.25, force_recompute: bool = False
 ) -> list[float]:
+    cache_location = "/processing/e.marcus/average_annotated_vector.npy"
+    if not force_recompute and os.path.exists(cache_location):
+        return list(np.load(cache_location))
+
     dataset_iterator = create_dataset_iterator(data_description=data_description)
     dataset = construct_dataset(dataset_iterator)
     dataloader = construct_dataloader(dataset, num_workers=0, batch_size=1)
@@ -47,16 +56,22 @@ def query_annotated_vectors(
             print(f"Processed {i} entries")
 
     average_vector = [sum(x) / len(x) for x in zip(*vectors)]
+    np.save(cache_location, average_vector)
 
     return average_vector
 
 
 def create_index(collection: Collection, index_params: dict[str, Any] | None = None) -> None:
     if index_params is None:
+        # index_params = {
+        #     "index_type": "FLAT",
+        #     "metric_type": "L2",
+        #     "params": {"nlist": 2048},
+        # }
         index_params = {
             "index_type": "FLAT",
-            "metric_type": "L2",
-            "params": {"nlist": 2048},
+            "metric_type": "COSINE",
+            "params": {"nlist": 8192},
         }
     collection.create_index(field_name="embedding", index_params=index_params)
 
@@ -111,9 +126,16 @@ def search_vectors_in_radius(
     range_filter: float = 0.0,
 ) -> list[list[str, Any]]:
     # Define the search parameters
+    # param = {
+    #     "metric_type": "L2",
+    #     "params": {"radius": search_radius, "range_filter": range_filter},  # Below this, the results are not returned
+    # }
     param = {
-        "metric_type": "L2",
-        "params": {"radius": search_radius, "range_filter": range_filter},  # Below this, the results are not returned
+        "metric_type": "COSINE",
+        "params": {
+            "radius": search_radius,  # Radius of the search circle
+            "range_filter": range_filter,  # Range filter to filter out vectors that are not within the search circle
+        },
     }
 
     # Execute the query
@@ -128,7 +150,6 @@ def search_vectors_in_radius(
     return results
 
 
-@time_it
 def extract_results_per_wsi(search_results: SearchResult) -> dict[str, list[Hit]]:
     """Extracts search results per WSI. Note this is only used for testing purposes on a small dataset."""
     hits = search_results[0]
@@ -143,20 +164,53 @@ def extract_results_per_wsi(search_results: SearchResult) -> dict[str, list[Hit]
 
 def compute_iou_from_hits(image: SlideImage, annotation: WsiAnnotations, hits: list[Hit]) -> float:
     """Computes IoU between a hit and the annotations"""
-    union_area = 0.0
-    intersection_area = 0.0
+    total_union_area = 0.0
+    total_intersection_area = 0.0
     scaling = image.get_scaling(0.5)  # We inference at 0.5 mpp
+
     for hit in hits:
         x, y, width, height = hit.coordinate_x, hit.coordinate_y, hit.tile_size, hit.tile_size
-        bounding_box = box(0, 0, width, height)  # Center 0, as the annotation below will do so as well
-        annotations = annotation.read_region((x, y), scaling, (width, height))
-        for local_annotation in annotations:
-            local_intersection = local_annotation.intersection(bounding_box)
-            intersection_area += local_intersection.area
-            union_area += 2 * bounding_box.area - local_intersection.area
+        location = (x, y)
 
-    total_iou = intersection_area / union_area if union_area != 0 else 0
+        def _affine_coords(coords: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
+            return coords * scaling - np.asarray(location, dtype=np.float_)
+
+        rect = box(x, y, x + width, y + height)
+        rect = shapely.transform(rect, _affine_coords)  # Transform the coordinates
+        annotations = annotation.read_region((x, y), scaling, (width, height))
+        # if not annotations:
+        #     print("test")
+
+        local_intersection_area = 0
+        for local_annotation in annotations:
+            local_intersection = local_annotation.intersection(rect)
+            local_intersection_area += local_intersection.area
+            if local_intersection.area == 0:
+                print("test")
+
+        if local_intersection_area == 0:  # No intersect between box and annotations
+            total_union_area += 2 * rect.area
+        else:
+            total_intersection_area += local_intersection_area
+            total_union_area += 2 * rect.area - local_intersection_area
+
+    total_iou = total_intersection_area / total_union_area if total_union_area != 0 else 0
     return total_iou
+
+
+def create_wsi_annotation_from_hits(hits: list[Hit]) -> WsiAnnotations:
+    """Creates a WsiAnnotations object from the hits"""
+    polygon_list = []
+
+    for hit in hits:
+        x, y, width, height = hit.coordinate_x, hit.coordinate_y, hit.tile_size, hit.tile_size
+        rect = box(x, y, x + width, y + height)
+        polygon = DlupPolygon(rect, a_cls=AnnotationClass(label="hits", annotation_type="POLYGON"))
+        polygon_list.append(polygon)
+
+    annotations = WsiAnnotations(layers=polygon_list)
+
+    return annotations
 
 
 def compute_iou_per_wsi(search_results: SearchResult, data_dir: str, annotations_dir: str) -> dict[str, float]:
@@ -166,10 +220,14 @@ def compute_iou_per_wsi(search_results: SearchResult, data_dir: str, annotations
 
     for filename, hits in hits_per_wsi.items():
         image_filename, annotations_filename = generate_filenames(filename, data_dir, annotations_dir)
+        hit_annotations = create_wsi_annotation_from_hits(hits)
         image = SlideImage.from_file_path(image_filename)
         annotation = WsiAnnotations.from_geojson(annotations_filename)
-        iou = compute_iou_from_hits(image, annotation, hits)
-        iou_per_wsi[filename] = iou
+        plot_wsi_and_annotation_overlay(
+            image, annotation, hit_annotations, mpp=20, tile_size=(20, 20), filename_appendage=filename
+        )
+        # iou = compute_iou_from_hits(image, annotation, hits)
+        # iou_per_wsi[filename] = iou
     return iou_per_wsi
 
 
@@ -182,17 +240,19 @@ if __name__ == "__main__":
         port=os.environ.get("MILVUS_PORT"),
         alias=os.environ.get("MILVUS_ALIAS"),
     )
-    collection = Collection(name="path_fomo_cls_debug_coll", using="ahcore_milvus_vector_db")
+    # collection_name = "path_fomo_cls_debug_coll"
+    collection_name = "path_fomo_5wsi_annotated_test"
+    collection = Collection(name=collection_name, using="ahcore_milvus_vector_db")
     create_index(collection)
     collection.load()
     average_annotated_vector = query_annotated_vectors(
-        data_description=data_description, collection=collection, min_overlap=0.25
+        data_description=data_description, collection=collection, min_overlap=0.5
     )
     search_results = search_vectors_in_radius(
         collection,
         reference_vector=average_annotated_vector,
         limit_results=10000,
-        search_radius=1050.0,
+        search_radius=0.65,
         range_filter=1.0,
     )
     iou_per_wsi = compute_iou_per_wsi(
