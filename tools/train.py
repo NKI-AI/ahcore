@@ -2,12 +2,13 @@ import dotenv
 import hydra
 import torch
 from omegaconf import DictConfig
+from os import getenv
 
 from ahcore.utils import debug_utils
 
 debug_utils.TIME_IT_ENABLE = False
 
-dotenv.load_dotenv(override=True)
+dotenv.load_dotenv(dotenv_path=getenv("DOTENV_PATH"), override=True)
 
 from ahcore.hydra_plugins import register_additional_config_search_path  # noqa: E402
 
