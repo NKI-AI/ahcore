@@ -1,4 +1,7 @@
-from typing import Any
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any, Callable
 
 import pyvips
 from dlup.backends.common import AbstractSlideBackend
@@ -42,3 +45,12 @@ class ZarrSlide(AbstractSlideBackend):
 
     def close(self):
         self._reader.close()
+
+
+class ImageCacheBackend(Enum):
+    """Available experimental_backends for reading from files."""
+
+    ZARRSLIDE: Callable[[PathLike], ZarrSlide] = ZarrSlide
+
+    def __call__(self, *args: "ImageCacheBackend" | str) -> Any:
+        return self.value(*args)
