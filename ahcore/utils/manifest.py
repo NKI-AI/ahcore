@@ -22,13 +22,16 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql import exists
 
+from ahcore.backends import ImageCacheBackend
 from ahcore.exceptions import RecordNotFoundError
 from ahcore.utils.data import DataDescription
 from ahcore.utils.database_models import (
     Base,
+    CacheDescription,
     CategoryEnum,
     Image,
     ImageAnnotations,
+    ImageCache,
     Manifest,
     Mask,
     Patient,
@@ -173,12 +176,30 @@ class DataManager:
         if not record:
             raise RecordNotFoundError(f"{description} not found.")
 
-    def get_records_by_split(
+    def get_split_definition(
         self,
         manifest_name: str,
         split_version: str,
-        split_category: Optional[str] = None,
-    ) -> Generator[Patient, None, None]:
+    ) -> SplitDefinitions:
+        """Fetch the split definition based on manifest name and split version.
+
+        Parameters
+        ----------
+        manifest_name : str
+            The name of the manifest.
+        split_version : str
+            Fetch the metadata for an image based on its filename.
+
+        Returns
+        -------
+        SplitDefinitions
+            The associated SplitDefinitions of the manifest and split version.
+
+        Raises
+        ------
+        RecordNotFoundError
+            Error gets raised when manifest or split version does not exist.
+        """
         manifest = self._session.query(Manifest).filter_by(name=manifest_name).first()
         try:
             self._ensure_record(manifest, f"Manifest with name {manifest_name}")
@@ -188,18 +209,42 @@ class DataManager:
                 f"Available manifest names: {', '.join([str(m.name) for m in self._session.query(Manifest).all()])}"
             ) from e
 
-        split_definition = self._session.query(SplitDefinitions).filter_by(version=split_version).first()
+        assert manifest is not None
+        split_definition = (
+            self._session.query(SplitDefinitions).filter_by(manifest_id=manifest.id, version=split_version).first()
+        )
         self._ensure_record(split_definition, f"Split definition with version {split_version}")
 
         # This is because mypy is complaining otherwise,
         # but _ensure_record effectively ensures that the record is not None
-        assert manifest is not None
         assert split_definition is not None
+        return split_definition
+
+    def get_patients_by_split(
+        self,
+        split_definition: SplitDefinitions,
+        split_category: Optional[str] = None,
+    ) -> Generator[Patient, None, None]:
+        """Yields the patients for a given split definition, and optional split category.
+
+        Parameters
+        ----------
+        split_definition : SplitDefinitions
+            The definition of the split.
+        split_category : Optional[str], optional
+            The category of the split. Must be a string compatible with `CategoryEnum`. If `split_category=None`, all
+            patients in the split definition will be returned, by default None
+
+        Yields
+        ------
+        Generator[Patient, None, None]
+            The patients in the given split defintion (and split category)
+        """
         query = (
             self._session.query(Patient)
             .join(Split)
             .filter(
-                Patient.manifest_id == manifest.id,
+                Patient.manifest_id == split_definition.manifest_id,
                 Split.split_definition_id == split_definition.id,
             )
         )
@@ -207,7 +252,6 @@ class DataManager:
         if split_category is not None:
             split_category_key = get_enum_key_from_value(split_category, CategoryEnum)
             query = query.filter(Split.category == split_category_key)
-
         patients = query.all()
 
         self._logger.info(
@@ -239,7 +283,8 @@ class DataManager:
         ImageMetadata
             The metadata of the image.
         """
-        for patient in self.get_records_by_split(manifest_name, split_version, split_category):
+        split_definition = self.get_split_definition(manifest_name=manifest_name, split_version=split_version)
+        for patient in self.get_patients_by_split(split_definition, split_category):
             for image in patient.images:
                 yield fetch_image_metadata(image)
 
@@ -300,6 +345,50 @@ class DataManager:
         assert image is not None  # mypy
         return fetch_image_metadata(image)
 
+    def get_cache_description(
+        self,
+        split_definition: SplitDefinitions,
+    ) -> Optional[CacheDescription]:
+        """Fetch the cache description from a split definition if it exists. If no cache description is associated with
+        the split definition, None is returned.
+
+        Parameters
+        ----------
+        split_definition : SplitDefinitions
+            The definition of the split.
+
+        Returns
+        -------
+        Optional[CacheDescription]
+            Associated CacheDescription from SplitDefinitions object, if it exists.
+        """
+        return (
+            self._session.query(CacheDescription)
+            .filter(CacheDescription.split_definition_id == split_definition.id)
+            .first()
+        )
+
+    def get_image_cache(self, image: Image, cache_description: CacheDescription) -> Optional[ImageCache]:
+        """Fetch image cache from image and cache description.
+
+        Parameters
+        ----------
+        image : Image
+            Image to fetch cache from.
+        cache_description : CacheDescription
+            CacheDescription for ImageCache
+
+        Returns
+        -------
+        Optional[ImageCache]
+            Optionally, returns ImageCache of the Image if it exists.
+        """
+        return (
+            self._session.query(ImageCache).filter(
+                ImageCache.image_id == image.id, ImageCache.cache_description_id == cache_description.id
+            )
+        ).first()
+
     def __enter__(self) -> "DataManager":
         return self
 
@@ -337,11 +426,36 @@ def datasets_from_data_description(
     else:
         grid_description = data_description.inference_grid
 
-    patients = db_manager.get_records_by_split(
-        manifest_name=data_description.manifest_name,
+    split_definition = db_manager.get_split_definition(
+        data_description.manifest_name,
         split_version=data_description.split_version,
+    )
+    patients = db_manager.get_patients_by_split(
+        split_definition=split_definition,
         split_category=stage,
     )
+
+    crop = False
+    cache_description = db_manager.get_cache_description(split_definition=split_definition)
+    if cache_description is not None:
+        logger.info(
+            f"CacheDescription found for SplitDefinition {split_definition.version}. "
+            "Checking if grid descriptions and data descriptions are compatible."
+        )
+
+        # TODO: Should not assert when we want to read all features at the same time
+        assert grid_description.mpp == cache_description.mpp
+        cache_tile_size = tuple(cache_description.tile_size_width, cache_description.tile_size_height)
+        assert tuple(grid_description.tile_size) == cache_tile_size
+        cache_tile_overlap = tuple(cache_description.tile_overlap_width, cache_description.tile_overlap_height)
+        assert tuple(grid_description.tile_overlap) == cache_tile_overlap
+        assert getattr(grid_description, "output_tile_size", None) is None
+
+        # We set apply_color_profile to False because
+        data_description.apply_color_profile = False
+        # Crop must be true so BoundaryMode.CROP is used instead of BoundaryMode.zeros for features
+        crop = True
+
     for patient in patients:
         patient_labels = get_labels_from_record(patient)
 
@@ -353,6 +467,36 @@ def datasets_from_data_description(
             rois = _get_rois(mask, data_description, stage)
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
 
+            original_image_mpp = image.mpp
+            # Overwrite image with ImageCache if CacheDescription in SplitDefinitions.
+            if cache_description is not None:
+                image_cache = db_manager.get_image_cache(image=image, cache_description=cache_description)
+                assert image_cache is not None
+
+                # Partially initialize ImageCacheBackend because SlideImage does not take stitching_mode as kwarg
+                backend = functools.partial(
+                    ImageCacheBackend[str(image_cache.reader)].value, stitching_mode=image_cache.stitching_mode
+                )
+                # _extra_pixel_required only working for internal_handler "none" now.
+                internal_handler = "none"
+
+                # We have to scale the annotations to level zero of the ImageCache.
+                if annotations is not None:
+                    scaling = original_image_mpp / cache_description.mpp
+                    annotations.apply_affine_transform_to_annotations(scaling=scaling, offset=[0, 0])
+
+                # TODO: This takes too long to initialize from masks
+                # Overwrite mask and mask_threshold to only sample tiles from annotated areas
+                # mask = annotations
+                # mask_threshold = 0.01
+
+                # Overwrite image and original_image_mpp with image_cache to be used in dataset
+                image = image_cache  # type: ignore
+                original_image_mpp = cache_description.mpp
+            else:
+                backend = ImageBackend[str(image.reader)]
+                internal_handler = "vips"
+
             dataset = TiledWsiDataset.from_standard_tiling(
                 path=image_root / image.filename,
                 mpp=grid_description.mpp,
@@ -360,7 +504,7 @@ def datasets_from_data_description(
                 tile_overlap=grid_description.tile_overlap,
                 tile_mode=TilingMode.overflow,
                 grid_order=GridOrder.C,
-                crop=False,
+                crop=crop,
                 mask=mask,
                 mask_threshold=mask_threshold,
                 output_tile_size=getattr(grid_description, "output_tile_size", None),
@@ -368,11 +512,11 @@ def datasets_from_data_description(
                 annotations=annotations if stage != "predict" else None,
                 labels=labels,  # type: ignore
                 transform=transform,
-                backend=ImageBackend[str(image.reader)],
-                overwrite_mpp=(image.mpp, image.mpp),
+                backend=backend,
+                overwrite_mpp=(original_image_mpp, original_image_mpp),
                 limit_bounds=True,
                 apply_color_profile=data_description.apply_color_profile,
-                internal_handler="vips",
+                internal_handler=internal_handler,
             )
 
             yield dataset
