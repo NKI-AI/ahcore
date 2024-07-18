@@ -33,6 +33,7 @@ class StitchingMode(str, Enum):
     CROP = "CROP"
     AVERAGE = "AVERAGE"
     MAXIMUM = "MAXIMUM"
+    CONCATENATE = "CONCATENATE"
 
 
 def crop_to_bbox(array: GenericNumberArray, bbox: BoundingBoxType) -> GenericNumberArray:
@@ -54,6 +55,7 @@ class FileImageReader(abc.ABC):
         self._tile_overlap = None
         self._size = None
         self._num_channels = None
+        self._feature_length = None
         self._dtype = None
         self._stride = None
         self._precision = None
@@ -128,6 +130,12 @@ class FileImageReader(abc.ABC):
             self._tile_size[0] - self._tile_overlap[0],
             self._tile_size[1] - self._tile_overlap[1],
         )
+
+        # TODO: Get self._feature_length for feature vectors
+        if self._stitching_mode == StitchingMode.CONCATENATE:
+            if tuple(self._tile_overlap) != (0, 0):
+                raise ValueError("Tile overlap must be zero when using StitchingMode.CONCATENATE.")
+            self._feature_length = None 
 
         if self._metadata["has_color_profile"]:
             _color_profile = self._file["color_profile"][()].tobytes()
@@ -210,7 +218,21 @@ class FileImageReader(abc.ABC):
 
         if self._stitching_mode == StitchingMode.AVERAGE:
             divisor_array = np.zeros((h, w), dtype=np.uint8)
-        stitched_image = np.zeros((self._num_channels, h, w), dtype=self._dtype)
+
+        # TODO: Should be based on embedding type. For CLS tokens this is None but with patch embeddings it could be 128
+        if self._stitching_mode == StitchingMode.CONCATENATE:
+            embedding_h = end_row - start_row
+            embedding_w = end_col - start_col
+            if self._feature_length is None:
+                stitched_image = np.zeros((self._num_channels, embedding_h, embedding_w), dtype=self._dtype)
+            else: 
+                # FIXME: Vips does not support images of shape WxHxFxC where F is feature length. If we have patch embeddings
+                # we can reshape patch embeddengs and stitch them.
+                raise NotImplementedError("Vips does not support images of shape WxHxFxC where F is feature length.")
+                stitched_image = np.zeros((self._num_channels, self._feature_length, embedding_h, embedding_w), dtype=self._dtype)
+
+        else:
+            stitched_image = np.zeros((self._num_channels, h, w), dtype=self._dtype)
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
                 tile_idx = (i * total_cols) + j
@@ -255,6 +277,14 @@ class FileImageReader(abc.ABC):
                     cropped_tile = tile[tile_start_y:tile_end_y, tile_start_x:tile_end_x]
                     stitched_image[img_start_y:img_end_y, img_start_x:img_end_x] += cropped_tile
                     divisor_array[img_start_y:img_end_y, img_start_x:img_end_x] += 1
+                elif self._stitching_mode == StitchingMode.CONCATENATE:
+                    if tile_index_in_image_dataset == -1:
+                        continue
+                    insert_row = i - start_row
+                    insert_col = j - start_col
+                    # TODO: We should reshape this tile if don't have a vector of shape (self._num_channels,)
+                    tile_extended = tile[..., None, None]
+                    stitched_image[:, insert_row : insert_row + 1, insert_col : insert_col + 1] = tile_extended
                 else:
                     raise ValueError("Unsupported stitching mode")
 
