@@ -1,7 +1,7 @@
 _target_: ahcore.utils.data.DataDescription
 data_dir: "/processing/e.marcus/susankomen_data/images/"
 annotations_dir: "/processing/e.marcus/susankomen_data/annotations/v20250625"
-manifest_database_uri: sqlite:////home/e.marcus/projects/ahcore/testdb/debug.db
+manifest_database_uri: sqlite:////home/e.marcus/projects/ahcore/testdb/5wsi_annotated_test.db
 manifest_name: v20240708vDEBUG
 split_version: "v1"
 mask_label: null

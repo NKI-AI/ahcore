@@ -4,6 +4,8 @@ from typing import Any, Generator
 
 import dotenv
 import hydra
+from dlup import SlideImage
+from dlup.annotations import WsiAnnotations
 from dlup.backends import ImageBackend
 from dlup.data.dataset import TiledWsiDataset
 from dlup.tiling import GridOrder, TilingMode
@@ -34,6 +36,66 @@ def calculate_overlap(x1: int, y1: int, size1: int, x2: int, y2: int, size2: int
 
     # Return the overlap ratio
     return intersection_area / union_area if union_area != 0 else 0
+
+
+def calculate_distance_to_annotation(annotation: WsiAnnotations, x: int, y: int, scaling: float = 1.0) -> float:
+    bounding_box_xy, bounding_box_wh = annotation.bounding_box
+    if scaling != 1.0:
+        bounding_box_xy = (int(bounding_box_xy[0] * scaling), int(bounding_box_xy[1] * scaling))
+        bounding_box_wh = (int(bounding_box_wh[0] * scaling), int(bounding_box_wh[1] * scaling))
+    center_x = bounding_box_xy[0] + bounding_box_wh[0] / 2
+    center_y = bounding_box_xy[1] + bounding_box_wh[1] / 2
+    return ((center_x - x) ** 2 + (center_y - y) ** 2) ** 0.5
+
+
+def calculate_total_annotation_area(annotation: WsiAnnotations, scaling: float) -> int:
+    bounding_box_xy, bounding_box_wh = annotation.bounding_box
+    poly_list = annotation.read_region(bounding_box_xy, scaling=scaling, size=bounding_box_wh)
+    area = sum([poly.area for poly in poly_list])
+    return area
+
+
+def compute_precision_recall(
+    image: SlideImage,
+    annotation: WsiAnnotations,
+    model_output: WsiAnnotations,
+    mpp: float,
+    tile_size: tuple[int, int],
+    distance_cutoff: float,
+) -> tuple[float, float]:
+    scaling = image.get_scaling(mpp)
+    distance_cutoff = distance_cutoff * scaling
+    dataset_annotation = TiledWsiDataset.from_standard_tiling(
+        image.identifier, mpp=mpp, tile_size=tile_size, tile_overlap=(0, 0), mask=annotation
+    )
+
+    dataset_model_output = TiledWsiDataset.from_standard_tiling(
+        image.identifier, mpp=mpp, tile_size=tile_size, tile_overlap=(0, 0), mask=model_output
+    )
+
+    true_positives = 0
+    false_positives = 0
+    false_negatives = 0
+
+    # Convert annotations and model outputs to a set of coordinates for easier comparison
+    annotation_tiles = set((d["coordinates"][0], d["coordinates"][1]) for d in dataset_annotation)
+    model_output_tiles = set((d["coordinates"][0], d["coordinates"][1]) for d in dataset_model_output)
+
+    for coords in model_output_tiles:
+        if calculate_distance_to_annotation(annotation, coords[0], coords[1], scaling=scaling) <= distance_cutoff:
+            if coords in annotation_tiles:
+                true_positives += 1
+            else:
+                false_positives += 1
+    # Evaluate false negatives separately
+    for coords in annotation_tiles:
+        if coords not in model_output_tiles:
+            false_negatives += 1
+
+    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
+
+    return precision, recall
 
 
 def delete_collection(collection_name: str) -> None:

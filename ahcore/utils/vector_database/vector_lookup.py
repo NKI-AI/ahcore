@@ -16,7 +16,10 @@ from shapely import box
 from ahcore.utils.data import DataDescription
 from ahcore.utils.vector_database.plot_utils import plot_wsi_and_annotation_overlay
 from ahcore.utils.vector_database.utils import (
+    calculate_distance_to_annotation,
     calculate_overlap,
+    calculate_total_annotation_area,
+    compute_precision_recall,
     construct_dataloader,
     construct_dataset,
     create_dataset_iterator,
@@ -56,6 +59,7 @@ def query_annotated_vectors(
             print(f"Processed {i} entries")
 
     average_vector = [sum(x) / len(x) for x in zip(*vectors)]
+    print(f"Found {len(vectors)} vectors")
     np.save(cache_location, average_vector)
 
     return average_vector
@@ -164,13 +168,19 @@ def extract_results_per_wsi(search_results: SearchResult) -> dict[str, list[Hit]
 
 def compute_iou_from_hits(image: SlideImage, annotation: WsiAnnotations, hits: list[Hit]) -> float:
     """Computes IoU between a hit and the annotations"""
-    total_union_area = 0.0
+    # total_union_area = 0.0
     total_intersection_area = 0.0
     scaling = image.get_scaling(0.5)  # We inference at 0.5 mpp
+    total_annotation_area = calculate_total_annotation_area(annotation, scaling)
 
     for hit in hits:
         x, y, width, height = hit.coordinate_x, hit.coordinate_y, hit.tile_size, hit.tile_size
         location = (x, y)
+
+        if (
+            calculate_distance_to_annotation(annotation, x, y) > 15000
+        ):  # We are on the second 'slice' of the WSI where pathologist did not annotate
+            continue
 
         def _affine_coords(coords: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
             return coords * scaling - np.asarray(location, dtype=np.float_)
@@ -184,17 +194,18 @@ def compute_iou_from_hits(image: SlideImage, annotation: WsiAnnotations, hits: l
         local_intersection_area = 0
         for local_annotation in annotations:
             local_intersection = local_annotation.intersection(rect)
-            local_intersection_area += local_intersection.area
-            if local_intersection.area == 0:
-                print("test")
+            # local_intersection_area += local_intersection.area
+            if local_intersection.area != 0:  # the box intersects with annotation
+                local_intersection_area += local_intersection.area
+                # print("test")
 
-        if local_intersection_area == 0:  # No intersect between box and annotations
-            total_union_area += 2 * rect.area
-        else:
+        # if local_intersection_area == 0:  # No intersect between box and annotations
+        # total_union_area += 2 * rect.area
+        if local_intersection_area != 0:
             total_intersection_area += local_intersection_area
-            total_union_area += 2 * rect.area - local_intersection_area
+            # total_union_area += 2 * rect.area - local_intersection_area
 
-    total_iou = total_intersection_area / total_union_area if total_union_area != 0 else 0
+    total_iou = total_intersection_area / total_annotation_area if total_annotation_area != 0 else 0
     return total_iou
 
 
@@ -213,26 +224,34 @@ def create_wsi_annotation_from_hits(hits: list[Hit]) -> WsiAnnotations:
     return annotations
 
 
-def compute_iou_per_wsi(search_results: SearchResult, data_dir: str, annotations_dir: str) -> dict[str, float]:
+def compute_metrics_per_wsi(search_results: SearchResult, data_description: DataDescription) -> dict[str, float]:
     """Computes total IoU for each separate WSI found in the search results"""
+    data_dir, annotations_dir = data_description.data_dir, data_description.annotations_dir
     hits_per_wsi: dict[str, list[Hit]] = extract_results_per_wsi(search_results)
-    iou_per_wsi = {}
+    # iou_per_wsi = {}
+    precision_recall_per_wsi = {}
 
     for filename, hits in hits_per_wsi.items():
         image_filename, annotations_filename = generate_filenames(filename, data_dir, annotations_dir)
         hit_annotations = create_wsi_annotation_from_hits(hits)
         image = SlideImage.from_file_path(image_filename)
         annotation = WsiAnnotations.from_geojson(annotations_filename)
+        annotation.filter(data_description.roi_name)
+        precision, recall = compute_precision_recall(
+            image, annotation, hit_annotations, mpp=20, tile_size=(20, 20), distance_cutoff=15000
+        )
         plot_wsi_and_annotation_overlay(
             image, annotation, hit_annotations, mpp=20, tile_size=(20, 20), filename_appendage=filename
         )
         # iou = compute_iou_from_hits(image, annotation, hits)
         # iou_per_wsi[filename] = iou
-    return iou_per_wsi
+        precision_recall_per_wsi[filename] = (precision, recall)
+    return precision_recall_per_wsi
 
 
 if __name__ == "__main__":
-    data_description = load_data_description(os.environ.get("DATA_DESCRIPTION_PATH"))
+    data_description_annotated = load_data_description(os.environ.get("DATA_DESCRIPTION_PATH_ANNOTATED"))
+    data_description_test = load_data_description(os.environ.get("DATA_DESCRIPTION_PATH_TEST"))
     connect_to_milvus(
         host=os.environ.get("MILVUS_HOST"),
         user=os.environ.get("MILVUS_USER"),
@@ -240,22 +259,37 @@ if __name__ == "__main__":
         port=os.environ.get("MILVUS_PORT"),
         alias=os.environ.get("MILVUS_ALIAS"),
     )
-    # collection_name = "path_fomo_cls_debug_coll"
-    collection_name = "path_fomo_5wsi_annotated_test"
-    collection = Collection(name=collection_name, using="ahcore_milvus_vector_db")
-    create_index(collection)
-    collection.load()
-    average_annotated_vector = query_annotated_vectors(
-        data_description=data_description, collection=collection, min_overlap=0.5
-    )
-    search_results = search_vectors_in_radius(
-        collection,
-        reference_vector=average_annotated_vector,
-        limit_results=10000,
-        search_radius=0.65,
-        range_filter=1.0,
-    )
-    iou_per_wsi = compute_iou_per_wsi(
-        search_results, data_dir=data_description.data_dir, annotations_dir=data_description.annotations_dir
-    )
-    print(iou_per_wsi)
+    collection_name_test = "path_fomo_5wsi_annotated_test"
+    collection_name_annotated = "path_fomo_cls_debug_coll"
+    collection_annotated = Collection(name=collection_name_annotated, using="ahcore_milvus_vector_db")
+    collection_test = Collection(name=collection_name_test, using="ahcore_milvus_vector_db")
+    create_index(collection_annotated)
+    create_index(collection_test)
+    collection_annotated.load()
+    collection_test.load()
+    overlaps = [0.25, 0.4, 0.5, 0.6]
+    for overlap in overlaps:
+        average_annotated_vector = query_annotated_vectors(
+            data_description=data_description_annotated,
+            collection=collection_annotated,
+            min_overlap=overlap,
+            force_recompute=True,
+        )
+        search_radii = [0.55, 0.65, 0.7]
+        for search_radius in search_radii:
+            search_results = search_vectors_in_radius(
+                collection_test,
+                reference_vector=average_annotated_vector,
+                limit_results=10000,
+                search_radius=search_radius,
+                range_filter=1.0,
+            )
+            metrics_per_wsi = compute_metrics_per_wsi(search_results, data_description=data_description_test)
+            print(f"----------------- Search radius: {search_radius} overlap: {overlap} -----------------")
+            print(metrics_per_wsi)
+            average_precision = (
+                sum([x[0] for x in metrics_per_wsi.values()]) / len(metrics_per_wsi) if len(metrics_per_wsi) > 0 else 0
+            )
+            average_recall = sum([x[1] for x in metrics_per_wsi.values()]) / len(metrics_per_wsi)
+            print(f"Average precision: {average_precision}")
+            print(f"Average recall: {average_recall}")
