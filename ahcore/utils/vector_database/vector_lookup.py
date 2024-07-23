@@ -67,11 +67,6 @@ def query_annotated_vectors(
 
 def create_index(collection: Collection, index_params: dict[str, Any] | None = None) -> None:
     if index_params is None:
-        # index_params = {
-        #     "index_type": "FLAT",
-        #     "metric_type": "L2",
-        #     "params": {"nlist": 2048},
-        # }
         index_params = {
             "index_type": "FLAT",
             "metric_type": "COSINE",
@@ -130,10 +125,6 @@ def search_vectors_in_radius(
     range_filter: float = 0.0,
 ) -> list[list[str, Any]]:
     # Define the search parameters
-    # param = {
-    #     "metric_type": "L2",
-    #     "params": {"radius": search_radius, "range_filter": range_filter},  # Below this, the results are not returned
-    # }
     param = {
         "metric_type": "COSINE",
         "params": {
@@ -188,8 +179,6 @@ def compute_iou_from_hits(image: SlideImage, annotation: WsiAnnotations, hits: l
         rect = box(x, y, x + width, y + height)
         rect = shapely.transform(rect, _affine_coords)  # Transform the coordinates
         annotations = annotation.read_region((x, y), scaling, (width, height))
-        # if not annotations:
-        #     print("test")
 
         local_intersection_area = 0
         for local_annotation in annotations:
@@ -197,13 +186,9 @@ def compute_iou_from_hits(image: SlideImage, annotation: WsiAnnotations, hits: l
             # local_intersection_area += local_intersection.area
             if local_intersection.area != 0:  # the box intersects with annotation
                 local_intersection_area += local_intersection.area
-                # print("test")
 
-        # if local_intersection_area == 0:  # No intersect between box and annotations
-        # total_union_area += 2 * rect.area
         if local_intersection_area != 0:
             total_intersection_area += local_intersection_area
-            # total_union_area += 2 * rect.area - local_intersection_area
 
     total_iou = total_intersection_area / total_annotation_area if total_annotation_area != 0 else 0
     return total_iou
@@ -224,7 +209,9 @@ def create_wsi_annotation_from_hits(hits: list[Hit]) -> WsiAnnotations:
     return annotations
 
 
-def compute_metrics_per_wsi(search_results: SearchResult, data_description: DataDescription) -> dict[str, float]:
+def compute_metrics_per_wsi(
+    search_results: SearchResult, data_description: DataDescription, plot_results: bool = False
+) -> dict[str, float]:
     """Computes total IoU for each separate WSI found in the search results"""
     data_dir, annotations_dir = data_description.data_dir, data_description.annotations_dir
     hits_per_wsi: dict[str, list[Hit]] = extract_results_per_wsi(search_results)
@@ -240,16 +227,31 @@ def compute_metrics_per_wsi(search_results: SearchResult, data_description: Data
         precision, recall = compute_precision_recall(
             image, annotation, hit_annotations, mpp=20, tile_size=(20, 20), distance_cutoff=15000
         )
-        plot_wsi_and_annotation_overlay(
-            image, annotation, hit_annotations, mpp=20, tile_size=(20, 20), filename_appendage=filename
-        )
+        if plot_results:
+            plot_wsi_and_annotation_overlay(
+                image, annotation, hit_annotations, mpp=20, tile_size=(20, 20), filename_appendage=filename
+            )
         # iou = compute_iou_from_hits(image, annotation, hits)
         # iou_per_wsi[filename] = iou
         precision_recall_per_wsi[filename] = (precision, recall)
     return precision_recall_per_wsi
 
 
-if __name__ == "__main__":
+def perform_vector_lookup(
+    train_collection_name: str,
+    test_collection_name: str,
+    annotated_region_overlaps: list[float] | float,
+    search_radii: list[float] | float,
+    limit_results: int = 10000,
+    range_filter: float = 1.0,
+    print_results: bool = True,
+    plot_results: bool = False,
+) -> dict[str, list[float]]:
+    if isinstance(annotated_region_overlaps, float):
+        annotated_region_overlaps = [annotated_region_overlaps]
+    if isinstance(search_radii, float):
+        search_radii = [search_radii]
+
     data_description_annotated = load_data_description(os.environ.get("DATA_DESCRIPTION_PATH_ANNOTATED"))
     data_description_test = load_data_description(os.environ.get("DATA_DESCRIPTION_PATH_TEST"))
     connect_to_milvus(
@@ -259,37 +261,60 @@ if __name__ == "__main__":
         port=os.environ.get("MILVUS_PORT"),
         alias=os.environ.get("MILVUS_ALIAS"),
     )
-    collection_name_test = "path_fomo_5wsi_annotated_test"
-    collection_name_annotated = "path_fomo_cls_debug_coll"
-    collection_annotated = Collection(name=collection_name_annotated, using="ahcore_milvus_vector_db")
-    collection_test = Collection(name=collection_name_test, using="ahcore_milvus_vector_db")
-    create_index(collection_annotated)
+    collection_train = Collection(name=train_collection_name, using="ahcore_milvus_vector_db")
+    collection_test = Collection(name=test_collection_name, using="ahcore_milvus_vector_db")
+
+    create_index(collection_train)
     create_index(collection_test)
-    collection_annotated.load()
+    collection_train.load()
     collection_test.load()
-    overlaps = [0.25, 0.4, 0.5, 0.6]
-    for overlap in overlaps:
+
+    result_dict = {}
+    for overlap in annotated_region_overlaps:
         average_annotated_vector = query_annotated_vectors(
             data_description=data_description_annotated,
-            collection=collection_annotated,
+            collection=collection_train,
             min_overlap=overlap,
             force_recompute=True,
         )
-        search_radii = [0.55, 0.65, 0.7]
+
         for search_radius in search_radii:
             search_results = search_vectors_in_radius(
                 collection_test,
                 reference_vector=average_annotated_vector,
-                limit_results=10000,
+                limit_results=limit_results,
                 search_radius=search_radius,
-                range_filter=1.0,
+                range_filter=range_filter,
             )
-            metrics_per_wsi = compute_metrics_per_wsi(search_results, data_description=data_description_test)
-            print(f"----------------- Search radius: {search_radius} overlap: {overlap} -----------------")
-            print(metrics_per_wsi)
-            average_precision = (
-                sum([x[0] for x in metrics_per_wsi.values()]) / len(metrics_per_wsi) if len(metrics_per_wsi) > 0 else 0
+            metrics_per_wsi = compute_metrics_per_wsi(
+                search_results, data_description=data_description_test, plot_results=plot_results
             )
-            average_recall = sum([x[1] for x in metrics_per_wsi.values()]) / len(metrics_per_wsi)
-            print(f"Average precision: {average_precision}")
-            print(f"Average recall: {average_recall}")
+            for filename, metrics in metrics_per_wsi.items():
+                if filename not in result_dict:
+                    result_dict[filename] = []
+                local_result_dict = {"search_radius": search_radius, "overlap": overlap, "results": metrics}
+                result_dict[filename].append(local_result_dict)
+
+            if print_results:
+                print(f"----------------- Search radius: {search_radius} overlap: {overlap} -----------------")
+                print(metrics_per_wsi)
+                average_precision = (
+                    sum([x[0] for x in metrics_per_wsi.values()]) / len(metrics_per_wsi)
+                    if len(metrics_per_wsi) > 0
+                    else 0
+                )
+                average_recall = sum([x[1] for x in metrics_per_wsi.values()]) / len(metrics_per_wsi)
+                print(f"Average precision: {average_precision}")
+                print(f"Average recall: {average_recall}")
+    return result_dict
+
+
+if __name__ == "__main__":
+    perform_vector_lookup(
+        "uni_collection_concat_train",
+        "uni_collection_concat_train",
+        [0.55],
+        [0.62],
+        print_results=True,
+        plot_results=False,
+    )

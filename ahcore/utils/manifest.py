@@ -10,6 +10,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Callable, Generator, Literal, Optional, Type, TypedDict, cast
 
+import imageio.v3 as iio
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
 from dlup.backends import ImageBackend
@@ -329,6 +330,8 @@ def datasets_from_data_description(
     transform: Callable[[TileSample], RegionFromWsiDatasetSample] | None,
     stage: str,
 ) -> Generator[TiledWsiDataset, None, None]:
+    from time import time
+
     logger.info(f"Reading manifest from {data_description.manifest_database_uri} for stage {stage}")
 
     image_root = data_description.data_dir
@@ -352,10 +355,13 @@ def datasets_from_data_description(
         for image in patient.images:
             mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
             assert isinstance(mask, WsiAnnotations) or (mask is None) or isinstance(mask, SlideImage)
+            if isinstance(mask, SlideImage):
+                mask = iio.imread(mask.identifier)[..., 0]
             image_labels = get_labels_from_record(image)
             labels = None if patient_labels is image_labels is None else (patient_labels or []) + (image_labels or [])
             rois = _get_rois(mask, data_description, stage) if data_description.use_roi else None
             mask_threshold = data_description.mask_threshold if data_description.mask_threshold is not None else 0.0
+            start = time()
 
             dataset = TiledWsiDataset.from_standard_tiling(
                 path=image_root / image.filename,
@@ -378,6 +384,7 @@ def datasets_from_data_description(
                 apply_color_profile=data_description.apply_color_profile,
                 internal_handler="vips",
             )
+            print(f"Time to create dataset: {time() - start}")
 
             yield dataset
 
