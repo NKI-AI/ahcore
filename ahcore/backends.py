@@ -31,7 +31,7 @@ class ZarrSlide(AbstractSlideBackend):
 
     @property
     def properties(self) -> dict[str, Any]:
-        return self._reader._metadata
+        return self._reader.metadata
 
     @property
     def magnification(self):

@@ -65,6 +65,7 @@ class WriterMetadata(NamedTuple):
     format: str | None
     num_channels: int
     dtype: str
+    grid_offset: tuple[int, int] | None
 
 
 class Writer(abc.ABC):
@@ -97,7 +98,7 @@ class Writer(abc.ABC):
         self._progress = progress
 
         self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
-        self._grid_offset: npt.NDArray[np.int_] | None = None
+        self._grid_offset: tuple[int, int] | None = None
 
         self._current_index: int = 0
         self._tiles_seen = 0
@@ -173,7 +174,9 @@ class Writer(abc.ABC):
 
         _dtype = str(first_batch.dtype)
 
-        return WriterMetadata(_mode, _format, _num_channels, _dtype)
+        return WriterMetadata(
+            mode=_mode, format=_format, num_channels=_num_channels, dtype=_dtype, grid_offset=self._grid_offset
+        )
 
     def set_grid(self) -> None:
         # TODO: We only support a single Grid
@@ -302,13 +305,13 @@ class Writer(abc.ABC):
 
     def init_writer(self, first_coordinates: GenericNumberArray, first_batch: GenericNumberArray, file: Any) -> Any:
         """Initializes the image_dataset based on the first tile."""
+        self._grid_offset = (int(first_coordinates[0][0]), int(first_coordinates[0][1]))
 
         writer_metadata = self.get_writer_metadata(first_batch)
 
         self._current_index = 0
         # The grid can be smaller than the actual image when slide bounds are given.
         # As the grid should cover the image, the offset is given by the first tile.
-        self._grid_offset = np.array(first_coordinates[0])
 
         self._coordinates_dataset = self.create_dataset(
             file, name="coordinates", shape=(self._num_samples, 2), dtype=np.int_, compression="gzip"
