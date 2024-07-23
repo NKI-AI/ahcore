@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, NamedTuple, Optional
 
+import dlup
 import h5py
 import numcodecs
 import numpy as np
@@ -23,6 +24,7 @@ import PIL.Image
 import zarr
 from dlup.tiling import Grid, GridOrder, TilingMode
 
+import ahcore
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericNumberArray, InferencePrecision
 
@@ -66,6 +68,7 @@ class WriterMetadata(NamedTuple):
     num_channels: int
     dtype: str
     grid_offset: tuple[int, int] | None
+    version: str
 
 
 class Writer(abc.ABC):
@@ -175,7 +178,12 @@ class Writer(abc.ABC):
         _dtype = str(first_batch.dtype)
 
         return WriterMetadata(
-            mode=_mode, format=_format, num_channels=_num_channels, dtype=_dtype, grid_offset=self._grid_offset
+            mode=_mode,
+            format=_format,
+            num_channels=_num_channels,
+            dtype=_dtype,
+            grid_offset=self._grid_offset,
+            version=f"dlup version {dlup.__version__}; ahcore version {ahcore.__version__}",
         )
 
     def set_grid(self) -> None:
