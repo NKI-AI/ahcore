@@ -25,7 +25,7 @@ import zarr
 from dlup.tiling import Grid, GridOrder, TilingMode
 
 import ahcore
-from ahcore.utils.io import get_logger
+from ahcore.utils.io import get_git_hash, get_logger
 from ahcore.utils.types import GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
@@ -68,7 +68,7 @@ class WriterMetadata(NamedTuple):
     num_channels: int
     dtype: str
     grid_offset: tuple[int, int] | None
-    version: str
+    versions: dict[str, str]
 
 
 class Writer(abc.ABC):
@@ -183,7 +183,7 @@ class Writer(abc.ABC):
             num_channels=_num_channels,
             dtype=_dtype,
             grid_offset=self._grid_offset,
-            version=f"dlup version {dlup.__version__}; ahcore version {ahcore.__version__}",
+            versions={"dlup": dlup.__version__, "ahcore": ahcore.__version__, "ahcore_git_hash": get_git_hash()},
         )
 
     def set_grid(self) -> None:
