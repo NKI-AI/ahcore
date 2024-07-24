@@ -1,4 +1,7 @@
+import hashlib
 import os
+import pickle
+import uuid
 from pathlib import Path
 from typing import Any, Generator
 
@@ -82,7 +85,9 @@ def compute_precision_recall(
     model_output_tiles = set((d["coordinates"][0], d["coordinates"][1]) for d in dataset_model_output)
 
     for coords in model_output_tiles:
-        if calculate_distance_to_annotation(annotation, coords[0], coords[1], scaling=scaling) <= distance_cutoff:
+        if (
+            calculate_distance_to_annotation(annotation, coords[0], coords[1], scaling=scaling) <= distance_cutoff
+        ):  # make sure we stay within annotated region
             if coords in annotation_tiles:
                 true_positives += 1
             else:
@@ -206,3 +211,37 @@ def generate_filenames(filename: str, data_dir: str, annotations_dir: str) -> tu
     image_filename = Path(data_dir) / filename
     annotations_filename = Path(annotations_dir) / filename.replace(".svs", ".svs.geojson")
     return image_filename, annotations_filename
+
+
+def dict_to_uuid(input_dict: dict) -> uuid.UUID:
+    """Create a unique identifier for a pydantic model.
+
+    This is done by pickling the object, and computing the sha256 hash of the pickled object and converting this to
+    an UUID. The UUID is generated using the sha256 hash as a namespace, ensuring similar lengths. The chance of
+    a collision is astronomically small.
+
+    Arguments
+    ---------
+    base_model: BaseModel
+        The BaseModel to create a unique identifier for.
+
+    Returns
+    -------
+    uuid.UUID
+        A unique identifier for the BaseModel.
+    """
+    # Serialize the object
+    serialized_data = pickle.dumps(input_dict)
+
+    # Generate a sha256 hash of the serialized data
+    obj_hash = hashlib.sha256(serialized_data).digest()
+
+    # Use the hash as a namespace to generate a UUID
+    unique_id = uuid.uuid5(uuid.NAMESPACE_DNS, obj_hash.hex())
+
+    return unique_id
+
+
+# if __name__ == "__main__":
+#     coll_name = "debug_collection_concat"
+#     delete_collection(coll_name)

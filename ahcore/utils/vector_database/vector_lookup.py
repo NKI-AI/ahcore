@@ -23,6 +23,7 @@ from ahcore.utils.vector_database.utils import (
     construct_dataloader,
     construct_dataset,
     create_dataset_iterator,
+    dict_to_uuid,
     generate_filenames,
     load_data_description,
 )
@@ -35,33 +36,46 @@ def connect_to_milvus(host: str, port: int, alias: str, user: str, password: str
 
 
 def query_annotated_vectors(
-    data_description: DataDescription, collection: Collection, min_overlap: float = 0.25, force_recompute: bool = False
+    data_description: DataDescription,
+    collection: Collection,
+    cache_folder: str,
+    min_overlap: float = 0.25,
+    force_recompute: bool = False,
 ) -> list[float]:
-    cache_location = "/processing/e.marcus/average_annotated_vector.npy"
-    if not force_recompute and os.path.exists(cache_location):
-        return list(np.load(cache_location))
+    uuid_dict = data_description.model_dump()
+    uuid_dict["collection_name"] = collection.name
+    uuid_dict["overlap"] = min_overlap
+    uuid = dict_to_uuid(uuid_dict)
+    cache_path = os.path.join(cache_folder, f"{uuid}.npy")
 
-    dataset_iterator = create_dataset_iterator(data_description=data_description)
-    dataset = construct_dataset(dataset_iterator)
-    dataloader = construct_dataloader(dataset, num_workers=0, batch_size=1)
+    if not force_recompute and os.path.exists(cache_path):
+        vectors = np.load(cache_path).tolist()
 
-    tile_sizes = data_description.inference_grid.tile_size
-    tile_size = tile_sizes[0]
-    vectors = []
-    for i, data in enumerate(dataloader):
-        # One entry at the time (we don't need to query a lot; these are just the reference vectors)
-        filename, coordinate_x, coordinate_y = data["filename"][0], int(data["coordinate_x"]), int(data["coordinate_y"])
-        res = query_vector(
-            collection, filename, coordinate_x, coordinate_y, tile_size=tile_size, min_overlap=min_overlap
-        )
-        vectors += res
-        if i % 100 == 0:
-            print(f"Processed {i} entries")
+    else:
+        dataset_iterator = create_dataset_iterator(data_description=data_description)
+        dataset = construct_dataset(dataset_iterator)
+        dataloader = construct_dataloader(dataset, num_workers=0, batch_size=1)
 
+        tile_sizes = data_description.inference_grid.tile_size
+        tile_size = tile_sizes[0]
+        vectors = []
+        for i, data in enumerate(dataloader):
+            filename, coordinate_x, coordinate_y = (
+                data["filename"][0],
+                int(data["coordinate_x"]),
+                int(data["coordinate_y"]),
+            )
+            res = query_vector(
+                collection, filename, coordinate_x, coordinate_y, tile_size=tile_size, min_overlap=min_overlap
+            )
+            vectors += res
+            if i % 100 == 0:
+                print(f"Processed {i} entries")
+        np.save(cache_path, vectors)
+
+    # TODO: allow logic for other manipulations other than just one average vector
     average_vector = [sum(x) / len(x) for x in zip(*vectors)]
     print(f"Found {len(vectors)} vectors")
-    np.save(cache_location, average_vector)
-
     return average_vector
 
 
@@ -254,6 +268,7 @@ def perform_vector_lookup(
 
     data_description_annotated = load_data_description(os.environ.get("DATA_DESCRIPTION_PATH_ANNOTATED"))
     data_description_test = load_data_description(os.environ.get("DATA_DESCRIPTION_PATH_TEST"))
+    cache_folder = os.environ.get("CACHE_FOLDER")
     connect_to_milvus(
         host=os.environ.get("MILVUS_HOST"),
         user=os.environ.get("MILVUS_USER"),
@@ -276,6 +291,7 @@ def perform_vector_lookup(
             collection=collection_train,
             min_overlap=overlap,
             force_recompute=True,
+            cache_folder=cache_folder,
         )
 
         for search_radius in search_radii:
@@ -312,7 +328,7 @@ def perform_vector_lookup(
 if __name__ == "__main__":
     perform_vector_lookup(
         "uni_collection_concat_train",
-        "uni_collection_concat_train",
+        "uni_collection_concat_test",
         [0.55],
         [0.62],
         print_results=True,

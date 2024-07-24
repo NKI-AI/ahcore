@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from dlup import SlideImage
@@ -25,6 +26,7 @@ def populate_from_annotated_sk(
     image_folder: Path,
     mask_folder: Path,
     annotation_folder: Path,
+    file_list: list[str] | None = None,
 ):
     """This is a basic example, adjust to your needs."""
     # TODO: We should do the mpp as well here
@@ -36,9 +38,8 @@ def populate_from_annotated_sk(
     split_definition = SplitDefinitions(version="v1", description="Initial split")
     session.add(split_definition)
     session.flush()
-
-    for iter, file in enumerate(image_folder.glob("*.svs")):
-        if file.name not in ["K102483.svs", "K102487.svs", "K102489.svs", "K102490.svs", "K102491.svs"]:
+    for file in image_folder.glob("*.svs"):
+        if file_list and file.name not in file_list:
             continue
         patient_code = get_patient_from_sk_id(file.name)
 
@@ -96,5 +97,20 @@ if __name__ == "__main__":
     mask_folder = Path("/processing/e.marcus/susankomen_data/masks/SusanKomen")
     annotation_folder = Path("/processing/e.marcus/susankomen_data/annotations/v20250625/")
     image_folder = Path("/processing/e.marcus/susankomen_data/images/")
-    with open_db("sqlite:////home/e.marcus/projects/ahcore/testdb/debug.db", False) as session:
-        populate_from_annotated_sk(session, image_folder, mask_folder, annotation_folder)
+    data_split_file = Path("/processing/e.marcus/susankomen_data/data_split.json")
+    with open(data_split_file, "r") as file:
+        data_split = json.load(file)
+
+    for name, split in data_split.items():
+        print(f"Processing {name} split")
+        db_name = f"sqlite:////home/e.marcus/projects/ahcore/testdb/susan_komen_{name}.db"
+        with open_db(db_name, False) as session:
+            populate_from_annotated_sk(
+                session,
+                image_folder,
+                mask_folder,
+                annotation_folder,
+                split,
+            )
+    # with open_db("sqlite:////home/e.marcus/projects/ahcore/testdb/debug.db", False) as session:
+    # populate_from_annotated_sk(session, image_folder, mask_folder, annotation_folder)
