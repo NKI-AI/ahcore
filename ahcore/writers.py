@@ -222,7 +222,7 @@ class Writer(abc.ABC):
             "format": writer_metadata.format,
             "dtype": writer_metadata.dtype,
             "is_binary": self._is_compressed_image,
-            "offset": writer_metadata.grid_offset,
+            "grid_offset": writer_metadata.grid_offset,
             "precision": self._precision.value if self._precision else str(InferencePrecision.FP32),
             "multiplier": (
                 self._precision.get_multiplier() if self._precision else InferencePrecision.FP32.get_multiplier()
