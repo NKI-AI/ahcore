@@ -3,4 +3,7 @@ tile_level:
 
 wsi_level:
   _target_: ahcore.metrics.WSIMetricFactory.for_segmentation
+    # This is for the Dice score based on pixel counting
   compute_overall_dice: True
+  # This is for the normalized surface dice (boundary overlap)
+  class_thresholds: [0,3,3,3]
