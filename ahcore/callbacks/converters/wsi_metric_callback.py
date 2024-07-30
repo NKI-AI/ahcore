@@ -26,7 +26,11 @@ warnings.filterwarnings("ignore", message="It is recommended to use `sync_dist=T
 
 class ComputeWsiMetricsCallback(ConvertCallbacks):
     def __init__(
-        self, reader_class: Type[FileImageReader], max_concurrent_tasks: int = 1, save_per_image: bool = True
+        self,
+        reader_class: Type[FileImageReader],
+        ignore_index: Optional[int],
+        max_concurrent_tasks: int = 1,
+        save_per_image: bool = True,
     ) -> None:
         """
         Callback to compute metrics on whole-slide images. This callback is used to compute metrics on whole-slide
@@ -36,6 +40,8 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         ----------
         reader_class : FileImageReader
             The reader class to use to read the images, e.g., H5FileImageReader or ZarrFileImageReader.
+        ignore_index: Optional[int]
+            The index to ignore when computing the metrics.
         max_concurrent_tasks : int
             The maximum number of concurrent processes.
         save_per_image : bool
@@ -48,6 +54,7 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
         self._dump_dir: Path
         self._save_per_image: bool = save_per_image
         self._filenames: dict[Path, Path] = {}
+        self._ignore_index: Optional[int] = ignore_index
 
         self._wsi_metrics: WSIMetricFactory
         self._class_names: dict[int, str] = {}
@@ -106,6 +113,7 @@ class ComputeWsiMetricsCallback(ConvertCallbacks):
             class_names=self._class_names,
             data_description=self._data_description,
             wsi_metrics=self._wsi_metrics,
+            ignore_index=self._ignore_index,
         )
 
         if self._save_per_image:
@@ -155,6 +163,7 @@ def compute_metrics_for_case(
     class_names: dict[int, str],
     data_description: DataDescription,
     wsi_metrics: WSIMetricFactory,
+    ignore_index: Optional[int],
 ) -> dict[str, Any]:
     with image_reader(task_data.cache_filename, stitching_mode=StitchingMode.CROP) as cache_reader:
         dataset_of_validation_image = _ValidationDataset(
@@ -182,6 +191,7 @@ def compute_metrics_for_case(
         wsi_metrics_dictionary[metric.name] = {
             class_names[class_idx]: metric.wsis[str(task_data.filename)][class_idx][metric.name].item()
             for class_idx in range(data_description.num_classes)
+            if ignore_index is None or class_idx != ignore_index
         }
 
     return wsi_metrics_dictionary

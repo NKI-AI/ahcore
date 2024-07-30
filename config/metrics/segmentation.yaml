@@ -1,6 +1,8 @@
 tile_level:
   _target_: ahcore.metrics.MetricFactory.for_segmentation
+  ignore_index: null
 
 wsi_level:
   _target_: ahcore.metrics.WSIMetricFactory.for_segmentation
   compute_overall_dice: True
+  ignore_index: null
