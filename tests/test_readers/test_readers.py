@@ -1,16 +1,16 @@
 import errno
 import os
 from pathlib import Path
-from typing import Generator, Any
+from typing import Any, Generator
 from unittest.mock import patch
 
 import h5py
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from ahcore.readers import FileImageReader, StitchingMode
 from ahcore.utils.types import GenericNumberArray
-import numpy.typing as npt
 
 
 def colorize(image_array: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
@@ -204,7 +204,7 @@ def test_stitching_modes(temp_h5_file: Path) -> None:
 
         with patch("pyvips.Image.new_from_array") as mock_pyvips:
             # Reading a region that covers all 4 tiles
-            region = reader.read_region((0, 0), 0, (350, 350))
+            _ = reader.read_region((0, 0), 0, (350, 350))
             mock_pyvips.assert_called_once()
 
             stitched_image = mock_pyvips.call_args[0][0]

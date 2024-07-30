@@ -63,9 +63,9 @@ class MilvusVectorDBCallback(Callback):
         self._collection_name = collection_name
         self._collection_type = CollectionType[collection_type.upper()]
         self._collection: Collection | None = None
-        self._prepare_data: Callable[
-            [Dict[str, Any], Dict[str, Any]], PrepareDataTypePathCLS | PrepareDataTypeDebug
-        ] | None = None
+        self._prepare_data: (
+            Callable[[Dict[str, Any], Dict[str, Any]], PrepareDataTypePathCLS | PrepareDataTypeDebug] | None
+        ) = None
 
         self.embedding_dim = embedding_dim
 

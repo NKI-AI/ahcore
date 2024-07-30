@@ -1,7 +1,7 @@
 """Ahcore's callbacks"""
 
 from __future__ import annotations
-import pyvips
+
 import hashlib
 import logging
 from pathlib import Path
@@ -9,6 +9,7 @@ from typing import Any, Iterator, Optional
 
 import numpy as np
 import numpy.typing as npt
+import pyvips
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
 from dlup.data.transforms import convert_annotations, rename_labels
@@ -138,7 +139,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         sample = {}
         coordinates = self._regions[idx]
 
-        sample["prediction"] = self._get_h5_region(coordinates)
+        sample["prediction"] = self._get_backend_file_region(coordinates)
 
         if self._annotations is not None:
             target, roi = self._get_annotation_data(coordinates)
@@ -150,7 +151,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
 
         return sample
 
-    def _get_h5_region(self, coordinates: tuple[int, int]) -> npt.NDArray[np.uint8 | np.uint16 | np.float32 | np.bool_]:
+    def _get_backend_file_region(self, coordinates: tuple[int, int]) -> pyvips.Image:
         x, y = coordinates
         width, height = self._region_size
 

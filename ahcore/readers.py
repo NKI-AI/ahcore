@@ -149,6 +149,13 @@ class FileImageReader(abc.ABC):
         self.__empty_tile = np.zeros((self._num_channels, *self._tile_size), dtype=self._dtype)
         return self.__empty_tile
 
+    @property
+    def metadata(self) -> dict[str, Any]:
+        if not self._metadata:
+            self._open_file()
+            assert self._metadata
+        return self._metadata
+
     def _decompress_data(self, tile: GenericNumberArray) -> GenericNumberArray:
         if self._is_binary:
             with PIL.Image.open(io.BytesIO(tile)) as img:
@@ -156,7 +163,7 @@ class FileImageReader(abc.ABC):
         else:
             return tile
 
-    def read_region(self, location: tuple[int, int], level: int, size: tuple[int, int]) -> GenericNumberArray:
+    def read_region(self, location: tuple[int, int], level: int, size: tuple[int, int]) -> pyvips.Image:
         """
         Reads a region in the stored h5 file. This function stitches the regions as saved in the cache file. Doing this
         it takes into account:
