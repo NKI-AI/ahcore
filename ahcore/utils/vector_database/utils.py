@@ -8,12 +8,15 @@ from typing import Any, Generator
 import dotenv
 import hydra
 from dlup import SlideImage
+from dlup.annotations import AnnotationClass
+from dlup.annotations import Polygon as DlupPolygon
 from dlup.annotations import WsiAnnotations
 from dlup.backends import ImageBackend
 from dlup.data.dataset import TiledWsiDataset
 from dlup.tiling import GridOrder, TilingMode
 from omegaconf import OmegaConf
 from pymilvus import Collection, connections, utility
+from shapely import box
 from torch.utils.data import DataLoader
 
 from ahcore.data.dataset import ConcatDataset
@@ -69,11 +72,11 @@ def compute_precision_recall(
     scaling = image.get_scaling(mpp)
     distance_cutoff = distance_cutoff * scaling
     dataset_annotation = TiledWsiDataset.from_standard_tiling(
-        image.identifier, mpp=mpp, tile_size=tile_size, tile_overlap=(0, 0), mask=annotation
+        image.identifier, mpp=mpp, tile_size=tile_size, tile_overlap=(0, 0), mask=annotation, internal_handler="vips"
     )
 
     dataset_model_output = TiledWsiDataset.from_standard_tiling(
-        image.identifier, mpp=mpp, tile_size=tile_size, tile_overlap=(0, 0), mask=model_output
+        image.identifier, mpp=mpp, tile_size=tile_size, tile_overlap=(0, 0), mask=model_output, internal_handler="vips"
     )
 
     true_positives = 0
@@ -87,7 +90,9 @@ def compute_precision_recall(
     for coords in model_output_tiles:
         if (
             calculate_distance_to_annotation(annotation, coords[0], coords[1], scaling=scaling) <= distance_cutoff
-        ):  # make sure we stay within annotated region
+        ):  # make sure we stay within annotated region -- multiple tissue samples per slide, but only one annotated
+            # if calculate_tile_overlap_ratio(coords, annotation_tiles, tile_size) > 0.5:
+            # true_positives += 1
             if coords in annotation_tiles:
                 true_positives += 1
             else:
@@ -240,6 +245,25 @@ def dict_to_uuid(input_dict: dict) -> uuid.UUID:
     unique_id = uuid.uuid5(uuid.NAMESPACE_DNS, obj_hash.hex())
 
     return unique_id
+
+
+def create_wsi_annotation_from_dict(hits: list[dict[str, Any]]) -> WsiAnnotations:
+    """Creates a WsiAnnotations object from the hits"""
+    polygon_list = []
+
+    for hit in hits:
+        x, y, width, height = hit["coordinate_x"], hit["coordinate_y"], hit["tile_size"], hit["tile_size"]
+        rect = box(x, y, x + width, y + height)
+        polygon = DlupPolygon(rect, a_cls=AnnotationClass(label="hits", annotation_type="POLYGON"))
+        polygon_list.append(polygon)
+
+    annotations = WsiAnnotations(layers=polygon_list)
+
+    return annotations
+
+
+def connect_to_milvus(host: str, port: int, alias: str, user: str, password: str) -> None:
+    connections.connect(alias=alias, host=host, port=port, user=user, password=password)
 
 
 # if __name__ == "__main__":

@@ -9,74 +9,23 @@ from dlup import SlideImage
 from dlup.annotations import AnnotationClass
 from dlup.annotations import Polygon as DlupPolygon
 from dlup.annotations import WsiAnnotations
-from pymilvus import Collection, connections
+from pymilvus import Collection
 from pymilvus.client.abstract import Hit, SearchResult
 from shapely import box
 
 from ahcore.utils.data import DataDescription
+from ahcore.utils.vector_database.annotated_vector_querier import AnnotatedVectorQuerier
 from ahcore.utils.vector_database.plot_utils import plot_wsi_and_annotation_overlay
 from ahcore.utils.vector_database.utils import (
     calculate_distance_to_annotation,
-    calculate_overlap,
     calculate_total_annotation_area,
     compute_precision_recall,
-    construct_dataloader,
-    construct_dataset,
-    create_dataset_iterator,
-    dict_to_uuid,
+    connect_to_milvus,
     generate_filenames,
     load_data_description,
 )
 
 dotenv.load_dotenv(override=True)
-
-
-def connect_to_milvus(host: str, port: int, alias: str, user: str, password: str) -> None:
-    connections.connect(alias=alias, host=host, port=port, user=user, password=password)
-
-
-def query_annotated_vectors(
-    data_description: DataDescription,
-    collection: Collection,
-    cache_folder: str,
-    min_overlap: float = 0.25,
-    force_recompute: bool = False,
-) -> list[float]:
-    uuid_dict = data_description.model_dump()
-    uuid_dict["collection_name"] = collection.name
-    uuid_dict["overlap"] = min_overlap
-    uuid = dict_to_uuid(uuid_dict)
-    cache_path = os.path.join(cache_folder, f"{uuid}.npy")
-
-    if not force_recompute and os.path.exists(cache_path):
-        vectors = np.load(cache_path).tolist()
-
-    else:
-        dataset_iterator = create_dataset_iterator(data_description=data_description)
-        dataset = construct_dataset(dataset_iterator)
-        dataloader = construct_dataloader(dataset, num_workers=0, batch_size=1)
-
-        tile_sizes = data_description.inference_grid.tile_size
-        tile_size = tile_sizes[0]
-        vectors = []
-        for i, data in enumerate(dataloader):
-            filename, coordinate_x, coordinate_y = (
-                data["filename"][0],
-                int(data["coordinate_x"]),
-                int(data["coordinate_y"]),
-            )
-            res = query_vector(
-                collection, filename, coordinate_x, coordinate_y, tile_size=tile_size, min_overlap=min_overlap
-            )
-            vectors += res
-            if i % 100 == 0:
-                print(f"Processed {i} entries")
-        np.save(cache_path, vectors)
-
-    # TODO: allow logic for other manipulations other than just one average vector
-    average_vector = [sum(x) / len(x) for x in zip(*vectors)]
-    print(f"Found {len(vectors)} vectors")
-    return average_vector
 
 
 def create_index(collection: Collection, index_params: dict[str, Any] | None = None) -> None:
@@ -87,48 +36,6 @@ def create_index(collection: Collection, index_params: dict[str, Any] | None = N
             "params": {"nlist": 8192},
         }
     collection.create_index(field_name="embedding", index_params=index_params)
-
-
-def query_vector(
-    collection: Collection,
-    filename: str,
-    coordinate_x: int,
-    coordinate_y: int,
-    tile_size: int,
-    min_overlap: float = 0.25,
-) -> list[list[float]]:
-    # Define the coordinate range for the query
-    min_x = coordinate_x - tile_size
-    max_x = coordinate_x + tile_size
-    min_y = coordinate_y - tile_size
-    max_y = coordinate_y + tile_size
-
-    # Query to find all tiles within the coordinate range for the specified filename
-    expr = (
-        f"filename == '{filename}' and coordinate_x >= {min_x} and coordinate_x <= {max_x} "
-        f"and coordinate_y >= {min_y} and coordinate_y <= {max_y}"
-    )
-
-    # Execute the query
-    results = collection.query(
-        expr=expr,
-        output_fields=["filename", "coordinate_x", "coordinate_y", "tile_size", "mpp", "embedding"],
-        consistency_level="Eventually",
-    )
-
-    # List to store embeddings with sufficient overlap
-    relevant_embeddings = []
-
-    # Check overlap for each result
-    for result in results:
-        overlap = calculate_overlap(
-            coordinate_x, coordinate_y, tile_size, result["coordinate_x"], result["coordinate_y"], result["tile_size"]
-        )
-
-        if overlap > min_overlap:
-            relevant_embeddings.append(result["embedding"])
-
-    return relevant_embeddings
 
 
 def search_vectors_in_radius(
@@ -235,15 +142,15 @@ def compute_metrics_per_wsi(
     for filename, hits in hits_per_wsi.items():
         image_filename, annotations_filename = generate_filenames(filename, data_dir, annotations_dir)
         hit_annotations = create_wsi_annotation_from_hits(hits)
-        image = SlideImage.from_file_path(image_filename)
+        image = SlideImage.from_file_path(image_filename, internal_handler="vips")
         annotation = WsiAnnotations.from_geojson(annotations_filename)
         annotation.filter(data_description.roi_name)
         precision, recall = compute_precision_recall(
-            image, annotation, hit_annotations, mpp=20, tile_size=(20, 20), distance_cutoff=15000
+            image, annotation, hit_annotations, mpp=8, tile_size=(14, 14), distance_cutoff=15000
         )
         if plot_results:
             plot_wsi_and_annotation_overlay(
-                image, annotation, hit_annotations, mpp=20, tile_size=(20, 20), filename_appendage=filename
+                image, annotation, hit_annotations, mpp=16, tile_size=(7, 7), filename_appendage=filename
             )
         # iou = compute_iou_from_hits(image, annotation, hits)
         # iou_per_wsi[filename] = iou
@@ -256,10 +163,11 @@ def perform_vector_lookup(
     test_collection_name: str,
     annotated_region_overlaps: list[float] | float,
     search_radii: list[float] | float,
-    limit_results: int = 10000,
+    limit_results: int = 16000,
     range_filter: float = 1.0,
     print_results: bool = True,
     plot_results: bool = False,
+    force_recompute_annotated_vectors: bool = False,
 ) -> dict[str, list[float]]:
     if isinstance(annotated_region_overlaps, float):
         annotated_region_overlaps = [annotated_region_overlaps]
@@ -268,7 +176,6 @@ def perform_vector_lookup(
 
     data_description_annotated = load_data_description(os.environ.get("DATA_DESCRIPTION_PATH_ANNOTATED"))
     data_description_test = load_data_description(os.environ.get("DATA_DESCRIPTION_PATH_TEST"))
-    cache_folder = os.environ.get("CACHE_FOLDER")
     connect_to_milvus(
         host=os.environ.get("MILVUS_HOST"),
         user=os.environ.get("MILVUS_USER"),
@@ -284,14 +191,14 @@ def perform_vector_lookup(
     collection_train.load()
     collection_test.load()
 
+    annotated_vec_querier = AnnotatedVectorQuerier(
+        collection=collection_train, data_description=data_description_annotated
+    )
+
     result_dict = {}
     for overlap in annotated_region_overlaps:
-        average_annotated_vector = query_annotated_vectors(
-            data_description=data_description_annotated,
-            collection=collection_train,
-            min_overlap=overlap,
-            force_recompute=True,
-            cache_folder=cache_folder,
+        average_annotated_vector = annotated_vec_querier.get_reference_vectors(
+            overlap_threshold=overlap, force_recompute=force_recompute_annotated_vectors
         )
 
         for search_radius in search_radii:
@@ -329,8 +236,9 @@ if __name__ == "__main__":
     perform_vector_lookup(
         "uni_collection_concat_train",
         "uni_collection_concat_test",
-        [0.55],
-        [0.62],
+        [0.0],
+        [0.5, 0.6, 0.7],
         print_results=True,
         plot_results=False,
+        force_recompute_annotated_vectors=False,
     )
