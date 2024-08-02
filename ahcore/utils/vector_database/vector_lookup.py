@@ -146,7 +146,7 @@ def compute_metrics_per_wsi(
         annotation = WsiAnnotations.from_geojson(annotations_filename)
         annotation.filter(data_description.roi_name)
         precision, recall = compute_precision_recall(
-            image, annotation, hit_annotations, mpp=8, tile_size=(14, 14), distance_cutoff=15000
+            image, annotation, hit_annotations, mpp=0.5, tile_size=(224, 224), distance_cutoff=15000
         )
         if plot_results:
             plot_wsi_and_annotation_overlay(
@@ -229,6 +229,7 @@ def perform_vector_lookup(
                 average_recall = sum([x[1] for x in metrics_per_wsi.values()]) / len(metrics_per_wsi)
                 print(f"Average precision: {average_precision}")
                 print(f"Average recall: {average_recall}")
+                print(f"F1 score: {2 * average_precision * average_recall / (average_precision + average_recall)}")
     return result_dict
 
 
@@ -236,8 +237,8 @@ if __name__ == "__main__":
     perform_vector_lookup(
         "uni_collection_concat_train",
         "uni_collection_concat_test",
-        [0.0],
-        [0.5, 0.6, 0.7],
+        [0.5],
+        [0.67],
         print_results=True,
         plot_results=False,
         force_recompute_annotated_vectors=False,

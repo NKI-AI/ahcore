@@ -62,6 +62,8 @@ class AnnotatedVectorQuerier:
         os.makedirs(self._cache_folder_annotation_masks, exist_ok=True)
 
     def _determine_filenames(self) -> list[str]:
+        log.info("Determining filenames for annotated vector lookup.")
+
         def _extract_stem_from_filename(filename: str) -> str:
             return str(Path(filename).stem)
 
