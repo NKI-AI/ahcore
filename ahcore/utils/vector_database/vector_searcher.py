@@ -1,61 +1,47 @@
-import threading
-from contextlib import contextmanager
 from logging import getLogger
-from typing import Any, Generator
+from typing import Any
 
 import dotenv
-from pymilvus import Collection
+import numpy as np
+from pymilvus import AnnSearchRequest, Collection, RRFRanker, WeightedRanker
 
 from ahcore.utils.data import DataDescription
+from ahcore.utils.vector_database.context_managers import ManagedMilvusCollection, ManagedMilvusPartitions
 
 log = getLogger(__name__)
 dotenv.load_dotenv(override=True)
 
 
-class ManagedMilvusCollection:
-    """Singleton to manage reference counting of a Milvus collection for load/release."""
-
-    _instance = None
-    _lock = threading.Lock()
-
-    def __new__(cls, collection_name, alias="default"):
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-                cls._instance.alias = alias
-                cls._instance.collection = Collection(name=collection_name, using=cls._instance.alias)
-                cls._instance.ref_count = 0
-                cls._instance.access_lock = threading.Lock()
-            return cls._instance
-
-    def __enter__(self):
-        with self.access_lock:
-            if self.ref_count == 0:
-                self.collection.load()
-            self.ref_count += 1
-        return self.collection
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        with self.access_lock:
-            self.ref_count -= 1
-            if self.ref_count == 0:
-                self.collection.release()
-
-
 class VectorSearcher:
     # TODO: Async search
-    def __init__(self, collection_name: str, data_description: DataDescription, alias: str = "default"):
+    def __init__(
+        self,
+        collection_name: str,
+        data_description: DataDescription,
+        use_partitions: bool,
+        index_param: dict[str, Any] | None = None,
+        alias: str = "default",
+    ):
         self.collection_name = collection_name
         self.alias = alias
         self.data_description = data_description
+        self._vector_entry_name = "embedding"  # The vector entry in the Milvus collection
 
-    @contextmanager
-    def manage_collection(self, partition_names: list[str] | None = None) -> Generator[Collection, None, None]:
-        try:
-            self.collection.load(partition_names=partition_names)
-            yield self.collection
-        finally:
-            self.collection.release(partition_names=partition_names)
+        if use_partitions:
+            self._manager = ManagedMilvusPartitions(self.collection_name, alias=self.alias)
+        else:
+            self._manager = ManagedMilvusCollection(self.collection_name, alias=self.alias)
+
+    def _setup_index(self, collection_name: str, index_params: dict[str, Any] | None = None) -> None:
+        if index_params is None:
+            index_params = {
+                "index_type": "FLAT",
+                "metric_type": "COSINE",
+                "params": {},
+            }
+        Collection(name=collection_name, using=self.alias).create_index(
+            field_name=self._vector_entry_name, index_params=index_params
+        )
 
     def _setup_search_param(self, search_param: dict[str, Any] | None = None) -> dict[str, Any]:
         if search_param is None:
@@ -65,25 +51,58 @@ class VectorSearcher:
             }
         return search_param
 
-    def _search_single_vector(
+    def search_single_vector(
         self,
         reference_vector: list[float],
         limit_results: int = 10,
         partitions: list[str] | None = None,
         search_param: dict[str, Any] | None = None,
-    ) -> list[list[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
-        Search for a single vector in the Milvus collection.
+        Search with a single reference vector in the Milvus collection.
         """
         param = self._setup_search_param(search_param)
 
-        # Execute the query
-        results = self.collection.search(
-            data=[reference_vector],
-            anns_field="embedding",
-            param=param,
-            limit=limit_results,
-            partition_names=partitions,
-        )
+        with self._manager.manage_resource(partitions) as collection:
+            results = collection.search(
+                data=[reference_vector],
+                anns_field=self._vector_entry_name,
+                param=param,
+                limit=limit_results,
+                partition_names=partitions,
+            )
 
         return results
+
+    def search_multi_vector(
+        self,
+        reference_vectors: list[list[float]],
+        ranker: WeightedRanker | RRFRanker,
+        limit_results: int = 10,
+        partitions: list[str] | None = None,
+        search_param: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Search with multiple reference vectors in the Milvus collection.
+        Results of the multiple vectors are subsequently re-ranked using the ranker.
+        """
+        base_param = self._setup_search_param(search_param)
+
+        # prepare AnnSearches
+        searches = []
+        for vector in reference_vectors:
+            param = base_param.copy()
+            searches.append(
+                AnnSearchRequest(data=[vector], anns_field=self._vector_entry_name, param=param, limit=limit_results)
+            )
+
+        with self._manager.manage_resource(partitions) as collection:
+            results = collection.hybrid_search(reqs=searches, rerank=ranker, partition_names=partitions)
+
+        return results
+
+    @staticmethod
+    def _extract_embeddings(entries_dict: list[dict[str, Any]]) -> np.ndarray:
+        embeddings = [entry["embedding"] for entries in entries_dict.values() for entry in entries]
+        embeddings_np = np.array(embeddings)
+        return embeddings_np
