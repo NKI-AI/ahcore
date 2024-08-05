@@ -14,6 +14,7 @@ dotenv.load_dotenv(override=True)
 
 class VectorSearcher:
     # TODO: Async search
+    # TODO: update types or convert search result to dicts
     def __init__(
         self,
         collection_name: str,
@@ -32,6 +33,8 @@ class VectorSearcher:
         else:
             self._manager = ManagedMilvusCollection(self.collection_name, alias=self.alias)
 
+        self._setup_index(collection_name, index_param)
+
     def _setup_index(self, collection_name: str, index_params: dict[str, Any] | None = None) -> None:
         if index_params is None:
             index_params = {
@@ -47,7 +50,10 @@ class VectorSearcher:
         if search_param is None:
             search_param = {
                 "metric_type": "COSINE",
-                "params": {},
+                "params": {
+                    "radius": 0.5,  # Radius of the search circle
+                    "range_filter": 1.0,  # Range filter to filter out vectors that are not within the search circle
+                },
             }
         return search_param
 
@@ -70,6 +76,7 @@ class VectorSearcher:
                 param=param,
                 limit=limit_results,
                 partition_names=partitions,
+                output_fields=["*"],
             )
 
         return results
@@ -84,7 +91,7 @@ class VectorSearcher:
     ) -> list[dict[str, Any]]:
         """
         Search with multiple reference vectors in the Milvus collection.
-        Results of the multiple vectors are subsequently re-ranked using the ranker.
+        Results of the multiple searches are subsequently re-ranked using the ranker.
         """
         base_param = self._setup_search_param(search_param)
 
@@ -94,8 +101,24 @@ class VectorSearcher:
             param = base_param.copy()
             searches.append(
                 AnnSearchRequest(data=[vector], anns_field=self._vector_entry_name, param=param, limit=limit_results)
-            )
+            )  # Note that these annsearches can also have an additional 'expr' for other fields
 
+        with self._manager.manage_resource(partitions) as collection:
+            results = collection.hybrid_search(reqs=searches, rerank=ranker, partition_names=partitions)
+
+        return results
+
+    def search_multi_vector_annreqs(
+        self,
+        searches: list[AnnSearchRequest],
+        ranker: WeightedRanker | RRFRanker,
+        partitions: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Search with multiple AnnSearchRequests in the Milvus collection. Allows for individual search params
+        per reference vector.
+        Results of the multiple searches are subsequently re-ranked using the ranker.
+        """
         with self._manager.manage_resource(partitions) as collection:
             results = collection.hybrid_search(reqs=searches, rerank=ranker, partition_names=partitions)
 

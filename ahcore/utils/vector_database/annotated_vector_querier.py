@@ -49,17 +49,29 @@ class ReduceMethod(Enum):
 
 
 class AnnotatedVectorQuerier:
-    def __init__(self, collection: Collection, data_description: DataDescription):
-        self.collection = collection
-        self.collection.load()
-
+    def __init__(
+        self, collection_name: str, data_description: DataDescription, index_params: dict[str, Any] | None = None
+    ):
         self.data_description = data_description
-
+        self._vector_entry_name = "embedding"
         self._data_manager = DataManager(database_uri=data_description.manifest_database_uri)
         self._filenames: list[str] = self._determine_filenames()
         self._cache_folder = Path(os.environ.get("CACHE_FOLDER_VECTOR_LOOKUP"))
         self._cache_folder_annotation_masks = self._cache_folder / "annotation_masks"
         os.makedirs(self._cache_folder_annotation_masks, exist_ok=True)
+
+        self.collection = Collection(name=collection_name, using=os.environ.get("MILVUS_ALIAS"))
+        self._setup_index(index_params=index_params)
+        self.collection.load()
+
+    def _setup_index(self, index_params: dict[str, Any] | None = None) -> None:
+        if index_params is None:
+            index_params = {
+                "index_type": "FLAT",
+                "metric_type": "COSINE",
+                "params": {},
+            }
+        self.collection.create_index(field_name=self._vector_entry_name, index_params=index_params)
 
     def _determine_filenames(self) -> list[str]:
         log.info("Determining filenames for annotated vector lookup.")
@@ -127,6 +139,7 @@ class AnnotatedVectorQuerier:
             f"filename == '{str(filename)}.svs' and coordinate_x >= {min_x} and coordinate_x <= {max_x} "
             f"and coordinate_y >= {min_y} and coordinate_y <= {max_y}"
         )
+        # TODO: use * operator and add vector field name to class
         results = self.collection.query(
             expr=expr,
             output_fields=["filename", "coordinate_x", "coordinate_y", "tile_size", "mpp", "embedding"],

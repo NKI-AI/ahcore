@@ -1,5 +1,4 @@
 import os
-from typing import Any
 
 import dotenv
 import numpy as np
@@ -9,7 +8,6 @@ from dlup import SlideImage
 from dlup.annotations import AnnotationClass
 from dlup.annotations import Polygon as DlupPolygon
 from dlup.annotations import WsiAnnotations
-from pymilvus import Collection
 from pymilvus.client.abstract import Hit, SearchResult
 from shapely import box
 
@@ -24,46 +22,9 @@ from ahcore.utils.vector_database.utils import (
     generate_filenames,
     load_data_description,
 )
+from ahcore.utils.vector_database.vector_searcher import VectorSearcher
 
 dotenv.load_dotenv(override=True)
-
-
-def create_index(collection: Collection, index_params: dict[str, Any] | None = None) -> None:
-    if index_params is None:
-        index_params = {
-            "index_type": "FLAT",
-            "metric_type": "COSINE",
-            "params": {"nlist": 8192},
-        }
-    collection.create_index(field_name="embedding", index_params=index_params)
-
-
-def search_vectors_in_radius(
-    collection: Collection,
-    reference_vector: list[float],
-    limit_results: int = 10,
-    search_radius: float = 1.0,
-    range_filter: float = 0.0,
-) -> list[list[str, Any]]:
-    # Define the search parameters
-    param = {
-        "metric_type": "COSINE",
-        "params": {
-            "radius": search_radius,  # Radius of the search circle
-            "range_filter": range_filter,  # Range filter to filter out vectors that are not within the search circle
-        },
-    }
-
-    # Execute the query
-    results = collection.search(
-        data=[reference_vector],
-        anns_field="embedding",
-        param=param,
-        limit=limit_results,
-        output_fields=["filename", "coordinate_x", "coordinate_y", "tile_size", "mpp", "embedding"],
-    )
-
-    return results
 
 
 def extract_results_per_wsi(search_results: SearchResult) -> dict[str, list[Hit]]:
@@ -169,6 +130,7 @@ def perform_vector_lookup(
     plot_results: bool = False,
     force_recompute_annotated_vectors: bool = False,
 ) -> dict[str, list[float]]:
+    # TODO get rid of hyperparam here, and add hydra entrypoint with config of data descrip + hyperparam
     if isinstance(annotated_region_overlaps, float):
         annotated_region_overlaps = [annotated_region_overlaps]
     if isinstance(search_radii, float):
@@ -183,32 +145,38 @@ def perform_vector_lookup(
         port=os.environ.get("MILVUS_PORT"),
         alias=os.environ.get("MILVUS_ALIAS"),
     )
-    collection_train = Collection(name=train_collection_name, using="ahcore_milvus_vector_db")
-    collection_test = Collection(name=test_collection_name, using="ahcore_milvus_vector_db")
-
-    create_index(collection_train)
-    create_index(collection_test)
-    collection_train.load()
-    collection_test.load()
 
     annotated_vec_querier = AnnotatedVectorQuerier(
-        collection=collection_train, data_description=data_description_annotated
+        collection_name=train_collection_name, data_description=data_description_annotated
+    )
+
+    vec_searcher = VectorSearcher(
+        collection_name=test_collection_name,
+        data_description=data_description_test,
+        alias=os.environ.get("MILVUS_ALIAS"),
+        use_partitions=False,
     )
 
     result_dict = {}
     for overlap in annotated_region_overlaps:
         average_annotated_vector = annotated_vec_querier.get_reference_vectors(
-            overlap_threshold=overlap, force_recompute=force_recompute_annotated_vectors
+            overlap_threshold=overlap, reduce_method="mean", force_recompute=force_recompute_annotated_vectors
         )
 
         for search_radius in search_radii:
-            search_results = search_vectors_in_radius(
-                collection_test,
+            search_param = {
+                "metric_type": "COSINE",
+                "params": {
+                    "radius": search_radius,
+                    "range_filter": range_filter,
+                },
+            }
+            search_results = vec_searcher.search_single_vector(
                 reference_vector=average_annotated_vector,
                 limit_results=limit_results,
-                search_radius=search_radius,
-                range_filter=range_filter,
+                search_param=search_param,
             )
+
             metrics_per_wsi = compute_metrics_per_wsi(
                 search_results, data_description=data_description_test, plot_results=plot_results
             )

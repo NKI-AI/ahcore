@@ -1,16 +1,16 @@
+import threading
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from contextlib import contextmanager
-from abc import ABC, abstractmethod
+
 from pymilvus import Collection
 
 
-import threading
-
-
 class MilvusResourceManager(ABC):
-    def __init__(self) -> None:
-        super().__init__()
-        self.collection: Collection
+    @property
+    @abstractmethod
+    def collection(self) -> Collection:
+        pass
 
     @abstractmethod
     def load_resource(self, resource_identifiers: list[str] | None = None):
@@ -36,27 +36,32 @@ class ManagedMilvusCollection(MilvusResourceManager):
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
                 cls._instance.alias = alias
-                cls._instance.collection = Collection(name=collection_name, using=cls._instance.alias)
+                cls._instance._collection = Collection(name=collection_name, using=cls._instance.alias)
                 cls._instance.ref_count = 0
                 cls._instance.access_lock = threading.Lock()
             return cls._instance
-    
+
+    @property
+    def collection(self) -> Collection:
+        return self._instance._collection
+
     def load_resource(self, resource_identifiers: list[str] | None = None):
         with self.access_lock:
             if self.ref_count == 0:
                 self.collection.load()
             self.ref_count += 1
-    
+
     def release_resource(self, resource_identifiers: list[str] | None = None):
         with self.access_lock:
             self.ref_count -= 1
             if self.ref_count == 0:
                 self.collection.release()
 
+    @contextmanager
     def manage_resource(self, resource_identifiers: list[str] | None = None):
         if resource_identifiers is not None:
             raise ValueError("ManagedMilvusCollection only manages complete collections.")
-        
+
         self.load_resource(resource_identifiers)
         try:
             yield self.collection
@@ -66,7 +71,8 @@ class ManagedMilvusCollection(MilvusResourceManager):
 
 class ManagedMilvusPartitions(MilvusResourceManager):
     """Singleton to manage reference counting of partitions in a Milvus collection for load/release.
-       Used when the complete collection is too large to load at once, and partitions are loaded inst."""
+    Used when the complete collection is too large to load at once, and partitions are loaded inst."""
+
     _instance = None
     _lock = threading.Lock()
 
@@ -75,10 +81,14 @@ class ManagedMilvusPartitions(MilvusResourceManager):
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
                 cls._instance.alias = alias
-                cls._instance.collection = Collection(name=collection_name, using=cls._instance.alias)
+                cls._instance._collection = Collection(name=collection_name, using=cls._instance.alias)
                 cls._instance.partition_ref_counts = defaultdict(int)
                 cls._instance.access_lock = threading.Lock()
             return cls._instance
+
+    @property
+    def collection(self) -> Collection:
+        return self._instance._collection
 
     @contextmanager
     def manage_resource(self, resource_identifiers: list[str] | None = None):
