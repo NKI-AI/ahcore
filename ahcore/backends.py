@@ -43,6 +43,7 @@ class ZarrSlide(AbstractSlideBackend):
     def close(self):
         self._reader.close()
 
+
 class H5Slide(AbstractSlideBackend):
     def __init__(self, filename: PathLike, stitching_mode: StitchingMode | str = StitchingMode.CROP) -> None:
         super().__init__(filename)

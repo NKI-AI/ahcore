@@ -159,12 +159,16 @@ class FileImageReader(abc.ABC):
     def _decompress_and_reshape_data(self, tile: GenericNumberArray) -> GenericNumberArray:
         if self._is_binary:
             with PIL.Image.open(io.BytesIO(tile)) as img:
-                return np.array(img).transpose(2, 0, 1)  # fixme: this also shouldn't work because the thing is flattened and doesn't have 3 dimensions
+                return np.array(img).transpose(
+                    2, 0, 1
+                )  # fixme: this also shouldn't work because the thing is flattened and doesn't have 3 dimensions
         else:
             # If handling features, we need to expand dimensions to match the expected shape.
             if tile.ndim == 1:  # fixme: is this the correct location for this
                 if not self._tile_size == [1, 1]:
-                    raise NotImplementedError(f"Tile is single dimensional and {self._tile_size=} should be [1, 1], other cases have not been considered and cause unwanted behaviour.")
+                    raise NotImplementedError(
+                        f"Tile is single dimensional and {self._tile_size=} should be [1, 1], other cases have not been considered and cause unwanted behaviour."
+                    )
                 return tile.reshape(self._num_channels, *self._tile_size)
             return tile
 
@@ -246,7 +250,6 @@ class FileImageReader(abc.ABC):
                 img_end_y = min(h, end_y)
                 img_start_x = max(0, start_x)
                 img_end_x = min(w, end_x)
-
 
                 if self._stitching_mode == StitchingMode.CROP:
                     crop_start_y = img_start_y - start_y

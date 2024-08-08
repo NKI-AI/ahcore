@@ -145,7 +145,16 @@ def get_labels_from_record(record: Image | Patient) -> list[tuple[str, str]] | N
     _labels = [(str(label.key), str(label.value)) for label in record.labels] if record.labels else None
     return _labels
 
-def get_relevant_feature_info_from_record(record: ImageFeature, data_description: DataDescription) -> tuple[Path, PositiveFloat, tuple[PositiveInt, PositiveInt], tuple[PositiveInt, PositiveInt], TilingMode, ImageBackend, PositiveFloat]:
+
+def get_relevant_feature_info_from_record(record: ImageFeature, data_description: DataDescription) -> tuple[
+    Path,
+    PositiveFloat,
+    tuple[PositiveInt, PositiveInt],
+    tuple[PositiveInt, PositiveInt],
+    TilingMode,
+    ImageBackend,
+    PositiveFloat,
+]:
     """Get the features from a record of type Image.
 
     Parameters
@@ -160,7 +169,10 @@ def get_relevant_feature_info_from_record(record: ImageFeature, data_description
     """
     image_path = data_description.data_dir / record.filename
     mpp = record.mpp
-    tile_size = (record.num_tiles, 1)  # this would load all the features in one go --> can be extended to only load relevant tile level features
+    tile_size = (
+        record.num_tiles,
+        1,
+    )  # this would load all the features in one go --> can be extended to only load relevant tile level features
     tile_overlap = (0, 0)
     tile_mode = TilingMode.C
     backend = ImageBackend[str(record.reader)]
@@ -340,7 +352,9 @@ class DataManager:
             The features of the image.
         """
         image_feature = self._session.query(ImageFeature).filter_by(image_id=image_id, version=feature_version).first()
-        self._ensure_record(image_feature, f"No features found for image ID {image_id} and feature version {feature_version}")
+        self._ensure_record(
+            image_feature, f"No features found for image ID {image_id} and feature version {feature_version}"
+        )
         assert image_feature is not None
         # todo: make sure that this only allows to run one ImageFeature, I think it should be good bc of the unique constraint
         return image_feature
@@ -378,9 +392,9 @@ def datasets_from_data_description(
     assert isinstance(stage, str), "Stage should be a string."
 
     if stage == "fit":
-            grid_description = data_description.training_grid
+        grid_description = data_description.training_grid
     else:
-            grid_description = data_description.inference_grid
+        grid_description = data_description.inference_grid
 
     patients = db_manager.get_records_by_split(
         manifest_name=data_description.manifest_name,
@@ -403,8 +417,12 @@ def datasets_from_data_description(
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
 
             if use_features:
-                image_feature = db_manager.get_image_features_by_image_and_feature_version(image.id, data_description.feature_version)
-                image_path, mpp, tile_size, tile_overlap, tile_mode, backend, overwrite_mpp = get_relevant_feature_info_from_record(image_feature, data_description)
+                image_feature = db_manager.get_image_features_by_image_and_feature_version(
+                    image.id, data_description.feature_version
+                )
+                image_path, mpp, tile_size, tile_overlap, tile_mode, backend, overwrite_mpp = (
+                    get_relevant_feature_info_from_record(image_feature, data_description)
+                )
             else:
                 image_path = image_root / image.filename
                 tile_size = grid_description.tile_size

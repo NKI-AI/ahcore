@@ -132,6 +132,7 @@ class ImageFeature(Base):
     image: Mapped["Image"] = relationship("Image", back_populates="features")
     description: Mapped["FeatureDescription"] = relationship("FeatureDescription", back_populates="image_feature")
 
+
 class FeatureDescription(Base):
     """Feature description table."""
 
@@ -154,7 +155,10 @@ class FeatureDescription(Base):
     model_name = Column(String)
     model_path = Column(String)
     feature_dimension = Column(Integer)
-    image_transforms_description = Column(String)  # it would be nice to have a way to track which transforms the feature extractors used, but maybe this is not the best way to do it
+    image_transforms_description = Column(
+        String
+    )  # it would be nice to have a way to track which transforms the feature extractors used, but maybe this is not the best way to do it
+
 
 class Mask(Base):
     """Mask table."""
