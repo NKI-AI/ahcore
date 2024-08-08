@@ -1,4 +1,5 @@
-from src.utils.model_utils import MLP, MaskedMLP, GatedAttention
+from ahcore.models.layers.MLP import MLP, MaskedMLP, GatedAttention
+from ahcore.models.layers.attention import GatedAttention
 
 from typing import List, Optional
 
