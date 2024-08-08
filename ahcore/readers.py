@@ -156,11 +156,16 @@ class FileImageReader(abc.ABC):
             assert self._metadata
         return self._metadata
 
-    def _decompress_data(self, tile: GenericNumberArray) -> GenericNumberArray:
+    def _decompress_and_reshape_data(self, tile: GenericNumberArray) -> GenericNumberArray:
         if self._is_binary:
             with PIL.Image.open(io.BytesIO(tile)) as img:
-                return np.array(img).transpose(2, 0, 1)
+                return np.array(img).transpose(2, 0, 1)  # fixme: this also shouldn't work because the thing is flattened and doesn't have 3 dimensions
         else:
+            # If handling features, we need to expand dimensions to match the expected shape.
+            if tile.ndim == 1:  # fixme: is this the correct location for this
+                if not self._tile_size == [1, 1]:
+                    raise NotImplementedError(f"Tile is single dimensional and {self._tile_size=} should be [1, 1], other cases have not been considered and cause unwanted behaviour.")
+                return tile.reshape(self._num_channels, *self._tile_size)
             return tile
 
     def read_region(self, location: tuple[int, int], level: int, size: tuple[int, int]) -> pyvips.Image:
@@ -201,7 +206,7 @@ class FileImageReader(abc.ABC):
         total_rows = math.ceil((self._size[1] - self._tile_overlap[1]) / self._stride[1])
         total_cols = math.ceil((self._size[0] - self._tile_overlap[0]) / self._stride[0])
 
-        assert total_rows * total_cols == num_tiles
+        assert total_rows * total_cols == num_tiles  # Equality only holds if features where created without mask
 
         x, y = location
         w, h = size
@@ -230,7 +235,7 @@ class FileImageReader(abc.ABC):
                 tile = (
                     self._empty_tile()
                     if tile_index_in_image_dataset == -1
-                    else self._decompress_data(image_dataset[tile_index_in_image_dataset])
+                    else self._decompress_and_reshape_data(image_dataset[tile_index_in_image_dataset])
                 )
                 start_y = i * self._stride[1] - y
                 end_y = start_y + self._tile_size[1]
@@ -241,6 +246,7 @@ class FileImageReader(abc.ABC):
                 img_end_y = min(h, end_y)
                 img_start_x = max(0, start_x)
                 img_end_x = min(w, end_x)
+
 
                 if self._stitching_mode == StitchingMode.CROP:
                     crop_start_y = img_start_y - start_y
