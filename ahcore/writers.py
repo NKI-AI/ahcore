@@ -87,6 +87,7 @@ class Writer(abc.ABC):
         precision: InferencePrecision | None = None,
         grid: Grid | None = None,
     ) -> None:
+        # todo: better documentation for this, can basically set everything it is almost independent from slide image
         self._grid = grid
         self._filename: Path = filename
         self._size: tuple[int, int] = size
@@ -481,7 +482,7 @@ class H5FileImageWriter(Writer):
             raise ValueError(f"Batch should have a single element when writing h5. Got batch shape {batch.shape}.")
         batch_size = batch.shape[0]
         self._data[self._current_index : self._current_index + batch_size] = (
-            batch.flatten() if self._is_compressed_image else batch
+            batch.flatten() if self._is_compressed_image else batch  # fixme: flatten shouldn't work here
         )
 
     def create_dataset(

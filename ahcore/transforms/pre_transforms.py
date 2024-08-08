@@ -97,6 +97,13 @@ class PreTransformTaskFactory:
         cls, data_description: DataDescription, requires_target: bool = True
     ) -> PreTransformTaskFactory:
         transforms: list[PreTransformCallable] = []
+
+        transforms.append(ImageToTensor())
+
+        transforms.append(SampleNFeatures(n=1000))
+
+        transforms.append(AllowCollate())
+
         if not requires_target:
             return cls(transforms)
 
@@ -115,6 +122,35 @@ class PreTransformTaskFactory:
 
     def __repr__(self) -> str:
         return f"PreTransformTaskFactory(transforms={self._transforms})"
+
+
+class SampleNFeatures:
+    def __init__(self, n=1000):
+        self.n = n
+        logger.critical(
+            f"Sampling {n} features from the image. Sampling WITH replacement is done if there are not enough tiles."
+        )
+
+    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
+        features = sample["image"]
+        if not type(features) is torch.Tensor:
+            raise ValueError(
+                f"Expected features to be a torch.Tensor, got {type(features)}. Apply ImageToTensor transform first."
+            )
+
+        feature_dim, h, w = features.shape
+
+        if not 0 < w < 1:
+            raise ValueError(f"Expected features to have a width dimension of 1, got {w}.")
+
+        # TODO: DO WE WANT THIS????? SAMPLING WITH REPLACEMENT OR NOT???
+        n_random_indices = (
+            np.random.choice(h, self.n, replace=False) if h > self.n else np.random.choice(h, self.n, replace=True)
+        )
+
+        sample["image"] = features[:, n_random_indices, :]
+
+        return sample
 
 
 class LabelToClassIndex:
@@ -218,7 +254,7 @@ class ImageToTensor:
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
         tile: pyvips.Image = sample["image"]
         # Flatten the image to remove the alpha channel, using white as the background color
-        tile_ = tile.flatten(background=[255, 255, 255])
+        tile_ = tile.flatten(background=[255, 255, 255])  # todo: check if this doesn't mess up features
 
         # Convert VIPS image to a numpy array then to a torch tensor
         np_image = tile_.numpy()

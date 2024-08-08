@@ -58,9 +58,10 @@ class DataDescription(BaseModel):
     manifest_database_uri: str
     manifest_name: str
     split_version: str
+    feature_version: Optional[str] = None
     annotations_dir: Path
-    training_grid: GridDescription
-    inference_grid: GridDescription
+    training_grid: Optional[GridDescription] = None
+    inference_grid: Optional[GridDescription] = None
     index_map: Optional[Dict[str, int]]
     remap_labels: Optional[Dict[str, str]] = None
     use_class_weights: Optional[bool] = False
