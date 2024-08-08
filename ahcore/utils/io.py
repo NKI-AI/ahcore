@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+import subprocess
 import warnings
 from enum import Enum
 from pathlib import Path
@@ -28,7 +29,7 @@ from omegaconf.errors import InterpolationKeyError
 from pytorch_lightning import LightningModule
 from pytorch_lightning.utilities import rank_zero_only
 
-from ahcore.models.jit_model import AhcoreJitModel
+from ahcore.models.base_jit_model import BaseAhcoreJitModel
 
 
 def get_logger(name: str = __name__) -> logging.Logger:
@@ -237,7 +238,7 @@ def load_weights(model: LightningModule, config: DictConfig) -> LightningModule:
         The model loaded from the checkpoint file.
     """
     _model = getattr(model, "_model")
-    if isinstance(_model, AhcoreJitModel):
+    if isinstance(_model, BaseAhcoreJitModel):
         return model
     else:
         # Load checkpoint weights
@@ -273,3 +274,19 @@ def validate_checkpoint_paths(config: DictConfig) -> DictConfig:
         if checkpoint_path and not os.path.isabs(checkpoint_path):
             config.trainer.resume_from_checkpoint = pathlib.Path(hydra.utils.get_original_cwd()) / checkpoint_path
         return config
+
+
+def get_git_hash():
+    try:
+        # Check if we're in a git repository
+        subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], check=True, capture_output=True, text=True)
+
+        # Get the git hash
+        result = subprocess.run(["git", "rev-parse", "HEAD"], check=True, capture_output=True, text=True)
+        return result.stdout.strip()
+    except subprocess.CalledProcessError:
+        # This will be raised if we're not in a git repo
+        return None
+    except FileNotFoundError:
+        # This will be raised if git is not installed or not in PATH
+        return None

@@ -202,7 +202,7 @@ class Split(Base):
     # pylint: disable=E1102
     created = Column(DateTime(timezone=True), default=func.now())
     last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
-    category: Column[CategoryEnum] = Column(Enum(CategoryEnum), nullable=False)
+    category: Column[str] = Column(Enum(CategoryEnum), nullable=False)
     patient_id = Column(Integer, ForeignKey("patient.id"), nullable=False)
     split_definition_id = Column(Integer, ForeignKey("split_definitions.id"), nullable=False)
 

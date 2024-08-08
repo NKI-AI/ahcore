@@ -34,7 +34,7 @@ class DiceMetric(TileMetric):
         Metric computing dice over classes. The classes are derived from the index_map that's defined in the
         data_description.
 
-        First, a softmax is taken over the predictions, followed by a softmax. Then, if there is a ROI available, the
+        First, a softmax is taken over the predictions. Then, if there is a ROI available, the
         input and target are masked with this ROI. This is followed by an argmax over the predictions and target,
         resulting in a tensor of shape (batch_size, height, width) with values in [0, num_classes - 1]. The dice is then
         computed over each class.
@@ -100,7 +100,7 @@ class MetricFactory:
         super().__init__()
         names = [metric.name for metric in metrics]
         if len(set(names)) != len(names):
-            raise RuntimeError("Each individual metric must have a different name.")
+            raise RuntimeError("Each indivial metric must have a different name.")
 
         self._metrics = metrics
 
@@ -323,6 +323,10 @@ class WSIMetricFactory:
             raise RuntimeError("Each individual metric must have a different name.")
 
         self._metrics = metrics
+
+    @property
+    def metrics(self) -> list[WSIMetric]:
+        return self._metrics
 
     @classmethod
     def for_segmentation(cls, *args: Any, **kwargs: Any) -> WSIMetricFactory:

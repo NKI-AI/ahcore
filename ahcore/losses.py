@@ -73,13 +73,11 @@ class LossFactory(nn.Module):
             self._class_weights = None
 
     def forward(self, input: torch.Tensor, target: torch.Tensor, roi: torch.Tensor | None = None) -> torch.Tensor:
-        total_loss = sum(
-            [
-                weight.to(input.device) * curr_loss(input, target, roi, self._class_weights)
-                for weight, curr_loss in zip(self._weights, self._losses)
-            ],
-            torch.tensor([0.0] * input.shape[0], device=input.device),  # Default value for sum
-        )
+        losses = [
+            weight.to(input.device) * curr_loss(input, target, roi, self._class_weights)
+            for weight, curr_loss in zip(self._weights, self._losses)
+        ]
+        total_loss: torch.Tensor = torch.stack(losses).sum(dim=0)
         return total_loss
 
 
@@ -92,6 +90,7 @@ def cross_entropy(
     topk: float | None = None,
     label_smoothing: float = 0.0,
     limit: float | None = None,
+    multiclass: bool = False,
 ) -> torch.Tensor:
     """
     Compute a ROI weighted cross entropy function. The resulting output is a per-sample cross entropy.
@@ -116,6 +115,9 @@ def cross_entropy(
         Default: :math:`0.0`.
     limit : float, optional
         If set this will be the value the cross entropy is clipped (from below). This has to be a negative value.
+    multiclass : bool
+        If true, a binary_cross_entropy_with_logits is applied rather than a cross_entropy. The difference is that
+        for a sigmoid rather than a softmax is applied.
 
     Returns
     -------
@@ -134,7 +136,8 @@ def cross_entropy(
         roi_sum = roi.sum() / input.shape[0]
         if roi_sum == 0:
             # Return a loss of zero if there is no ROI of length batch size
-            return torch.tensor([0.0] * input.shape[0], requires_grad=True).to(input.device)
+            _output: torch.Tensor = torch.tensor([0.0] * input.shape[0], requires_grad=True).to(input.device)
+            return _output
     else:
         roi_sum = torch.tensor([np.prod(tuple(input.shape)[2:])]).to(input.device)
 
@@ -142,14 +145,23 @@ def cross_entropy(
         ignore_index = -100
 
     # compute cross_entropy pixel by pixel
-    _cross_entropy = F.cross_entropy(
-        input,
-        target.argmax(dim=1),
-        ignore_index=ignore_index,
-        weight=None if weight is None else weight.to(input.device),
-        reduction="none",
-        label_smoothing=label_smoothing,
-    )
+    if not multiclass:
+        _cross_entropy = F.cross_entropy(
+            input,
+            target.argmax(dim=1),
+            ignore_index=ignore_index,
+            weight=None if weight is None else weight.to(input.device),
+            reduction="none",
+            label_smoothing=label_smoothing,
+        )
+    else:
+        _cross_entropy = F.binary_cross_entropy_with_logits(
+            input,
+            target,
+            weight=None if weight is None else weight.to(input.device),
+            reduction="none",
+            pos_weight=None,
+        )
 
     if limit is not None:
         _cross_entropy = torch.clip(_cross_entropy, limit, None)
@@ -158,7 +170,8 @@ def cross_entropy(
         _cross_entropy = roi[:, 0, ...] * _cross_entropy
 
     if topk is None:
-        return _cross_entropy.sum(dim=(1, 2)) / roi_sum
+        _topk_output: torch.Tensor = _cross_entropy.sum(dim=(1, 2)) / roi_sum
+        return _topk_output
 
     k = int(round(float(roi_sum.cpu()) * topk))
     # top-k returns Any
@@ -232,14 +245,14 @@ def soft_dice(
         raise ValueError(f"Input and target must be in the same device. Got: {input.device} and {target.device}")
 
     if ignore_index is not None:
-        mask = target != ignore_index
-        input = mask * input
-        target = mask * target
+        mask = torch.Tensor(target != ignore_index).to(target.device)
+        input = torch.where(mask, input, torch.zeros_like(input))
+        target = torch.where(mask, target, torch.zeros_like(target))
 
     # Apply the ROI if it is there
     if roi is not None:
-        input = roi * input
-        target = roi * target
+        input = torch.where(roi, input, torch.zeros_like(input))
+        target = torch.where(roi, target, torch.zeros_like(target))
 
     # Softmax still needs to be taken (logits are outputted by the network)
     input_soft = F.softmax(input, dim=1)

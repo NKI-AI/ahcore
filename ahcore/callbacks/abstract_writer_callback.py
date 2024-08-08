@@ -1,12 +1,14 @@
 import abc
 import ctypes
+import pathlib
 import time
+from collections import defaultdict
 from multiprocessing import Event, Process, Queue, Semaphore, Value
 from multiprocessing.sharedctypes import SynchronizedBase
 from multiprocessing.synchronize import Event as EventClass
 from multiprocessing.synchronize import Semaphore as SemaphoreClass
 from threading import Thread
-from typing import Any, Generator, Tuple
+from typing import Any, Generator, Tuple, Type
 
 import pytorch_lightning as pl
 import torch
@@ -14,6 +16,8 @@ import torch.distributed as dist
 from dlup.data.dataset import ConcatDataset, TiledWsiDataset
 from pytorch_lightning import Callback
 
+from ahcore.callbacks.converters.common import ConvertCallbacks
+from ahcore.lit_module import AhCoreLightningModule
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import GenericNumberArray, InferencePrecision, NormalizationType
 from ahcore.writers import Writer
@@ -99,19 +103,20 @@ def _gather_batch(
     return all_coordinates, all_data, all_global_index, all_paths
 
 
-class WriterCallback(abc.ABC, Callback):
+class AbstractWriterCallback(abc.ABC, Callback):
     def __init__(
         self,
+        writer_class: Type[Writer],
+        dump_dir: pathlib.Path,
         queue_size: int = 16,
         max_concurrent_queues: int = 16,
         requires_gather: bool = True,
         data_key: str = "prediction",
         normalization_type: str = NormalizationType.SOFTMAX,
         precision: str = InferencePrecision.FP32,  # This is passed to the writer class
-        writer_class: Writer | None = None,
+        callbacks: list[ConvertCallbacks] | None = None,
     ) -> None:
-        # TODO: Test predict
-
+        self._dump_dir = dump_dir
         self._queue_size = queue_size
         self._queues: dict[str, Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]] = {}
         self._completion_flags: dict[str, Any] = {}
@@ -122,6 +127,7 @@ class WriterCallback(abc.ABC, Callback):
         self._precision: InferencePrecision = InferencePrecision(precision)
         self._writer_class = writer_class
         self._max_concurrent_queues = max_concurrent_queues
+        self._callbacks = callbacks or []
 
         self._dataset_sizes: dict[str, int] = {}  # Keeps track of the total size of a dataset
         self._tile_counter: dict[str, int] = {}  # Keeps track of the number of tiles processed for a dataset
@@ -132,12 +138,33 @@ class WriterCallback(abc.ABC, Callback):
         self._total_dataset: ConcatDataset[dict[str, Any]] | None = None
         self._dataset_index = 0
 
+        self._num_filenames_seen = 0
+
+    @property
+    def dump_dir(self) -> pathlib.Path:
+        return self._dump_dir
+
     def setup(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str) -> None:
         if trainer.world_size > 1:
             if self._max_concurrent_queues < trainer.world_size:
                 raise ValueError(
                     "max_concurrent_queues should be greater than or equal to the world size to avoid deadlock."
                 )
+
+        if trainer.global_rank != 0 and self._requires_gather:
+            return
+
+        for callback in self._callbacks:
+            logger.info("Setting up callback %s", callback.__class__.__name__)
+            callback.setup(self, trainer, pl_module, stage)
+
+    @abc.abstractmethod
+    def get_output_filename(self, pl_module: AhCoreLightningModule, filename: str) -> pathlib.Path:
+        pass
+
+    def _start_callback_workers(self) -> None:
+        for callback in self._callbacks:
+            callback.start_workers()
 
     def _on_epoch_start(self, trainer: "pl.Trainer") -> None:
         self._cleanup_shutdown_event.clear()
@@ -146,6 +173,7 @@ class WriterCallback(abc.ABC, Callback):
         self._cleanup_thread.start()
 
         if self._dataset_sizes != {}:
+            self._start_callback_workers()
             return
 
         current_dataset: TiledWsiDataset
@@ -153,6 +181,8 @@ class WriterCallback(abc.ABC, Callback):
         for current_dataset in self._total_dataset.datasets:  # type: ignore
             assert current_dataset.slide_image.identifier
             self._dataset_sizes[current_dataset.slide_image.identifier] = len(current_dataset)
+
+        self._start_callback_workers()
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         logger.info("Validation epoch start")
@@ -162,7 +192,7 @@ class WriterCallback(abc.ABC, Callback):
         return self._on_epoch_start(trainer)
 
     def on_predict_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        logger.info("Prediction epoch start")
+        logger.debug("Prediction epoch start")
         if trainer.global_rank != 0 and self._requires_gather:
             return
         self._total_dataset = trainer.predict_dataloaders.dataset  # type: ignore
@@ -287,6 +317,9 @@ class WriterCallback(abc.ABC, Callback):
             )
             self._dataset_index += data.shape[0]
 
+            if last_batch:
+                logger.debug(f"Processed {curr_filename}, now dumping.")
+
     @abc.abstractmethod
     def build_writer_class(self, pl_module: "pl.LightningModule", stage: str, filename: str) -> Writer:
         pass
@@ -310,6 +343,7 @@ class WriterCallback(abc.ABC, Callback):
             )
             self._processes[filename] = process
             self._completion_flags[filename] = completion_flag
+            self._num_filenames_seen += 1
             process.start()
         self._queues[filename].put((coordinates, batch))
         if last_batch:
@@ -333,6 +367,31 @@ class WriterCallback(abc.ABC, Callback):
             time.sleep(0.5)  # Short sleep to yield control and reduce CPU usage
 
     def _epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        for callback in self._callbacks:
+            while self._num_filenames_seen != callback.completed_tasks:
+                logger.debug(
+                    f"Waiting for {type(callback)} tasks to complete, I've seen %s, but %s are completed",
+                    self._num_filenames_seen,
+                    callback.completed_tasks,
+                )
+                time.sleep(0.5)
+
+            # Now we need to reset those counters
+            callback.reset_counters()
+
+            if not callback.has_returns:
+                continue
+
+            callback.shutdown_workers()
+
+            results = callback.collect_results()
+            output_metrics = self._process_metrics(results)
+            if output_metrics is None:
+                continue
+
+            pl_module.log_dict(output_metrics, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self._num_filenames_seen = 0
+
         self._dataset_index = 0
         while True:
             if self._queues == {}:
@@ -342,10 +401,36 @@ class WriterCallback(abc.ABC, Callback):
         self._tile_counter = {}
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if trainer.global_rank != 0 and self._requires_gather:
+            return
+        logger.info("Validation epoch ended.")
         self._epoch_end(trainer, pl_module)
 
+    @staticmethod
+    def _process_metrics(results: Generator[Any, Any, Any]) -> dict[str, Any] | None:
+        output_metrics: dict[str, float] = defaultdict(float)
+        idx = -1  # Will be overwritten, but it's to ensure output_metrics is properly defined for the linter
+        for idx, metrics in enumerate(results):
+            for metrics_name, curr_metrics in metrics.items():
+                for key, value in curr_metrics.items():
+                    output_metrics[f"{metrics_name}/{key}"] += value
+
+            if metrics is None:
+                break
+
+        output_metrics = {k: v / (idx + 1) for k, v in output_metrics.items()}
+        return output_metrics
+
     def on_predict_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if trainer.global_rank != 0 and self._requires_gather:
+            return
+        logger.info("Prediction ended.")
         self._epoch_end(trainer, pl_module)
+
+    def start_callbacks(self, filename: str) -> None:
+        for callback in self._callbacks:
+            logger.debug("Starting callback %s on filename %s", callback.__class__.__name__, filename)
+            callback.start(filename)
 
 
 def _queue_generator(
@@ -373,7 +458,7 @@ def _queue_generator(
 
 
 def _writer_process(
-    callback_instance: WriterCallback,
+    callback_instance: AbstractWriterCallback,
     queue: "Queue[Tuple[GenericNumberArray | None, GenericNumberArray | None]]",
     filename: str,
     semaphore: SemaphoreClass,
@@ -403,6 +488,8 @@ def _writer_process(
         writer = callback_instance.build_writer_class(pl_module, stage, filename)
         writer.consume(_queue_generator(queue))
         logger.debug(f"Stopped writing for {filename}")
+        callback_instance.start_callbacks(filename)
+
     except Exception as e:
         logger.exception(f"Error in writer_process for {filename}: {e}")
     finally:

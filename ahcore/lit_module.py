@@ -16,7 +16,7 @@ from torch import nn
 
 from ahcore.exceptions import ConfigurationError
 from ahcore.metrics import MetricFactory, WSIMetricFactory
-from ahcore.models.jit_model import AhcoreJitModel
+from ahcore.models.base_jit_model import BaseAhcoreJitModel
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
@@ -38,7 +38,7 @@ class AhCoreLightningModule(pl.LightningModule):
 
     def __init__(
         self,
-        model: nn.Module | AhcoreJitModel,
+        model: nn.Module | BaseAhcoreJitModel,
         optimizer: torch.optim.Optimizer,  # noqa
         data_description: DataDescription,
         loss: nn.Module | None = None,
@@ -58,7 +58,7 @@ class AhCoreLightningModule(pl.LightningModule):
                 "loss",
             ],
         )  # TODO: we should send the hyperparams to the logger elsewhere
-        if isinstance(model, AhcoreJitModel):
+        if isinstance(model, BaseAhcoreJitModel):
             self._model = model
         elif isinstance(model, functools.partial):
             try:
@@ -83,6 +83,19 @@ class AhCoreLightningModule(pl.LightningModule):
             self._wsi_metrics = wsi_metric
 
         self._data_description = data_description
+        self._validation_counter = 0
+
+    def on_train_epoch_start(self) -> None:
+        # Reset the validation run counter at the start of each training epoch
+        self._validation_counter = 0
+
+    def on_validation_end(self) -> None:
+        # Increment the counter each time validation starts
+        self._validation_counter += 1
+
+    @property
+    def validation_counter(self) -> int:
+        return self._validation_counter
 
     @property
     def wsi_metrics(self) -> WSIMetricFactory | None:

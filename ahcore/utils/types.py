@@ -35,9 +35,9 @@ _DlupDataset = Dataset[DlupDatasetSample]
 
 
 class NormalizationType(str, Enum):
-    SIGMOID = "sigmoid"
-    SOFTMAX = "softmax"
-    LOGITS = "logits"
+    SIGMOID = "SIGMOID"
+    SOFTMAX = "SOFTMAX"
+    LOGITS = "LOGITS"
 
     def normalize(self) -> Callable[[torch.Tensor], torch.Tensor]:
         if self == NormalizationType.SIGMOID:
@@ -64,3 +64,25 @@ class InferencePrecision(str, Enum):
             return 255.0
         else:
             raise NotImplementedError(f"Precision {self} is not supported for {self.__class__.__name__}.")
+
+
+class SegmentationOutputMode(str, Enum):
+    """
+    Segmentation output modes for JIT compiled models.
+    """
+
+    ACTIVATED_OUTPUTS = "activated_outputs"  # Segmentation outputs with activation.
+    # Extend as necessary
+
+
+class ViTEmbedMode(str, Enum):
+    """
+    Embedding modes for feature extractors based on Vision Transformers.
+    """
+
+    CLS_ONLY = "embed_cls_only"
+    PATCH_ONLY = "embed_patch_only"
+    MEAN = "embed_mean"
+    CONCAT_MEAN = "embed_concat_mean"
+    CONCAT = "embed_concat"
+    # Extend as necessary

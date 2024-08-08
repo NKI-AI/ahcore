@@ -62,3 +62,6 @@ test_after_training: False
 
 # seed for random number generators in pytorch, numpy and python.random
 seed: 42
+
+# Accuracy for matrix multiplication
+float32_matmul_precision: high

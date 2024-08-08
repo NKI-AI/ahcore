@@ -1,8 +1,6 @@
 """Ahcore's callbacks"""
 
-from .h5_callback import WriteH5Callback
-from .tiff_callback import WriteTiffCallback
-from .writer_callback import WriterCallback
-from .wsi_metric_callback import ComputeWsiMetricsCallback
+from .abstract_writer_callback import AbstractWriterCallback
+from .file_writer_callback import WriteFileCallback
 
-__all__ = ("WriteH5Callback", "WriteTiffCallback", "ComputeWsiMetricsCallback", "WriterCallback")
+__all__ = ("WriteFileCallback", "AbstractWriterCallback")

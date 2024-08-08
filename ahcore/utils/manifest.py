@@ -12,8 +12,8 @@ from typing import Any, Callable, Generator, Literal, Optional, Type, TypedDict,
 
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
+from dlup.backends import ImageBackend
 from dlup.data.dataset import RegionFromWsiDatasetSample, TiledWsiDataset, TileSample
-from dlup.experimental_backends import ImageBackend  # type: ignore
 from dlup.tiling import GridOrder, TilingMode
 from pydantic import BaseModel
 from sqlalchemy import create_engine
@@ -372,6 +372,7 @@ def datasets_from_data_description(
                 overwrite_mpp=(image.mpp, image.mpp),
                 limit_bounds=True,
                 apply_color_profile=data_description.apply_color_profile,
+                internal_handler="vips",
             )
 
             yield dataset

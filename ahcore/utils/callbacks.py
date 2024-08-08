@@ -9,6 +9,7 @@ from typing import Any, Iterator, Optional
 
 import numpy as np
 import numpy.typing as npt
+import pyvips
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
 from dlup.data.transforms import convert_annotations, rename_labels
@@ -16,7 +17,7 @@ from dlup.tiling import Grid, GridOrder, TilingMode
 from shapely.geometry import MultiPoint, Point
 from torch.utils.data import Dataset
 
-from ahcore.readers import H5FileImageReader
+from ahcore.readers import FileImageReader
 from ahcore.transforms.pre_transforms import one_hot_encoding
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
@@ -27,6 +28,24 @@ logger = get_logger(__name__)
 logging.getLogger("pyvips").setLevel(logging.ERROR)
 
 
+def _validate_annotations(data_description, annotations: Optional[WsiAnnotations]) -> Optional[WsiAnnotations]:
+    if annotations is None:
+        return None
+
+    if isinstance(annotations, WsiAnnotations):
+        if data_description is None:
+            raise ValueError(
+                "Annotations as a `WsiAnnotations` class are provided but no data description is given."
+                "This is required to map the labels to indices."
+            )
+    elif isinstance(annotations, SlideImage):
+        pass  # We do not need a specific test for this
+    else:
+        raise NotImplementedError(f"Annotations of type {type(annotations)} are not supported.")
+
+    return annotations
+
+
 class _ValidationDataset(Dataset[DlupDatasetSample]):
     """Helper dataset to compute the validation metrics."""
 
@@ -34,7 +53,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         self,
         data_description: Optional[DataDescription],
         native_mpp: float,
-        reader: H5FileImageReader,
+        reader: FileImageReader,
         annotations: Optional[WsiAnnotations] = None,
         mask: Optional[WsiAnnotations] = None,
         region_size: tuple[int, int] = (1024, 1024),
@@ -59,8 +78,8 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         self._region_size = region_size
         self._logger = get_logger(type(self).__name__)
 
-        self._annotations = self._validate_annotations(annotations)
-        self._mask = self._validate_annotations(mask)
+        self._annotations = _validate_annotations(data_description, annotations)
+        self._mask = _validate_annotations(data_description, mask)
 
         self._grid = Grid.from_tiling(
             (0, 0),
@@ -73,23 +92,6 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
 
         self._regions = self._generate_regions()
         self._logger.debug(f"Number of validation regions: {len(self._regions)}")
-
-    def _validate_annotations(self, annotations: Optional[WsiAnnotations]) -> Optional[WsiAnnotations]:
-        if annotations is None:
-            return None
-
-        if isinstance(annotations, WsiAnnotations):
-            if self._data_description is None:
-                raise ValueError(
-                    "Annotations as a `WsiAnnotations` class are provided but no data description is given."
-                    "This is required to map the labels to indices."
-                )
-        elif isinstance(annotations, SlideImage):
-            pass  # We do not need a specific test for this
-        else:
-            raise NotImplementedError(f"Annotations of type {type(annotations)} are not supported.")
-
-        return annotations
 
     def _generate_regions(self) -> list[tuple[int, int]]:
         """Generate the regions to use. These regions are filtered grid cells where there is a mask.
@@ -137,7 +139,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         sample = {}
         coordinates = self._regions[idx]
 
-        sample["prediction"] = self._get_h5_region(coordinates)
+        sample["prediction"] = self._get_backend_file_region(coordinates)
 
         if self._annotations is not None:
             target, roi = self._get_annotation_data(coordinates)
@@ -149,25 +151,26 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
 
         return sample
 
-    def _get_h5_region(self, coordinates: tuple[int, int]) -> npt.NDArray[np.uint8 | np.uint16 | np.float32 | np.bool_]:
+    def _get_backend_file_region(self, coordinates: tuple[int, int]) -> pyvips.Image:
         x, y = coordinates
         width, height = self._region_size
 
         if x + width > self._reader.size[0] or y + height > self._reader.size[1]:
             region = self._read_and_pad_region(coordinates)
         else:
-            region = self._reader.read_region_raw(coordinates, self._region_size)
+            region = self._reader.read_region(coordinates, 0, self._region_size).numpy().transpose((2, 0, 1))
         return region
 
-    def _read_and_pad_region(self, coordinates: tuple[int, int]) -> npt.NDArray[Any]:
+    def _read_and_pad_region(self, coordinates: tuple[int, int]) -> pyvips.Image:
         x, y = coordinates
         width, height = self._region_size
         new_width = min(width, self._reader.size[0] - x)
         new_height = min(height, self._reader.size[1] - y)
-        clipped_region = self._reader.read_region_raw((x, y), (new_width, new_height))
+        clipped_region = self._reader.read_region((x, y), 0, (new_width, new_height))
 
-        prediction = np.zeros((clipped_region.shape[0], *self._region_size), dtype=clipped_region.dtype)
-        prediction[:, :new_height, :new_width] = clipped_region
+        prediction = pyvips.Image.black(self._region_size[0], self._region_size[1])
+        prediction = prediction.insert(clipped_region, 0, 0)
+
         return prediction
 
     def _get_annotation_data(
@@ -187,7 +190,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         if self._data_description.remap_labels:
             _annotations = rename_labels(_annotations, remap_labels=self._data_description.remap_labels)
 
-        points, boxes, region, roi = convert_annotations(
+        points, region, roi = convert_annotations(
             _annotations,
             self._region_size,
             index_map=self._data_description.index_map,
@@ -229,10 +232,10 @@ def _get_uuid_for_filename(input_path: Path) -> str:
     return hex_dig
 
 
-def get_h5_output_filename(dump_dir: Path, input_path: Path, model_name: str, step: None | int | str = None) -> Path:
+def get_output_filename(dump_dir: Path, input_path: Path, model_name: str, counter: str) -> Path:
     hex_dig = _get_uuid_for_filename(input_path=input_path)
 
     # Return the hashed filename with the new extension
-    if step is not None:
-        return dump_dir / "outputs" / model_name / f"step_{step}" / f"{hex_dig}.h5"
-    return dump_dir / "outputs" / model_name / f"{hex_dig}.h5"
+    if counter is not None:
+        return dump_dir / "outputs" / model_name / f"{counter}" / f"{hex_dig}.cache"
+    return dump_dir / "outputs" / model_name / f"{hex_dig}.cache"

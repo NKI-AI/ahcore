@@ -1,26 +1,31 @@
 """
 This module contains writer classes. Currently implemented:
 
-- `H5FileImageWriter`: class to write H5 files based on iterators, for instance, the output of a dataset
-  class. Can for instance be used to store outputs of models. The `readers` contain separate modules to read these
-  h5 files.
+Two writer classes that can write files based on iterators, for instance, the output of a dataset class.
+
+- `H5FileImageWriter`
+- `ZarrFileImageWriter`
 
 """
 
 import abc
 import io
 import json
-from multiprocessing.connection import Connection
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any, Generator, NamedTuple, Optional
 
+import dlup
 import h5py
+import numcodecs
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
+import zarr
 from dlup.tiling import Grid, GridOrder, TilingMode
 
-from ahcore.utils.io import get_logger
+import ahcore
+from ahcore.utils.io import get_git_hash, get_logger
 from ahcore.utils.types import GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
@@ -48,19 +53,25 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
     return image
 
 
+@contextmanager
+def generic_file_manager(writer: Any, mode: str = "w") -> Any:
+    file = writer.open_file(mode=mode)
+    try:
+        yield file
+    finally:
+        writer.close_file(file)
+
+
+class WriterMetadata(NamedTuple):
+    mode: str
+    format: str | None
+    num_channels: int
+    dtype: str
+    grid_offset: tuple[int, int] | None
+    versions: dict[str, str]
+
+
 class Writer(abc.ABC):
-    @abc.abstractmethod
-    def consume(
-        self,
-        batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
-        connection_to_parent: Optional[Connection] = None,
-    ) -> None:
-        pass
-
-
-class H5FileImageWriter(Writer):
-    """Image writer that writes tile-by-tile to h5."""
-
     def __init__(
         self,
         filename: Path,
@@ -77,8 +88,6 @@ class H5FileImageWriter(Writer):
         grid: Grid | None = None,
     ) -> None:
         self._grid = grid
-        self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
-        self._grid_offset: npt.NDArray[np.int_] | None = None
         self._filename: Path = filename
         self._size: tuple[int, int] = size
         self._mpp: float = mpp
@@ -90,20 +99,69 @@ class H5FileImageWriter(Writer):
         self._extra_metadata = extra_metadata
         self._precision = precision
         self._progress = progress
-        self._data: Optional[h5py.Dataset] = None
-        self._coordinates_dataset: Optional[h5py.Dataset] = None
-        self._tile_indices: Optional[h5py.Dataset] = None
+
+        self._grid_coordinates: Optional[npt.NDArray[np.int_]] = None
+        self._grid_offset: tuple[int, int] | None = None
+
         self._current_index: int = 0
-
-        self._logger = logger  # maybe not the best way, think about it
-        self._logger.debug("Writing h5 to %s", self._filename)
-
         self._tiles_seen = 0
 
-    def init_writer(
-        self, first_coordinates: GenericNumberArray, first_batch: GenericNumberArray, h5file: h5py.File
-    ) -> None:
-        """Initializes the image_dataset based on the first tile."""
+        self._tile_indices: Any
+        self._data: Any
+        self._coordinates_dataset: Any
+
+        self._partial_suffix: str = f"{self._filename.suffix}.partial"
+
+    @abc.abstractmethod
+    def open_file(self, mode: str = "w") -> Any:
+        pass
+
+    @abc.abstractmethod
+    def close_file(self, file: Any) -> Any:
+        pass
+
+    @abc.abstractmethod
+    def insert_data(self, batch: GenericNumberArray) -> None:
+        """Insert a batch into a dataset."""
+
+    @abc.abstractmethod
+    def create_dataset(
+        self,
+        file: Any,
+        name: str,
+        shape: tuple[int, ...],
+        dtype: Any,
+        compression: str,
+        chunks: Optional[tuple[int, ...]] = None,
+        data: Optional[GenericNumberArray] = None,
+    ) -> Any:
+        """Create a dataset with the given specifications."""
+
+    @abc.abstractmethod
+    def create_variable_length_dataset(
+        self,
+        file: Any,
+        name: str,
+        shape: tuple[int, ...],
+        compression: str,
+        chunks: Optional[tuple[int, ...] | bool] = None,
+    ) -> Any:
+        """Create a dataset with the given specifications."""
+        pass
+
+    @staticmethod
+    def _batch_generator(
+        first_coordinates_batch: tuple[GenericNumberArray, GenericNumberArray],
+        batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
+    ) -> Generator[tuple[GenericNumberArray, GenericNumberArray], None, None]:
+        # We yield the first batch too so the progress bar takes the first batch also into account
+        yield first_coordinates_batch
+        for tile in batch_generator:
+            if tile is None:
+                break
+            yield tile
+
+    def get_writer_metadata(self, first_batch: GenericNumberArray) -> WriterMetadata:
         if self._is_compressed_image:
             if self._precision is not None:
                 raise ValueError("Precision cannot be set when writing compressed images.")
@@ -117,26 +175,27 @@ class H5FileImageWriter(Writer):
             _format = "RAW"
             _num_channels = first_batch.shape[1]
 
-        self._current_index = 0
-        # The grid can be smaller than the actual image when slide bounds are given.
-        # As the grid should cover the image, the offset is given by the first tile.
-        self._grid_offset = np.array(first_coordinates[0])
+        _dtype = str(first_batch.dtype)
 
-        self._coordinates_dataset = h5file.create_dataset(
-            "coordinates",
-            shape=(self._num_samples, 2),
-            dtype=int,
-            compression="gzip",
+        return WriterMetadata(
+            mode=_mode,
+            format=_format,
+            num_channels=_num_channels,
+            dtype=_dtype,
+            grid_offset=self._grid_offset,
+            versions={"dlup": dlup.__version__, "ahcore": ahcore.__version__, "ahcore_git_hash": get_git_hash()},
         )
 
+    def set_grid(self) -> None:
         # TODO: We only support a single Grid
         # TODO: Probably you can decipher the grid from the coordinates
         # TODO: This would also support multiple grids
         # TODO: One would need to collect the coordinates and based on the first and the last
         # TODO: of a single grid, one can determine the grid, and the empty indices.
+
         if self._grid is None:  # During validation, the grid is passed as a parameter
             grid = Grid.from_tiling(
-                self._grid_offset,
+                self._grid_offset,  # type: ignore
                 size=self._size,
                 tile_size=self._tile_size,
                 tile_overlap=self._tile_overlap,
@@ -144,57 +203,26 @@ class H5FileImageWriter(Writer):
                 order=GridOrder.C,
             )
             self._grid = grid
-        else:
-            grid = self._grid
 
-        num_tiles = len(grid)
-        self._tile_indices = h5file.create_dataset(
-            "tile_indices",
-            shape=(num_tiles,),
-            dtype=int,
-            compression="gzip",
-        )
-        # Initialize to -1, which is the default value
-        self._tile_indices[:] = -1
-
-        if not self._is_compressed_image:
-            shape = first_batch.shape[1:]
-            self._data = h5file.create_dataset(
-                "data",
-                shape=(self._num_samples,) + shape,
-                dtype=first_batch.dtype,
-                compression="gzip",
-                chunks=(1,) + shape,
-            )
-        else:
-            dt = h5py.vlen_dtype(np.dtype("uint8"))  # Variable-length uint8 data type
-            self._data = h5file.create_dataset(
-                "data",
-                shape=(self._num_samples,),
-                dtype=dt,
-                chunks=(1,),
-            )
-
-        if self._color_profile:
-            h5file.create_dataset(
-                "color_profile", data=np.frombuffer(self._color_profile, dtype=np.uint8), dtype="uint8"
-            )
-
+    # TODO: Any is not the right one here, use TypedDict
+    def construct_metadata(self, writer_metadata: WriterMetadata) -> dict[str, Any]:
+        assert self._grid
         # This only works when the mode is 'overflow' and in 'C' order.
         metadata = {
             "mpp": self._mpp,
             "size": (int(self._size[0]), int(self._size[1])),
-            "num_channels": _num_channels,
+            "num_channels": writer_metadata.num_channels,
             "num_samples": self._num_samples,
             "tile_size": tuple(self._tile_size),
             "tile_overlap": tuple(self._tile_overlap),
-            "num_tiles": num_tiles,
+            "num_tiles": len(self._grid),
             "grid_order": "C",
             "tiling_mode": "overflow",
-            "mode": _mode,
-            "format": _format,
-            "dtype": str(first_batch.dtype),
+            "mode": writer_metadata.mode,
+            "format": writer_metadata.format,
+            "dtype": writer_metadata.dtype,
             "is_binary": self._is_compressed_image,
+            "grid_offset": writer_metadata.grid_offset,
             "precision": self._precision.value if self._precision else str(InferencePrecision.FP32),
             "multiplier": (
                 self._precision.get_multiplier() if self._precision else InferencePrecision.FP32.get_multiplier()
@@ -204,8 +232,8 @@ class H5FileImageWriter(Writer):
 
         if self._extra_metadata:
             metadata.update(self._extra_metadata)
-        metadata_json = json.dumps(metadata)
-        h5file.attrs["metadata"] = metadata_json
+
+        return metadata
 
     def adjust_batch_precision(self, batch: GenericNumberArray) -> GenericNumberArray:
         """Adjusts the batch precision based on the precision set in the writer."""
@@ -215,42 +243,32 @@ class H5FileImageWriter(Writer):
             batch = batch.astype(self._precision.value)
         return batch
 
-    def add_associated_images(
-        self,
-        images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
-        description: Optional[str] = None,
-    ) -> None:
-        """Adds associated images to the h5 file."""
+    @abc.abstractmethod
+    def write_metadata(self, metadata: dict[str, Any], file: Any) -> None:
+        """Write metadata to the file"""
 
-        # Create a compound dataset "associated_images"
-        with h5py.File(self._filename, "a") as h5file:
-            associated_images = h5file.create_group("associated_images")
-            for name, image in images:
-                associated_images.create_dataset(name, data=image)
-
-            if description:
-                associated_images.attrs["description"] = description
-
-    def consume(
-        self,
-        batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
-        connection_to_parent: Optional[Connection] = None,
-    ) -> None:
-        """Consumes tiles one-by-one from a generator and writes them to the h5 file."""
+    def consume(self, batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None]) -> None:
+        """Consumes tiles one-by-one from a generator and writes them to the file."""
         grid_counter = 0
 
         try:
-            with h5py.File(self._filename.with_suffix(".h5.partial"), "w") as h5file:
+            with generic_file_manager(self) as file:
                 first_coordinates, first_batch = next(batch_generator)
-                first_batch = self.adjust_batch_precision(first_batch)
+                init_writer_batch = self.adjust_batch_precision(first_batch)
 
-                self.init_writer(first_coordinates, first_batch, h5file)
+                metadata = self.init_writer(first_coordinates, init_writer_batch, file)
+                self.write_metadata(metadata, file)
 
                 # Mostly for mypy
                 assert self._grid, "Grid is not initialized"
                 assert self._tile_indices, "Tile indices are not initialized"
                 assert self._data, "Dataset is not initialized"
                 assert self._coordinates_dataset, "Coordinates dataset is not initialized"
+
+                # Need to predeclare them to make sure they are correctly written, we found this could cause issues with
+                # zarr if we don't do it this way and write directly to self._tile_indices.
+                tile_indices = np.full((len(self._grid),), -1, dtype=int)
+                coordinates_dataset = np.full((self._num_samples, 2), -1, dtype=int)
 
                 batch_generator = self._batch_generator((first_coordinates, first_batch), batch_generator)
                 # progress bar will be used if self._progress is not None
@@ -269,35 +287,242 @@ class H5FileImageWriter(Writer):
                         # If we find it, we set it to the index, so we can find it later on
                         # This can be tested by comparing the grid evaluated at a grid index with the tile index
                         # mapped to its coordinates
-                        self._tile_indices[grid_counter] = self._current_index + curr_idx
+                        tile_indices[grid_counter] = self._current_index + curr_idx
                         grid_counter += 1
 
                     batch_size = batch.shape[0]
-                    self._data[self._current_index : self._current_index + batch_size] = batch
-                    self._coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
-                    self._current_index += batch_size
+                    coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
+
+                    if self._is_compressed_image:
+                        # When the batch has variable lengths, we need to insert each sample separately
+                        for sample in batch:
+                            self.insert_data(sample[np.newaxis, ...])
+                            self._current_index += 1
+                    else:
+                        self.insert_data(batch)
+                        self._current_index += batch_size
+
+                self._tile_indices[:] = tile_indices
+                self._coordinates_dataset[:] = coordinates_dataset
 
         except Exception as e:
-            self._logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
-            if connection_to_parent:
-                connection_to_parent.send((False, self._filename, e))  # Send a message to the parent
+            logger.error("Error in consumer thread for %s: %s", self._filename, e, exc_info=e)
 
         else:
             # When done writing rename the file.
-            self._filename.with_suffix(".h5.partial").rename(self._filename)
-        finally:
-            if connection_to_parent:
-                connection_to_parent.send((True, None, None))
-                connection_to_parent.close()
+            self._filename.with_suffix(self._partial_suffix).rename(self._filename)
 
-    @staticmethod
-    def _batch_generator(
-        first_coordinates_batch: tuple[GenericNumberArray, GenericNumberArray],
-        batch_generator: Generator[tuple[GenericNumberArray, GenericNumberArray], None, None],
-    ) -> Generator[tuple[GenericNumberArray, GenericNumberArray], None, None]:
-        # We yield the first batch too so the progress bar takes the first batch also into account
-        yield first_coordinates_batch
-        for tile in batch_generator:
-            if tile is None:
-                break
-            yield tile
+    def init_writer(self, first_coordinates: GenericNumberArray, first_batch: GenericNumberArray, file: Any) -> Any:
+        """Initializes the image_dataset based on the first tile."""
+        self._grid_offset = (int(first_coordinates[0][0]), int(first_coordinates[0][1]))
+
+        writer_metadata = self.get_writer_metadata(first_batch)
+
+        self._current_index = 0
+        # The grid can be smaller than the actual image when slide bounds are given.
+        # As the grid should cover the image, the offset is given by the first tile.
+
+        self._coordinates_dataset = self.create_dataset(
+            file, name="coordinates", shape=(self._num_samples, 2), dtype=np.int_, compression="gzip"
+        )
+
+        self.set_grid()
+        assert self._grid
+        num_tiles = len(self._grid)
+
+        self._tile_indices = self.create_dataset(
+            file,
+            name="tile_indices",
+            shape=(num_tiles,),
+            dtype=np.int_,
+            compression="gzip",
+        )
+
+        if not self._is_compressed_image:
+            shape = first_batch.shape[1:]
+            self._data = self.create_dataset(
+                file,
+                "data",
+                shape=(self._num_samples,) + shape,
+                dtype=first_batch.dtype,
+                compression="gzip",
+                chunks=(1,) + shape,
+            )
+        else:
+            self._data = self.create_variable_length_dataset(
+                file,
+                name="data",
+                shape=(self._num_samples,),
+                chunks=(1,),
+                compression="gzip",
+            )
+
+        if self._color_profile:
+            data = np.frombuffer(self._color_profile, dtype=np.uint8)
+            self.create_dataset(
+                file,
+                name="color_profile",
+                shape=(data.size,),
+                compression="gzip",
+                dtype="uint8",
+            )
+            file["color_profile"][:] = data
+
+        metadata = self.construct_metadata(writer_metadata)
+
+        return metadata
+
+
+class ZarrFileImageWriter(Writer):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._store = zarr.ZipStore(str(self._filename.with_suffix(self._partial_suffix)), mode="w")
+
+    def open_file(self, mode: str = "w") -> zarr.Group:
+        if mode == "w":
+            zarr_group = zarr.group(store=self._store, overwrite=True)
+        else:
+            zarr_group = zarr.open_group(store=self._store, mode=mode)
+        return zarr_group
+
+    def close_file(self, file: Any) -> None:
+        # file.close()
+        self._store.close()
+
+    def create_dataset(
+        self,
+        file: Any,
+        name: str,
+        shape: tuple[int, ...],
+        dtype: Any,
+        compression: str,
+        chunks: Optional[tuple[int, ...]] = None,
+        data: Optional[GenericNumberArray] = None,
+    ) -> Any:
+        """Create a Zarr dataset.
+
+        Note: Do not use the `data` parameter when you're going to overwrite it later on, that will give warnings that
+        files are overwritten in the zip.
+        """
+        compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=2) if compression == "gzip" else None
+        dataset = file.create_dataset(name, data=data, shape=shape, dtype=dtype, chunks=chunks, compressor=compressor)
+        return dataset
+
+    def create_variable_length_dataset(
+        self,
+        file: Any,
+        name: str,
+        shape: tuple[int, ...],
+        compression: str,
+        chunks: Optional[tuple[int, ...] | bool] = None,
+    ) -> Any:
+        """Create a dataset with the given specifications."""
+
+        compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=2) if compression == "gzip" else None
+
+        assert shape
+        dataset = file.create_dataset(
+            name,
+            shape=shape[0],
+            dtype=object,
+            object_codec=numcodecs.vlen.VLenArray(dtype="uint8"),
+            compressor=compressor,
+            chunks=chunks,
+        )
+        return dataset
+
+    def insert_data(self, batch: GenericNumberArray) -> None:
+        """Insert a batch into a Zarr dataset."""
+        if not batch.shape[0] == 1 and self._is_compressed_image:
+            raise ValueError(f"Batch should have a single element when writing zarr. Got batch shape {batch.shape}.")
+
+        if self._is_compressed_image:
+            self._data[self._current_index] = batch.reshape(-1)
+        else:
+            self._data[self._current_index : self._current_index + batch.shape[0]] = (
+                batch.flatten() if self._is_compressed_image else batch
+            )
+
+    def write_metadata(self, metadata: dict[str, Any], file: Any) -> None:
+        """Write metadata to Zarr group attributes."""
+        file.attrs.update(metadata)
+
+    def add_associated_images(
+        self,
+        images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
+        description: Optional[str] = None,
+    ) -> None:
+        raise NotImplementedError("Associated images are not yet supported for Zarr files.")
+
+
+class H5FileImageWriter(Writer):
+    """Image writer that writes tile-by-tile to h5."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+        self._data: h5py.Dataset
+        self._coordinates_dataset: Optional[h5py.Dataset] = None
+        self._tile_indices: Optional[h5py.Dataset] = None
+
+    def open_file(self, mode: str = "w") -> Any:
+        return h5py.File(self._filename.with_suffix(self._partial_suffix), mode)
+
+    def close_file(self, file: Any) -> None:
+        file.close()
+
+    def write_metadata(self, metadata: Any, file: Any) -> None:
+        metadata_json = json.dumps(metadata)
+        file.attrs["metadata"] = metadata_json
+
+    def insert_data(self, batch: GenericNumberArray) -> None:
+        """Insert a batch into a H5 dataset."""
+        if not batch.shape[0] == 1 and self._is_compressed_image:
+            raise ValueError(f"Batch should have a single element when writing h5. Got batch shape {batch.shape}.")
+        batch_size = batch.shape[0]
+        self._data[self._current_index : self._current_index + batch_size] = (
+            batch.flatten() if self._is_compressed_image else batch
+        )
+
+    def create_dataset(
+        self,
+        h5file: h5py.File,
+        name: str,
+        shape: tuple[int, ...] | None,
+        dtype: Any,
+        compression: str | None,
+        chunks: Optional[Optional[tuple[int, ...]] | bool] = None,
+        data: Optional[GenericNumberArray] = None,
+    ) -> Any:
+        if chunks is None:
+            chunks = True  # Use HDF5's auto-chunking
+
+        return h5file.create_dataset(name, data=data, shape=shape, dtype=dtype, compression=compression, chunks=chunks)
+
+    def create_variable_length_dataset(
+        self,
+        h5file: h5py.File,
+        name: str,
+        shape: tuple[int, ...],
+        compression: str | None,
+        chunks: Optional[Optional[tuple[int, ...]] | bool] = None,
+        data: Optional[GenericNumberArray] = None,
+    ) -> Any:
+        dt = h5py.vlen_dtype(np.dtype("uint8"))  # Variable-length uint8 data type
+        return self.create_dataset(h5file, name, shape=shape, dtype=dt, compression=compression, chunks=chunks)
+
+    def add_associated_images(
+        self,
+        images: tuple[tuple[str, npt.NDArray[np.uint8]], ...],
+        description: Optional[str] = None,
+    ) -> None:
+        """Adds associated images to the h5 file."""
+
+        # Create a compound dataset "associated_images"
+        with h5py.File(self._filename, "a") as h5file:
+            associated_images = h5file.create_group("associated_images")
+            for name, image in images:
+                associated_images.create_dataset(name, data=image)
+
+            if description:
+                associated_images.attrs["description"] = description
