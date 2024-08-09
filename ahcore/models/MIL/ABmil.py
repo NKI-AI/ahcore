@@ -1,4 +1,4 @@
-from ahcore.models.layers.MLP import MLP, MaskedMLP, GatedAttention
+from ahcore.models.layers.MLP import MLP, MaskedMLP
 from ahcore.models.layers.attention import GatedAttention
 
 from typing import List, Optional
@@ -7,6 +7,7 @@ import torch
 from torch import nn
 import torch.nn.init as init
 
+# todo: fix docstring
 class ABMIL(nn.Module):
     """Attention-based MIL classification model (See [1]_).
     Adapted from https://github.com/owkin/HistoSSLscaling/blob/main/rl_benchmarks/models/slide_models/abmil.py
@@ -36,13 +37,6 @@ class ABMIL(nn.Module):
         Activation for last MLP.
     bias: bool = True
         Add bias to the first MLP.
-    metadata_cols: int = 3
-        Number of metadata columns (for example, magnification, patch start
-        coordinates etc.) at the start of input data. Default of 3 assumes
-        that the first 3 columns of input data are, respectively:
-        1) Deep zoom level, corresponding to a given magnification
-        2) input patch starting x value
-        3) input patch starting y value
 
     References
     ----------

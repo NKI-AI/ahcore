@@ -19,6 +19,8 @@ from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
 
+from transformers import AutoImageProcessor
+
 PreTransformCallable = Callable[[Any], Any]
 
 logger = get_logger(__name__)
@@ -116,6 +118,17 @@ class PreTransformTaskFactory:
     def __repr__(self) -> str:
         return f"PreTransformTaskFactory(transforms={self._transforms})"
 
+
+class ApplyHuggingfaceTransforms:
+
+    def __init__(self, pretrained_model_name_or_path: str, **kwargs):
+        self._processor = AutoImageProcessor.from_pretrained(pretrained_model_name_or_path, **kwargs)
+
+    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
+        # Apply the huggingface transforms here
+        sample["image"]: np.ndarray = self._processor(sample["image"])["pixel_values"]
+
+        return sample
 
 class LabelToClassIndex:
     """
@@ -216,12 +229,14 @@ class ImageToTensor:
     """
 
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
-        tile: pyvips.Image = sample["image"]
+        tile: pyvips.Image | np.ndarray = sample["image"]
         # Flatten the image to remove the alpha channel, using white as the background color
         tile_ = tile.flatten(background=[255, 255, 255])
 
         # Convert VIPS image to a numpy array then to a torch tensor
-        np_image = tile_.numpy()
+        if type(tile_) == pyvips.Image:
+            np_image = tile_.numpy()
+
         sample["image"] = torch.from_numpy(np_image).permute(2, 0, 1).float()
 
         if sample["image"].sum() == 0:
