@@ -81,8 +81,9 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         self._annotations = _validate_annotations(data_description, annotations)
         self._mask = _validate_annotations(data_description, mask)
 
+        self._reader_grid_offset = self._reader.metadata["grid_offset"]
         self._grid = Grid.from_tiling(
-            (0, 0),
+            self._reader_grid_offset,
             reader.size,
             tile_size=self._region_size,
             tile_overlap=(0, 0),
@@ -166,12 +167,14 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
         width, height = self._region_size
         new_width = min(width, self._reader.size[0] - x)
         new_height = min(height, self._reader.size[1] - y)
-        clipped_region = self._reader.read_region((x, y), 0, (new_width, new_height))
-
         prediction = pyvips.Image.black(self._region_size[0], self._region_size[1])
-        prediction = prediction.insert(clipped_region, 0, 0)
 
-        return prediction
+        # The new width and height can be negative if the coordinates x or y are outside the image.
+        if new_width > 0 and new_height > 0:
+            clipped_region = self._reader.read_region((x, y), 0, (new_width, new_height))
+            prediction = prediction.insert(clipped_region, 0, 0)
+
+        return prediction.numpy()
 
     def _get_annotation_data(
         self, coordinates: tuple[int, int]

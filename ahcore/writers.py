@@ -314,7 +314,12 @@ class Writer(abc.ABC):
 
     def init_writer(self, first_coordinates: GenericNumberArray, first_batch: GenericNumberArray, file: Any) -> Any:
         """Initializes the image_dataset based on the first tile."""
-        self._grid_offset = (int(first_coordinates[0][0]), int(first_coordinates[0][1]))
+        if self._grid is None:
+            # If the grid is not given to the constructor, we take the first element of the coordinates as the offset.
+            self._grid_offset = (int(first_coordinates[0][0]), int(first_coordinates[0][1]))
+        else:
+            # If the grid is given to the constructor, we take the first element of the grid as the offset.
+            self._grid_offset = tuple(self._grid[0])
 
         writer_metadata = self.get_writer_metadata(first_batch)
 
