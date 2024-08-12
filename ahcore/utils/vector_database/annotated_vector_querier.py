@@ -14,6 +14,7 @@ from dlup.annotations import WsiAnnotations
 from dlup.background import compute_masked_indices
 from dlup.data.transforms import convert_annotations
 from pymilvus import Collection
+from sklearn.cluster import KMeans
 
 from ahcore.utils.data import DataDescription
 from ahcore.utils.manifest import DataManager
@@ -25,6 +26,8 @@ dotenv.load_dotenv(override=True)
 
 class ReduceMethod(Enum):
     MEAN = "MEAN"
+    KMEANS5 = "KMEANS5"
+    MEAN_KMEANS5 = "MEAN_KMEANS5"
 
     @staticmethod
     def from_value(value: str):
@@ -101,16 +104,23 @@ class AnnotatedVectorQuerier:
         embeddings_np = np.array(embeddings)
         return embeddings_np
 
+    @staticmethod
+    def _find_kmeans_centroids(embeddings: np.ndarray, k: int = 5) -> np.ndarray:
+        kmeans = KMeans(n_clusters=k, random_state=0).fit(embeddings)
+        return kmeans.cluster_centers_
+
     def _convert_annotation_to_mask(
         self, filename: str, annotation: WsiAnnotations, region_size: tuple[int, int]
     ) -> np.ndarray:
         name_dict = self.data_description.model_dump()  # This includes the annotation class in roi_name
         name_dict["filename"] = filename
+        name_dict["region_size"] = region_size
         cache_filename = self._cache_folder_annotation_masks / f"{dict_to_uuid(name_dict)}.tiff"
 
         if cache_filename.exists():
             annotation_mask = iio.imread(cache_filename)
         else:
+            # expects region size of (height, width)
             _, annotation_mask, _ = convert_annotations(
                 annotation,
                 region_size=region_size,
@@ -131,22 +141,21 @@ class AnnotatedVectorQuerier:
         bbox = annotations.bounding_box
         return slide_image, annotations, bbox
 
-    def _query_entries_in_bbox(self, filename: str | Path, bbox: tuple[int, int, int, int]) -> list[dict[str, Any]]:
+    def _query_entries_in_bbox(
+        self, filename: str | Path, bbox: tuple[int, int, int, int], tile_size: int
+    ) -> list[dict[str, Any]]:
         """Queries database for entries within a bounding box."""
         (x, y), (w, h) = bbox
-        min_x, max_x, min_y, max_y = int(x), int(x + w), int(y), int(y + h)
+        min_x, max_x, min_y, max_y = int(x), int(x + w - tile_size), int(y), int(y + h - tile_size)
         expr = (
             f"filename == '{str(filename)}.svs' and coordinate_x >= {min_x} and coordinate_x <= {max_x} "
             f"and coordinate_y >= {min_y} and coordinate_y <= {max_y}"
         )
-        # TODO: use * operator and add vector field name to class
         results = self.collection.query(
             expr=expr,
-            output_fields=["filename", "coordinate_x", "coordinate_y", "tile_size", "mpp", "embedding"],
+            output_fields=["*"],
         )
 
-        if not results:
-            warn(f"No vector database entries found in bbox {bbox} for {filename}.")
         return results
 
     def _find_entries_in_annotated_regions(
@@ -156,6 +165,7 @@ class AnnotatedVectorQuerier:
         save_dict = self.data_description.model_dump()
         save_dict["threshold"] = threshold
         cache_filename = self._cache_folder / f"{dict_to_uuid(save_dict)}.pkl"
+        tile_size = self.data_description.inference_grid.tile_size[0]
         if cache_filename.exists() and not force_recompute:
             with open(cache_filename, "rb") as f:
                 annotated_vector_dict = pickle.load(f)
@@ -165,12 +175,18 @@ class AnnotatedVectorQuerier:
                 log.info(f"Processing {filename}")
                 slide_image, annotations, annotation_bbox = self._prepare_slide_and_annotation(filename)
                 entries_in_bbox = self._query_entries_in_bbox(
-                    filename, annotation_bbox
+                    filename, annotation_bbox, tile_size
                 )  # Queries via network to Milvus
-                regions = self._convert_entries_to_sequence(entries_in_bbox)
+                if not entries_in_bbox:
+                    log.info(
+                        f"No database entries found in bbox for {filename} for class {self.data_description.roi_name}."
+                    )
+                    continue
 
+                regions = self._convert_entries_to_sequence(entries_in_bbox)
+                region_size = slide_image.size[::-1]  # expects region size of (height, width)
                 annotation_mask = self._convert_annotation_to_mask(
-                    filename=filename, annotation=annotations, region_size=slide_image.size
+                    filename=filename, annotation=annotations, region_size=region_size
                 )
                 masked_indices = compute_masked_indices(
                     slide_image=slide_image, background_mask=annotation_mask, regions=regions, threshold=threshold
@@ -225,9 +241,18 @@ class AnnotatedVectorQuerier:
         reduce_method = ReduceMethod.from_value(reduce_method)
         entries = self._find_entries_in_annotated_regions(overlap_threshold, force_recompute)
         embeddings = self._extract_embeddings(entries)
+        log.info(f"Found {len(embeddings)} vectors in annotated regions.")
         if reduce_method == ReduceMethod.MEAN:
             reference_vectors = np.mean(embeddings, axis=0)
             reference_vectors = reference_vectors.tolist()  # Convert to list for compatibility with Milvus
+        elif reduce_method == ReduceMethod.KMEANS5:
+            kmean_centroids = self._find_kmeans_centroids(embeddings, k=100)
+            reference_vectors = kmean_centroids.tolist()
+        elif reduce_method == ReduceMethod.MEAN_KMEANS5:
+            mean_vector = np.mean(embeddings, axis=0)
+            kmean_centroids = self._find_kmeans_centroids(embeddings, k=100)
+            reference_vectors = np.vstack([mean_vector, kmean_centroids])
+            reference_vectors = reference_vectors.tolist()
         else:
             raise NotImplementedError(f"Unsupported reduce method {reduce_method}.")
         return reference_vectors

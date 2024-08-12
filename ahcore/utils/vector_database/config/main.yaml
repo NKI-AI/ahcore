@@ -1,0 +1,8 @@
+# @package _global_
+
+defaults:
+  - _self_  
+  - data_setup: large_train.yaml
+  - vector_lookup: multi_mean_kmeans5.yaml
+
+  

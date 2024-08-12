@@ -1,0 +1,5 @@
+data_description_path_annotated: "/home/e.marcus/projects/ahcore/config/data_description/susan_komen_annotated_T.yaml"
+data_description_path_test: "/home/e.marcus/projects/ahcore/config/data_description/5wsi_susan_komen_test.yaml"
+
+train_collection_name: susan_komen_uni_train_concat
+test_collection_name: uni_collection_concat_test

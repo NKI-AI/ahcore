@@ -4,6 +4,7 @@ from typing import Any
 import dotenv
 import numpy as np
 from pymilvus import AnnSearchRequest, Collection, RRFRanker, WeightedRanker
+from pymilvus.client.abstract import SearchResult
 
 from ahcore.utils.data import DataDescription
 from ahcore.utils.vector_database.context_managers import ManagedMilvusCollection, ManagedMilvusPartitions
@@ -57,6 +58,25 @@ class VectorSearcher:
             }
         return search_param
 
+    @staticmethod
+    def _extract_unique_entries(search_results: SearchResult) -> tuple[list[dict[str, Any]], dict[str, int]]:
+        unique_ids = set()
+        unique_entries = []
+        id_counts = {}
+
+        for sub_search_results in search_results:
+            for hit in sub_search_results:
+                if hit.id in id_counts:
+                    id_counts[hit.id] += 1
+                else:
+                    id_counts[hit.id] = 1
+
+                if hit.id not in unique_ids:
+                    unique_ids.add(hit.id)
+                    unique_entries.append(hit)
+
+        return unique_entries, id_counts
+
     def search_single_vector(
         self,
         reference_vector: list[float],
@@ -78,10 +98,39 @@ class VectorSearcher:
                 partition_names=partitions,
                 output_fields=["*"],
             )
+            log.info(f"Search completed with {len(results[0])} results.")
 
         return results
 
     def search_multi_vector(
+        self,
+        reference_vectors: list[list[float]],
+        min_count: int = 1,
+        limit_results: int = 10,
+        partitions: list[str] | None = None,
+        search_param: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Search with multiple reference vectors in the Milvus collection.
+        """
+        param = self._setup_search_param(search_param)
+
+        with self._manager.manage_resource(partitions) as collection:
+            results = collection.search(
+                data=reference_vectors,
+                anns_field=self._vector_entry_name,
+                param=param,
+                limit=limit_results,
+                partition_names=partitions,
+                output_fields=["*"],
+            )
+
+        unique_entries, counts = self._extract_unique_entries(results)
+        unique_entries = [entry for entry in unique_entries if counts[entry.id] >= min_count]
+        log.info(f"Search completed with {len(unique_entries)} results.")
+        return [unique_entries]
+
+    def search_multi_vector_rerank(
         self,
         reference_vectors: list[list[float]],
         ranker: WeightedRanker | RRFRanker,
@@ -104,7 +153,10 @@ class VectorSearcher:
             )  # Note that these annsearches can also have an additional 'expr' for other fields
 
         with self._manager.manage_resource(partitions) as collection:
-            results = collection.hybrid_search(reqs=searches, rerank=ranker, partition_names=partitions)
+            results = collection.hybrid_search(
+                reqs=searches, rerank=ranker, partition_names=partitions, limit=limit_results, output_fields=["*"]
+            )
+            log.info(f"Search completed with {len(results[0])} results.")
 
         return results
 

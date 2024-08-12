@@ -7,6 +7,9 @@ from typing import Any, Generator
 
 import dotenv
 import hydra
+import numpy as np
+import numpy.typing as npt
+import shapely
 from dlup import SlideImage
 from dlup.annotations import AnnotationClass
 from dlup.annotations import Polygon as DlupPolygon
@@ -16,6 +19,7 @@ from dlup.data.dataset import TiledWsiDataset
 from dlup.tiling import GridOrder, TilingMode
 from omegaconf import OmegaConf
 from pymilvus import Collection, connections, utility
+from pymilvus.client.abstract import Hit, SearchResult
 from shapely import box
 from torch.utils.data import DataLoader
 
@@ -105,7 +109,7 @@ def compute_precision_recall(
     precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
     recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
 
-    return precision, recall
+    return precision, recall, true_positives, false_positives, false_negatives
 
 
 def delete_collection(collection_name: str) -> None:
@@ -264,6 +268,93 @@ def create_wsi_annotation_from_dict(hits: list[dict[str, Any]]) -> WsiAnnotation
 
 def connect_to_milvus(host: str, port: int, alias: str, user: str, password: str) -> None:
     connections.connect(alias=alias, host=host, port=port, user=user, password=password)
+
+
+def create_wsi_annotation_from_hits(hits: list[Hit]) -> WsiAnnotations:
+    """Creates a WsiAnnotations object from the hits"""
+    # import matplotlib.pyplot as plt
+    # fig, ax = plt.subplots()
+    # ax.set_aspect("equal")
+    polygon_list = []
+
+    for hit in hits:
+        x, y, width, height = hit.coordinate_x, hit.coordinate_y, hit.tile_size, hit.tile_size
+        rect = box(x, y, x + width, y + height)
+        # rect2 = plt.Rectangle((x, y), width, height, edgecolor="red", facecolor="none")
+        # ax.add_patch(rect2)
+        polygon = DlupPolygon(rect, a_cls=AnnotationClass(label="hits", annotation_type="POLYGON"))
+        polygon_list.append(polygon)
+
+    # ax.autoscale_view()
+    # ax.grid(True)
+    # ax.invert_yaxis()
+    # plt.savefig("hits.png")
+
+    annotations = WsiAnnotations(layers=polygon_list)
+
+    return annotations
+
+
+def compute_iou_from_hits(image: SlideImage, annotation: WsiAnnotations, hits: list[Hit]) -> float:
+    """Computes IoU between a hit and the annotations"""
+    # total_union_area = 0.0
+    total_intersection_area = 0.0
+    scaling = image.get_scaling(0.5)  # We inference at 0.5 mpp
+    total_annotation_area = calculate_total_annotation_area(annotation, scaling)
+
+    for hit in hits:
+        x, y, width, height = hit.coordinate_x, hit.coordinate_y, hit.tile_size, hit.tile_size
+        location = (x, y)
+
+        if (
+            calculate_distance_to_annotation(annotation, x, y) > 15000
+        ):  # We are on the second 'slice' of the WSI where pathologist did not annotate
+            continue
+
+        def _affine_coords(coords: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
+            return coords * scaling - np.asarray(location, dtype=np.float_)
+
+        rect = box(x, y, x + width, y + height)
+        rect = shapely.transform(rect, _affine_coords)  # Transform the coordinates
+        annotations = annotation.read_region((x, y), scaling, (width, height))
+
+        local_intersection_area = 0
+        for local_annotation in annotations:
+            local_intersection = local_annotation.intersection(rect)
+            # local_intersection_area += local_intersection.area
+            if local_intersection.area != 0:  # the box intersects with annotation
+                local_intersection_area += local_intersection.area
+
+        if local_intersection_area != 0:
+            total_intersection_area += local_intersection_area
+
+    total_iou = total_intersection_area / total_annotation_area if total_annotation_area != 0 else 0
+    return total_iou
+
+
+def extract_results_per_wsi(search_results: SearchResult) -> dict[str, list[Hit]]:
+    """Extracts search results per WSI. Note this is only used for testing purposes on a small dataset."""
+    hits = search_results[0]
+    hits_per_wsi = {}
+    for hit in hits:
+        filename = hit.filename
+        if filename not in hits_per_wsi:
+            hits_per_wsi[filename] = []
+        hits_per_wsi[filename].append(hit)
+    return hits_per_wsi
+
+
+def compute_global_metrics(
+    metrics_per_wsi: dict[str, tuple[float, float, int, int, int]]
+) -> tuple[float, float, float]:
+    """Computes global metrics from the metrics per WSI"""
+    true_positives = sum([x[2] for x in metrics_per_wsi.values()])
+    false_positives = sum([x[3] for x in metrics_per_wsi.values()])
+    false_negatives = sum([x[4] for x in metrics_per_wsi.values()])
+    precision = true_positives / (true_positives + false_positives)
+    recall = true_positives / (true_positives + false_negatives)
+    f1_score = 2 * precision * recall / (precision + recall)
+    return precision, recall, f1_score
 
 
 # if __name__ == "__main__":
