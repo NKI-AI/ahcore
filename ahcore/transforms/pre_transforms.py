@@ -130,6 +130,7 @@ class ApplyHuggingfaceTransforms:
 
         return sample
 
+
 class LabelToClassIndex:
     """
     Maps label values to class indices according to the index_map specified in the data description.

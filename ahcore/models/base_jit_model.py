@@ -6,6 +6,7 @@ from torch import nn
 
 from transformers.modeling_utils import PreTrainedModel
 
+
 class BaseHuggingfaceModel(nn.Module):
 
     def __init__(self, model: PreTrainedModel, pretrained_model_name_or_path: str, **kwargs) -> None:
@@ -14,7 +15,9 @@ class BaseHuggingfaceModel(nn.Module):
         self.model: model = model.from_pretrained(pretrained_model_name_or_path, **kwargs)
 
     def forward(self, x):
-        model_input = x if type(x) is dict else {"pixel_values": x}  # todo check if huggingface models sometimes other things???
+        model_input = (
+            x if type(x) is dict else {"pixel_values": x}
+        )  # todo check if huggingface models sometimes other things???
         model_output = self.model(**model_input)
         return model_output.last_hidden_states
 
@@ -34,7 +37,7 @@ class BaseHuggingfaceModel(nn.Module):
 
         model_input = {"pixel_values": x}
         model_output = self.model(**model_input)
-        return {model_output[key] for key in keys} if len(keys)>1 else model_output[keys[0]]
+        return {model_output[key] for key in keys} if len(keys) > 1 else model_output[keys[0]]
 
 
 class BaseAhcoreJitModel(ScriptModule):

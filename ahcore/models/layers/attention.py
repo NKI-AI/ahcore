@@ -3,9 +3,9 @@ from typing import Optional, List, Union, Tuple
 import torch
 from torch import nn
 
-from ahcore.models.layers.MLP import MaskedLinear
 
 """Most of this stuff is adapted from utils from https://github.com/owkin/HistoSSLscaling/tree/main"""
+
 
 class SelfAttention(nn.Module):
     """Multi-Head Self-Attention.
@@ -51,9 +51,7 @@ class SelfAttention(nn.Module):
         """Build the `SelfAttention` module."""
         head_dim = self.in_features // self.num_heads
         self.scale = head_dim**-0.5
-        self.qkv = nn.Linear(
-            self.in_features, self.in_features * 3, bias=self.qkv_bias
-        )
+        self.qkv = nn.Linear(self.in_features, self.in_features * 3, bias=self.qkv_bias)
         self.attn_drop = nn.Dropout(self.attn_dropout)
         self.proj = nn.Linear(self.in_features, self.in_features)
         self.proj_drop = nn.Dropout(self.proj_dropout)
@@ -72,11 +70,7 @@ class SelfAttention(nn.Module):
             Output tensor, shape (B, seq_len, in_features).
         """
         B, N, C = x.shape
-        qkv = (
-            self.qkv(x)
-            .reshape(B, N, 3, self.num_heads, C // self.num_heads)
-            .permute(2, 0, 3, 1, 4)
-        )
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
@@ -101,54 +95,29 @@ class GatedAttention(nn.Module):
 
     def __init__(
         self,
-        d_model: int = 128,
+        dim: int = 128,
         temperature: float = 1.0,
     ):
         super(GatedAttention, self).__init__()
 
-        self.V = nn.Linear(d_model, d_model)
-        self.U = nn.Linear(d_model, d_model)
-        self.w = MaskedLinear(d_model, 1, "-inf")
+        self.V = nn.Linear(dim, dim)
+        self.U = nn.Linear(dim, dim)
+        self.w = nn.Linear(dim, 1)
 
         self.temperature = temperature
 
-    def attention(
+    def forward(
         self,
         features: torch.Tensor,
-        mask: Optional[torch.BoolTensor] = None,
-    ) -> torch.Tensor:
-        """Gets attention logits.
-        Parameters
-        ----------
-        v: torch.Tensor
-            (B, SEQ_LEN, IN_FEATURES)
-        mask: Optional[torch.BoolTensor] = None
-            (B, SEQ_LEN, 1), True for values that were padded.
-        Returns
-        -------
-        attention_logits: torch.Tensor
-            (B, N_TILES, 1)
-        """
-        h_v = torch.tanh(self.U(features))
-
-        u_v = torch.sigmoid(self.V(features))
-
-        attention_logits = self.w(h_v * u_v, mask=mask) / self.temperature
-
-        attention_weights = torch.softmax(attention_logits, 1)
-
-        return attention_weights
-
-    def forward(
-        self, features: torch.Tensor, mask: Optional[torch.BoolTensor] = None
+        return_attention_weights=False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass.
         Parameters
         ----------
-        v: torch.Tensor
+        features: torch.Tensor
             (B, SEQ_LEN, IN_FEATURES)
-        mask: Optional[torch.BoolTensor] = None
-            (B, SEQ_LEN, 1), True for values that were padded.
+        return_attention_weights: bool = False
+
         Returns
         -------
         scaled_attention, attention_weights: Tuple[torch.Tensor, torch.Tensor]
@@ -158,13 +127,13 @@ class GatedAttention(nn.Module):
 
         u_v = torch.sigmoid(self.V(features))
 
-        attention_logits = self.w(h_v * u_v, mask=mask) / self.temperature
+        attention_logits = self.w(h_v * u_v) / self.temperature
 
         attention_weights = torch.softmax(attention_logits, 1)
-        # if not torch.any(attention_weights[mask]==0.0):
-        #     raise RuntimeError(f"Masked indices got non-zero weight")
 
-        # features = features.masked_fill(mask, float(0.0))
         scaled_attention = torch.matmul(attention_weights.transpose(1, 2), features)
 
-        return scaled_attention.squeeze(1), attention_weights
+        if return_attention_weights:
+            return scaled_attention.squeeze(1), attention_weights
+
+        return scaled_attention.squeeze(1)
