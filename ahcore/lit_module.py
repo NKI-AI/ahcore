@@ -13,6 +13,7 @@ import pytorch_lightning as pl
 import torch.optim.optimizer
 from pytorch_lightning.trainer.states import TrainerFn
 from torch import nn
+import transformers
 
 from ahcore.exceptions import ConfigurationError
 from ahcore.metrics import MetricFactory, WSIMetricFactory
@@ -58,7 +59,7 @@ class AhCoreLightningModule(pl.LightningModule):
                 "loss",
             ],
         )  # TODO: we should send the hyperparams to the logger elsewhere
-        if isinstance(model, BaseAhcoreJitModel):
+        if isinstance(model, BaseAhcoreJitModel) or isinstance(model, transformers.modeling_utils.PretrainedModel):
             self._model = model
         elif isinstance(model, functools.partial):
             try:
