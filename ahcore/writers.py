@@ -231,6 +231,16 @@ class Writer(abc.ABC):
             "has_color_profile": self._color_profile is not None,
         }
 
+        if not self._is_compressed_image:
+            # When writing features, features are of size (num_tiles, 1).
+            # Setting reader_size to this value makes the readers able to read these features as images.
+            # Setting the reader_tile_size to this value allows for reading all the features in one go without loops.
+            # If these values are specified the reader will use these, instead of tile_size and size
+
+            assert len(self._grid) == self._num_samples, "Number of tiles should be equal to the number of samples, this holds in the writer_callback."
+
+            metadata.update({"reader_tile_size": (len(self._grid), 1), "reader_size": (len(self._grid), 1)})
+
         if self._extra_metadata:
             metadata.update(self._extra_metadata)
 
@@ -329,6 +339,10 @@ class Writer(abc.ABC):
 
         self.set_grid()
         assert self._grid
+
+        if self._grid.order != GridOrder.C:
+            raise ValueError(f"Grid order should be C, other orderings are not supported. Got {self._grid.order}")
+
         num_tiles = len(self._grid)
 
         self._tile_indices = self.create_dataset(

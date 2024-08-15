@@ -112,12 +112,12 @@ class FileImageReader(abc.ABC):
         self._read_metadata()
 
         if not self._metadata:
-            raise ValueError("Metadata of h5 file is empty.")
+            raise ValueError("Metadata of file is empty.")
 
         self._mpp = self._metadata["mpp"]
-        self._tile_size = self._metadata["tile_size"]
+        self._tile_size = self._metadata["reader_tile_size"] if "reader_tile_size" in self._metadata.keys() else self._metadata["tile_size"]
         self._tile_overlap = self._metadata["tile_overlap"]
-        self._size = self._metadata["size"]
+        self._size = self._metadata["reader_size"] if "reader_size" in self._metadata.keys() else self._metadata["size"]
         self._num_channels = self._metadata["num_channels"]
         self._dtype = self._metadata["dtype"]
         self._precision = self._metadata["precision"]
@@ -165,9 +165,9 @@ class FileImageReader(abc.ABC):
         else:
             # If handling features, we need to expand dimensions to match the expected shape.
             if tile.ndim == 1:  # fixme: is this the correct location for this
-                if not self._tile_size == [1, 1]:
+                if not self._tile_size[1] == 1:
                     raise NotImplementedError(
-                        f"Tile is single dimensional and {self._tile_size=} should be [1, 1], other cases have not been considered and cause unwanted behaviour."
+                        f"Tile is single dimensional and {self._tile_size=} should be [x, 1], other cases have not been considered and cause unwanted behaviour."
                     )
                 return tile.reshape(self._num_channels, *self._tile_size)
             return tile
@@ -210,7 +210,7 @@ class FileImageReader(abc.ABC):
         total_rows = math.ceil((self._size[1] - self._tile_overlap[1]) / self._stride[1])
         total_cols = math.ceil((self._size[0] - self._tile_overlap[0]) / self._stride[0])
 
-        assert total_rows * total_cols == num_tiles  # Equality only holds if features where created without mask
+        # assert total_rows * total_cols == num_tiles  # Equality only holds if features where created without mask
 
         x, y = location
         w, h = size
