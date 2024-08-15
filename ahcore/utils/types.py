@@ -86,3 +86,11 @@ class ViTEmbedMode(str, Enum):
     CONCAT_MEAN = "embed_concat_mean"
     CONCAT = "embed_concat"
     # Extend as necessary
+
+class DataFormat(str, Enum):
+    """Data format for the writer."""
+
+    FEATURE = "feature"
+    IMAGE = "image"
+    COMPRESSED_IMAGE = "compressed_image"
+    MASK = "mask"

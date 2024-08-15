@@ -24,7 +24,7 @@ import zarr
 from zarr.storage import ZipStore
 
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import BoundingBoxType, GenericNumberArray, InferencePrecision
+from ahcore.utils.types import BoundingBoxType, GenericNumberArray, InferencePrecision, DataFormat
 
 logger = get_logger(__name__)
 
@@ -48,6 +48,8 @@ class FileImageReader(abc.ABC):
 
         self._file: Optional[Any] = None
         self._metadata = None
+        self._num_tiles = None
+        self._data_format = None
         self._mpp = None
         self._tile_size = None
         self._tile_overlap = None
@@ -114,10 +116,13 @@ class FileImageReader(abc.ABC):
         if not self._metadata:
             raise ValueError("Metadata of file is empty.")
 
+        self._num_tiles = self._metadata["num_tiles"]
+        self._data_format = DataFormat(self._metadata["data_format"]) if "data_format" in self._metadata.keys() else DataFormat.IMAGE
         self._mpp = self._metadata["mpp"]
-        self._tile_size = self._metadata["reader_tile_size"] if "reader_tile_size" in self._metadata.keys() else self._metadata["tile_size"]
+        # features are always read at tile_size (1, 1), possibly faster to read the whole feature at once
+        self._tile_size = (self._num_tiles, 1) if self._data_format == DataFormat.FEATURE else self._metadata["tile_size"]
         self._tile_overlap = self._metadata["tile_overlap"]
-        self._size = self._metadata["reader_size"] if "reader_size" in self._metadata.keys() else self._metadata["size"]
+        self._size = (self._num_tiles, 1) if self._data_format == DataFormat.FEATURE else self._metadata["size"]
         self._num_channels = self._metadata["num_channels"]
         self._dtype = self._metadata["dtype"]
         self._precision = self._metadata["precision"]
@@ -204,13 +209,13 @@ class FileImageReader(abc.ABC):
         assert self._tile_overlap is not None, "self._tile_overlap should not be None"
 
         image_dataset = self._file["data"]
-        num_tiles = self._metadata["num_tiles"]
+
         tile_indices = self._file["tile_indices"]
 
         total_rows = math.ceil((self._size[1] - self._tile_overlap[1]) / self._stride[1])
         total_cols = math.ceil((self._size[0] - self._tile_overlap[0]) / self._stride[0])
 
-        # assert total_rows * total_cols == num_tiles  # Equality only holds if features where created without mask
+        assert total_rows * total_cols == self._num_tiles or self._data_format == DataFormat.FEATURE, f"{total_rows=}, {total_cols=} and {self._num_tiles=}"  # Equality only holds if features where created without mask
 
         x, y = location
         w, h = size

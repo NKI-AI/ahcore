@@ -31,6 +31,8 @@ from rich.progress import Progress
 from ahcore.cli import dir_path, file_path
 from ahcore.writers import H5FileImageWriter, Writer, ZarrFileImageWriter
 
+from ahcore.utils.types import DataFormat
+
 _WriterClass = Type[Writer]
 
 logger = getLogger(__name__)
@@ -359,7 +361,7 @@ def _tiling_pipeline(
             tile_size=dataset_cfg.tile_size,
             tile_overlap=dataset_cfg.tile_overlap,
             num_samples=len(dataset),
-            is_compressed_image=compression != "none",
+            data_format=DataFormat.COMPRESSED_IMAGE if compression != "none" else DataFormat.IMAGE,
             color_profile=color_profile,
             extra_metadata=extra_metadata,
             grid=dataset.grids[0][0],

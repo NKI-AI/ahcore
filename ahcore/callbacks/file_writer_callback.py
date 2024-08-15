@@ -11,7 +11,7 @@ from ahcore.lit_module import AhCoreLightningModule
 from ahcore.utils.callbacks import get_output_filename as get_output_filename_
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import InferencePrecision, NormalizationType
+from ahcore.utils.types import InferencePrecision, NormalizationType, DataFormat
 from ahcore.writers import Writer
 
 logger = get_logger(__name__)
@@ -27,6 +27,7 @@ class WriteFileCallback(AbstractWriterCallback):
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
         callbacks: list[ConvertCallbacks] | None = None,
+        data_format = DataFormat.IMAGE,
     ):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
@@ -54,6 +55,7 @@ class WriteFileCallback(AbstractWriterCallback):
         self._suffix = ".cache"
         self._normalization_type: NormalizationType = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)
+        self._data_format = data_format
 
         super().__init__(
             writer_class=writer_class,
@@ -128,7 +130,7 @@ class WriteFileCallback(AbstractWriterCallback):
             tile_overlap=tile_overlap,
             num_samples=num_samples,
             color_profile=None,
-            is_compressed_image=False,
+            data_format=self._data_format,
             progress=None,
             precision=InferencePrecision(self._precision),
             grid=grid,
