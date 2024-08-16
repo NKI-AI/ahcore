@@ -113,7 +113,7 @@ class CacheDescription(Base):
     mask_threshold = Column(Float)
     grid_order = Column(String)
 
-    cache: Mapped["ImageCache"] = relationship("ImageCache", back_populates="description")
+    cache: Mapped[List["ImageCache"]] = relationship("ImageCache", back_populates="description")
 
 
 class ImageFeature(Base):
@@ -128,9 +128,10 @@ class ImageFeature(Base):
     reader = Column(String)
     num_tiles = Column(Integer)
     image_id = Column(Integer, ForeignKey("image.id"), nullable=False)
+    feature_description_id = Column(Integer, ForeignKey("feature_description.id"), nullable=False)
 
     image: Mapped["Image"] = relationship("Image", back_populates="features")
-    description: Mapped["FeatureDescription"] = relationship("FeatureDescription", back_populates="image_feature")
+    feature_description: Mapped["FeatureDescription"] = relationship("FeatureDescription", back_populates="features")
 
 
 class FeatureDescription(Base):
@@ -150,15 +151,18 @@ class FeatureDescription(Base):
     tile_overlap_height = Column(Integer)
     description = Column(String)
 
-    version = Column(String, unique=True, nullable=False)  # use this to select which features we want to use
+    # use this to select which features we want to use
+    version = Column(String, unique=True, nullable=False)
+
 
     model_name = Column(String)
     model_path = Column(String)
     feature_dimension = Column(Integer)
-    image_transforms_description = Column(
-        String
-    )  # it would be nice to have a way to track which transforms the feature extractors used, but maybe this is not the best way to do it
+    image_transforms_description = Column(String)
+    # it would be nice to have a way to track which transforms the feature extractors used,
+    # but maybe this is not the best way to do it
 
+    features: Mapped[List["ImageFeature"]] = relationship("ImageFeature", back_populates="feature_description")
 
 class Mask(Base):
     """Mask table."""
