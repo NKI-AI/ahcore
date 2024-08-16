@@ -117,6 +117,7 @@ class FileImageReader(abc.ABC):
             raise ValueError("Metadata of file is empty.")
 
         self._num_tiles = self._metadata["num_tiles"]
+        # set a standard value if it is not present
         self._data_format = DataFormat(self._metadata["data_format"]) if "data_format" in self._metadata.keys() else DataFormat.IMAGE
         self._mpp = self._metadata["mpp"]
         # features are always read at tile_size (1, 1), possibly faster to read the whole feature at once

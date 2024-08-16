@@ -6,6 +6,28 @@ from dlup.types import PathLike
 
 from ahcore.readers import StitchingMode, ZarrFileImageReader, H5FileImageReader
 
+from enum import Enum
+from typing import Any, Callable
+
+from dlup.backends.openslide_backend import OpenSlideSlide
+from dlup.backends.tifffile_backend import TifffileSlide
+from dlup.backends.pyvips_backend import PyVipsSlide
+from dlup.types import PathLike
+
+
+
+class ImageBackend(Enum):
+    """Available image backends."""
+
+    OPENSLIDE: Callable[[PathLike], OpenSlideSlide] = OpenSlideSlide
+    PYVIPS: Callable[[PathLike], PyVipsSlide] = PyVipsSlide
+    TIFFFILE: Callable[[PathLike], TifffileSlide] = TifffileSlide
+    H5: Callable[[PathLike], H5Slide] = H5Slide
+    ZARR: Callable[[PathLike], ZarrSlide] = ZarrSlide
+
+    def __call__(self, *args: "ImageBackend" | str) -> Any:
+        return self.value(*args)
+
 
 class ZarrSlide(AbstractSlideBackend):
     def __init__(self, filename: PathLike, stitching_mode: StitchingMode | str = StitchingMode.CROP) -> None:
