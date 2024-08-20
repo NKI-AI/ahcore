@@ -240,6 +240,8 @@ def load_weights(model: LightningModule, config: DictConfig) -> LightningModule:
     _model = getattr(model, "_model")
     if isinstance(_model, BaseAhcoreJitModel):
         return model
+    if config.ckpt_path == "" or config.ckpt_path is None:
+        raise ValueError(f"Checkpoint path not provided in config.")
     else:
         # Load checkpoint weights
         lit_ckpt = torch.load(config.ckpt_path)
@@ -262,11 +264,13 @@ def validate_checkpoint_paths(config: DictConfig) -> DictConfig:
     """
     # Extract paths with clear fallbacks
     checkpoint_path = config.get("ckpt_path")
+    # this is not right and a bit hacky with the new models
     jit_path = config.get("lit_module", {}).get("model", {}).get("jit_path")
     # Validate configuration
     paths_defined = [path for path in [checkpoint_path, jit_path] if path]
     if len(paths_defined) == 0:
-        raise RuntimeError("No checkpoint or jit path provided in config.")
+        logging.warning("No checkpoint or jit path provided in config.")
+        return config
     elif len(paths_defined) > 1:
         raise RuntimeError("Checkpoint path and jit path cannot be defined simultaneously.")
     else:
