@@ -35,6 +35,7 @@ from ahcore.utils.database_models import (
     Split,
     SplitDefinitions,
     ImageFeature,
+    FeatureDescription,
 )
 from ahcore.utils.io import get_enum_key_from_value, get_logger
 from ahcore.utils.rois import compute_rois
@@ -146,12 +147,13 @@ def get_labels_from_record(record: Image | Patient) -> list[tuple[str, str]] | N
     return _labels
 
 
-def get_relevant_feature_info_from_record(record: ImageFeature, data_description: DataDescription) -> tuple[
+def get_relevant_feature_info_from_record(record: ImageFeature,
+                                          data_description: DataDescription,
+                                          feature_description: FeatureDescription) -> tuple[
     Path,
     PositiveFloat,
     tuple[PositiveInt, PositiveInt],
     tuple[PositiveInt, PositiveInt],
-    TilingMode,
     ImageBackend,
     PositiveFloat,
 ]:
@@ -168,16 +170,16 @@ def get_relevant_feature_info_from_record(record: ImageFeature, data_description
         The features of the image.
     """
     image_path = data_description.data_dir / record.filename
-    mpp = record.mpp
+    mpp = feature_description.mpp
     tile_size = (
         record.num_tiles,
         1,
     )  # this would load all the features in one go --> can be extended to only load relevant tile level features
     tile_overlap = (0, 0)
-    tile_mode = TilingMode.C
-    backend = ImageBackend[str(record.reader)]
-    overwrite_mpp = record.mpp
-    return image_path, mpp, tile_size, tile_overlap, tile_mode, backend, overwrite_mpp
+
+    backend = ImageBackend[str(record.reader)].value
+    overwrite_mpp = feature_description.mpp
+    return image_path, mpp, tile_size, tile_overlap, backend, overwrite_mpp
 
 
 def _get_rois(mask: WsiAnnotations | None, data_description: DataDescription, stage: str) -> Optional[Rois]:
@@ -351,13 +353,14 @@ class DataManager:
         ImageFeature
             The features of the image.
         """
-        image_feature = self._session.query(ImageFeature).filter_by(image_id=image_id, version=feature_version).first()
+        feature_description = self._session.query(FeatureDescription).filter_by(version=feature_version).first()
+        image_feature = self._session.query(ImageFeature).filter_by(image_id=image_id, feature_description_id=feature_description.id).first()
         self._ensure_record(
             image_feature, f"No features found for image ID {image_id} and feature version {feature_version}"
         )
         assert image_feature is not None
         # todo: make sure that this only allows to run one ImageFeature, I think it should be good bc of the unique constraint
-        return image_feature
+        return image_feature, feature_description
 
     def __enter__(self) -> "DataManager":
         return self
@@ -417,12 +420,13 @@ def datasets_from_data_description(
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
 
             if use_features:
-                image_feature = db_manager.get_image_features_by_image_and_feature_version(
+                image_feature, feature_description = db_manager.get_image_features_by_image_and_feature_version(
                     image.id, data_description.feature_version
                 )
-                image_path, mpp, tile_size, tile_overlap, tile_mode, backend, overwrite_mpp = (
-                    get_relevant_feature_info_from_record(image_feature, data_description)
+                image_path, mpp, tile_size, tile_overlap, backend, overwrite_mpp = (
+                    get_relevant_feature_info_from_record(image_feature, data_description, feature_description)
                 )
+                tile_mode = TilingMode.skip
             else:
                 image_path = image_root / image.filename
                 tile_size = grid_description.tile_size
@@ -430,6 +434,9 @@ def datasets_from_data_description(
                 backend = ImageBackend[str(image.reader)]
                 mpp = grid_description.mpp
                 overwrite_mpp = image.mpp
+                tile_mode = TilingMode.overflow
+
+            # fixme: something is still wrong here, in the reader or in the database, got empty tiles
 
             dataset = TiledWsiDataset.from_standard_tiling(
                 path=image_path,
@@ -437,6 +444,7 @@ def datasets_from_data_description(
                 tile_size=tile_size,
                 tile_overlap=tile_overlap,
                 grid_order=GridOrder.C,
+                tile_mode=tile_mode,
                 crop=False,
                 mask=mask,
                 mask_threshold=mask_threshold,

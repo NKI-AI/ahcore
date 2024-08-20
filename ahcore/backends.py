@@ -15,20 +15,6 @@ from dlup.backends.pyvips_backend import PyVipsSlide
 from dlup.types import PathLike
 
 
-
-class ImageBackend(Enum):
-    """Available image backends."""
-
-    OPENSLIDE: Callable[[PathLike], OpenSlideSlide] = OpenSlideSlide
-    PYVIPS: Callable[[PathLike], PyVipsSlide] = PyVipsSlide
-    TIFFFILE: Callable[[PathLike], TifffileSlide] = TifffileSlide
-    H5: Callable[[PathLike], H5Slide] = H5Slide
-    ZARR: Callable[[PathLike], ZarrSlide] = ZarrSlide
-
-    def __call__(self, *args: "ImageBackend" | str) -> Any:
-        return self.value(*args)
-
-
 class ZarrSlide(AbstractSlideBackend):
     def __init__(self, filename: PathLike, stitching_mode: StitchingMode | str = StitchingMode.CROP) -> None:
         super().__init__(filename)
@@ -101,3 +87,16 @@ class H5Slide(AbstractSlideBackend):
 
     def close(self):
         self._reader.close()
+
+
+class ImageBackend(Enum):
+    """Available image backends."""
+
+    OPENSLIDE: Callable[[PathLike], OpenSlideSlide] = OpenSlideSlide
+    PYVIPS: Callable[[PathLike], PyVipsSlide] = PyVipsSlide
+    TIFFFILE: Callable[[PathLike], TifffileSlide] = TifffileSlide
+    H5: Callable[[PathLike], H5Slide] = H5Slide
+    ZARR: Callable[[PathLike], ZarrSlide] = ZarrSlide
+
+    def __call__(self, *args) -> Any:
+        return self.value(*args)
