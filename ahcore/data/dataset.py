@@ -117,6 +117,7 @@ class DlupDataModule(pl.LightningDataModule):
         num_workers: int = 16,
         persistent_workers: bool = False,
         pin_memory: bool = False,
+        use_cache: bool = True,
     ) -> None:
         """
         Construct a DataModule based on a manifest.
@@ -176,6 +177,7 @@ class DlupDataModule(pl.LightningDataModule):
         self._num_workers = num_workers
         self._persistent_workers = persistent_workers
         self._pin_memory = pin_memory
+        self._use_cache = use_cache
 
         self._fit_data_iterator: Iterator[_DlupDataset] | None = None
         self._validate_data_iterator: Iterator[_DlupDataset] | None = None
@@ -195,6 +197,7 @@ class DlupDataModule(pl.LightningDataModule):
         self._limit_validate_samples = None
         self._limit_fit_samples = None
         self._limit_predict_samples = None
+
 
     @property
     def data_manager(self) -> DataManager:
@@ -244,7 +247,7 @@ class DlupDataModule(pl.LightningDataModule):
             return ConcatDataset(datasets=datasets)
 
         self._logger.info("Constructing dataset for stage %s (this can take a while)", stage)
-        dataset = self._load_from_cache(construct_dataset, stage=stage)
+        dataset = self._load_from_cache(construct_dataset, stage=stage) if self._use_cache else construct_dataset()
         setattr(self, f"{stage}_dataset", dataset)
 
         lengths = np.asarray([len(ds) for ds in dataset.datasets])
@@ -364,4 +367,6 @@ class DlupDataModule(pl.LightningDataModule):
         str
             A unique identifier for this datamodule.
         """
+
+        # todo: It doesn't take into account different types of pretransforms, which can be important.
         return basemodel_to_uuid(self.data_description)

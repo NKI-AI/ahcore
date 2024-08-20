@@ -98,11 +98,8 @@ class PreTransformTaskFactory:
     ) -> PreTransformTaskFactory:
         transforms: list[PreTransformCallable] = []
 
-        transforms.append(ImageToTensor())
-
         transforms.append(SampleNFeatures(n=1000))
 
-        transforms.append(AllowCollate())
 
         if not requires_target:
             return cls(transforms)
@@ -110,6 +107,11 @@ class PreTransformTaskFactory:
         index_map = data_description.index_map
         if index_map is None:
             raise ConfigurationError("`index_map` is required for classification models when the target is required.")
+
+        label_keys = data_description.label_keys
+
+        if label_keys is not None:
+            transforms.append(SelectSpecificLabels(keys=label_keys))
 
         transforms.append(LabelToClassIndex(index_map=index_map))
 
@@ -127,28 +129,32 @@ class PreTransformTaskFactory:
 class SampleNFeatures:
     def __init__(self, n=1000):
         self.n = n
-        logger.critical(
+        logger.warning(
             f"Sampling {n} features from the image. Sampling WITH replacement is done if there are not enough tiles."
         )
 
     def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
         features = sample["image"]
-        if not type(features) is torch.Tensor:
-            raise ValueError(
-                f"Expected features to be a torch.Tensor, got {type(features)}. Apply ImageToTensor transform first."
-            )
 
-        feature_dim, h, w = features.shape
+        # Get the dimensions of the image
+        feature_dim = features.bands  # Number of channels (similar to feature_dim)
+        h = features.height  # Height
+        w = features.width  # Width
 
-        if not 0 < w < 1:
-            raise ValueError(f"Expected features to have a width dimension of 1, got {w}.")
+        if h != 1:
+            raise ValueError(f"Expected features to have a width dimension of 1, got {h}.")
 
-        # TODO: DO WE WANT THIS????? SAMPLING WITH REPLACEMENT OR NOT???
         n_random_indices = (
-            np.random.choice(h, self.n, replace=False) if h > self.n else np.random.choice(h, self.n, replace=True)
+            np.random.choice(w, self.n, replace=False) if w > self.n else np.random.choice(w, self.n, replace=True)
         )
 
-        sample["image"] = features[:, n_random_indices, :]
+        # Extract the selected columns (indices) from the image
+        # Create a new image from the selected indices
+
+        selected_columns = [features.crop(idx, 0, 1, h) for idx in n_random_indices]
+
+        # Combine the selected columns back into a single image
+        sample["image"] = pyvips.Image.arrayjoin(selected_columns, across=1)
 
         return sample
 
@@ -175,6 +181,16 @@ class LabelToClassIndex:
 
         return sample
 
+
+class SelectSpecificLabels:
+    def __init__(self, keys: list[str] | str):
+        if isinstance(keys, str):
+            keys = [keys]
+        self._keys = keys
+
+    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
+        sample["labels"] = {label_key: label_value for label_key, label_value in sample["labels"].items() if label_key in self._keys}
+        return sample
 
 class OneHotEncodeMask:
     def __init__(self, index_map: dict[str, int]):
@@ -254,7 +270,11 @@ class ImageToTensor:
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
         tile: pyvips.Image = sample["image"]
         # Flatten the image to remove the alpha channel, using white as the background color
-        tile_ = tile.flatten(background=[255, 255, 255])  # todo: check if this doesn't mess up features
+        if tile.bands > 4:
+            # assuming that more than four bands/channels means that we are handling features
+            tile_ = tile
+        else:
+            tile_ = tile.flatten(background=[255, 255, 255])  # todo: check if this doesn't mess up features
 
         # Convert VIPS image to a numpy array then to a torch tensor
         np_image = tile_.numpy()

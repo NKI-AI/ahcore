@@ -64,6 +64,7 @@ class DataDescription(BaseModel):
     inference_grid: Optional[GridDescription] = None
     index_map: Optional[Dict[str, int]]
     remap_labels: Optional[Dict[str, str]] = None
+    label_keys: list[str] | str | None = None
     use_class_weights: Optional[bool] = False
     convert_mask_to_rois: bool = True
     use_roi: bool = True
