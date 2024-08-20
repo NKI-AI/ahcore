@@ -116,14 +116,15 @@ class FileImageReader(abc.ABC):
         if not self._metadata:
             raise ValueError("Metadata of file is empty.")
 
+        self._num_samples = self._metadata["num_samples"]
         self._num_tiles = self._metadata["num_tiles"]
         # set a standard value if it is not present
         self._data_format = DataFormat(self._metadata["data_format"]) if "data_format" in self._metadata.keys() else DataFormat.IMAGE
         self._mpp = self._metadata["mpp"]
         # features are always read at tile_size (1, 1), possibly faster to read the whole feature at once
-        self._tile_size = (self._num_tiles, 1) if self._data_format == DataFormat.FEATURE else self._metadata["tile_size"]
+        self._tile_size = (self._num_samples, 1) if self._data_format == DataFormat.FEATURE else self._metadata["tile_size"]
         self._tile_overlap = self._metadata["tile_overlap"]
-        self._size = (self._num_tiles, 1) if self._data_format == DataFormat.FEATURE else self._metadata["size"]
+        self._size = (self._num_samples, 1) if self._data_format == DataFormat.FEATURE else self._metadata["size"]
         self._num_channels = self._metadata["num_channels"]
         self._dtype = self._metadata["dtype"]
         self._precision = self._metadata["precision"]
@@ -236,6 +237,31 @@ class FileImageReader(abc.ABC):
 
         if self._stitching_mode == StitchingMode.AVERAGE:
             average_mask = np.zeros((h, w), dtype=self._dtype)
+
+        if self._data_format == DataFormat.FEATURE:
+            if self._stitching_mode != StitchingMode.CROP:
+                raise NotImplementedError("Stitching mode other than CROP is not supported for features.")
+
+            if image_dataset.shape[0] != self._num_samples:
+                raise ValueError(f"Reading features expects that the saved feature vectors are the same "
+                                 f"length as the number of samples in the dataset. "
+                                 f"Feature vector length was {image_dataset.shape[0]}, "
+                                 f"number of samples in the dataset was {self._num_samples}")
+
+            if x+w > self._num_samples or y+h > 1:
+                if x+w == self._num_samples + 3:
+                    # fixme: this is ugly, but dlup does some resizing...
+                    w = w - 3
+                else:
+                    raise ValueError(f"Feature vectors are saved as (num_samples, 1) and the requested size {size} at location {location} is too large.")
+
+            # this simplified version of the crop is done as it is faster than the general crop
+            return pyvips.Image.new_from_array(np.expand_dims(image_dataset[x: x+w, :], axis=0))
+
+
+
+
+
 
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
