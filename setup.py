@@ -39,6 +39,7 @@ install_requires = [
     "zarr==2.17.2",
     "sqlalchemy>=2.0.21",
     "imageio>=2.34.0",
+    "transformers>=4.44.1",
 ]
 
 

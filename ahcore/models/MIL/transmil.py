@@ -73,9 +73,9 @@ class NystromAttention(nn.Module):
             padding = residual_conv_kernel // 2
             self.res_conv = nn.Conv2d(heads, heads, (kernel_size, 1), padding=(padding, 0), groups=heads, bias=False)
 
-    def forward(self, x, mask=None, return_attn=False):
-        b, n, _, h, m, iters, eps = *x.shape, self.heads, self.num_landmarks, self.pinv_iterations, self.eps
-
+    def forward(self, x: torch.Tensor, mask=None, return_attn=False):
+        b, n, _  = x.shape
+        h, m, iters, eps = self.heads, self.num_landmarks, self.pinv_iterations, self.eps
         # pad so that sequence can be evenly divided into m landmarks
 
         remainder = n % m

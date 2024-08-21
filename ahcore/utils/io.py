@@ -239,7 +239,7 @@ def load_weights(model: LightningModule, config: DictConfig) -> LightningModule:
         The model loaded from the checkpoint file.
     """
     _model = getattr(model, "_model")
-    if isinstance(_model, BaseAhcoreJitModel) or isinstance(_model, transformers.modeling_utils.PretrainedModel):
+    if isinstance(_model, BaseAhcoreJitModel) or isinstance(_model, transformers.modeling_utils.PreTrainedModel):
         return model
     else:
         # Load checkpoint weights

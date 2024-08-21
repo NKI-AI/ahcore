@@ -59,7 +59,7 @@ class AhCoreLightningModule(pl.LightningModule):
                 "loss",
             ],
         )  # TODO: we should send the hyperparams to the logger elsewhere
-        if isinstance(model, BaseAhcoreJitModel) or isinstance(model, transformers.modeling_utils.PretrainedModel):
+        if isinstance(model, BaseAhcoreJitModel) or isinstance(model, transformers.modeling_utils.PreTrainedModel):
             self._model = model
         elif isinstance(model, functools.partial):
             try:

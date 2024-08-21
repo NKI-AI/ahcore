@@ -1,8 +1,10 @@
 from pathlib import Path
 from typing import Any
 
+import torch
 from torch.jit import ScriptModule, load
 from torch import nn
+
 
 from transformers.modeling_utils import PreTrainedModel
 
@@ -14,24 +16,19 @@ class BaseHuggingfaceModel(nn.Module):
 
         self.model: model = model.from_pretrained(pretrained_model_name_or_path, **kwargs)
 
-    def forward(self, x):
+    def forward(self, x: dict | torch.Tensor) -> torch.Tensor:
         model_input = (
             x if type(x) is dict else {"pixel_values": x}
         )  # todo check if huggingface models sometimes other things???
         model_output = self.model(**model_input)
         return model_output.last_hidden_states
 
-    def get_attentions(self, x):
-        model_input = {"pixel_values": x}
-        model_output = self.model(**model_input)
-        return model_output.attentions
-
-    def get_raw_output(self, x):
+    def get_raw_output(self, x: torch.Tensor) -> dict:
         model_input = {"pixel_values": x}
         model_output = self.model(**model_input)
         return model_output
 
-    def get_output_at_keys(self, x, keys):
+    def get_output_at_keys(self, x: torch.Tensor, keys: str | list[str]) -> dict[str, torch.Tensor]:
         if isinstance(keys, str):
             keys = [keys]
 

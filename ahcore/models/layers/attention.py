@@ -110,7 +110,7 @@ class GatedAttention(nn.Module):
         self,
         features: torch.Tensor,
         return_attention_weights=False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass.
         Parameters
         ----------

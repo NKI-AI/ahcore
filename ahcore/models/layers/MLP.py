@@ -46,11 +46,11 @@ class MLP(nn.Sequential):
                 raise ValueError("hidden must have a value and have the same length as dropout if dropout is given.")
 
         d_model = in_features
-        layers = []
+        layers: list[nn.Module] = []
 
         if hidden is not None:
             for i, h in enumerate(hidden):
-                seq = [nn.Linear(d_model, h, bias=bias)]
+                seq: list[nn.Module] = [nn.Linear(d_model, h, bias=bias)]
                 d_model = h
 
                 if activation is not None:

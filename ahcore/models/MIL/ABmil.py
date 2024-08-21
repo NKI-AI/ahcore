@@ -141,7 +141,7 @@ class ABMIL(nn.Module):
         self,
         features: torch.Tensor,
         return_attention_weights: bool = False,
-    ) -> torch.Tensor:
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass of the ABMIL model.
 
