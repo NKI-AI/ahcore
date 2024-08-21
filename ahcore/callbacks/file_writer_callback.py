@@ -27,7 +27,7 @@ class WriteFileCallback(AbstractWriterCallback):
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
         callbacks: list[ConvertCallbacks] | None = None,
-        data_format = DataFormat.IMAGE,
+        data_format=DataFormat.IMAGE,
     ):
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5

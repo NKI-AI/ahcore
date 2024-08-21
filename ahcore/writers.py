@@ -14,7 +14,6 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, NamedTuple, Optional
-from enum import Enum
 
 import dlup
 import h5py
@@ -30,9 +29,6 @@ from ahcore.utils.io import get_git_hash, get_logger
 from ahcore.utils.types import GenericNumberArray, InferencePrecision, DataFormat
 
 logger = get_logger(__name__)
-
-
-
 
 
 def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
@@ -116,7 +112,6 @@ class Writer(abc.ABC):
         self._coordinates_dataset: Any
 
         self._partial_suffix: str = f"{self._filename.suffix}.partial"
-
 
     @abc.abstractmethod
     def open_file(self, mode: str = "w") -> Any:
@@ -449,9 +444,7 @@ class ZarrFileImageWriter(Writer):
         if self._data_format == DataFormat.COMPRESSED_IMAGE:
             self._data[self._current_index] = batch.reshape(-1)
         else:
-            self._data[self._current_index : self._current_index + batch.shape[0]] = (
-                batch.flatten() if self._data_format == DataFormat.COMPRESSED_IMAGE else batch
-            )
+            self._data[self._current_index : self._current_index + batch.shape[0]] = batch
 
     def write_metadata(self, metadata: dict[str, Any], file: Any) -> None:
         """Write metadata to Zarr group attributes."""
@@ -491,7 +484,9 @@ class H5FileImageWriter(Writer):
             raise ValueError(f"Batch should have a single element when writing h5. Got batch shape {batch.shape}.")
         batch_size = batch.shape[0]
         self._data[self._current_index : self._current_index + batch_size] = (
-            batch.flatten() if self._data_format == DataFormat.COMPRESSED_IMAGE else batch  # fixme: flatten shouldn't work here
+            batch.flatten()
+            if self._data_format == DataFormat.COMPRESSED_IMAGE
+            else batch  # fixme: flatten shouldn't work here
         )
 
     def create_dataset(

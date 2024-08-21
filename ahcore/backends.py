@@ -1,18 +1,14 @@
-from typing import Any
-
-import pyvips
-from dlup.backends.common import AbstractSlideBackend
-from dlup.types import PathLike
-
-from ahcore.readers import StitchingMode, ZarrFileImageReader, H5FileImageReader
-
 from enum import Enum
 from typing import Any, Callable
 
+import pyvips
+from dlup.backends.common import AbstractSlideBackend
 from dlup.backends.openslide_backend import OpenSlideSlide
-from dlup.backends.tifffile_backend import TifffileSlide
 from dlup.backends.pyvips_backend import PyVipsSlide
+from dlup.backends.tifffile_backend import TifffileSlide
 from dlup.types import PathLike
+
+from ahcore.readers import H5FileImageReader, StitchingMode, ZarrFileImageReader
 
 
 class ZarrSlide(AbstractSlideBackend):
@@ -22,7 +18,7 @@ class ZarrSlide(AbstractSlideBackend):
         self._spacings = [(self._reader.mpp, self._reader.mpp)]
 
     @property
-    def size(self):
+    def size(self) -> tuple[int, int]:
         return self._reader.size
 
     @property
@@ -42,13 +38,13 @@ class ZarrSlide(AbstractSlideBackend):
         return self._reader.metadata
 
     @property
-    def magnification(self):
+    def magnification(self) -> None:
         return None
 
     def read_region(self, coordinates: tuple[int, int], level: int, size: tuple[int, int]) -> pyvips.Image:
         return self._reader.read_region(coordinates, level, size)
 
-    def close(self):
+    def close(self) -> None:
         self._reader.close()
 
 
@@ -59,7 +55,7 @@ class H5Slide(AbstractSlideBackend):
         self._spacings = [(self._reader.mpp, self._reader.mpp)]
 
     @property
-    def size(self):
+    def size(self) -> tuple[int, int]:
         return self._reader.size
 
     @property
@@ -79,13 +75,13 @@ class H5Slide(AbstractSlideBackend):
         return self._reader.metadata
 
     @property
-    def magnification(self):
+    def magnification(self) -> None:
         return None
 
     def read_region(self, coordinates: tuple[int, int], level: int, size: tuple[int, int]) -> pyvips.Image:
         return self._reader.read_region(coordinates, level, size)
 
-    def close(self):
+    def close(self) -> None:
         self._reader.close()
 
 
@@ -98,5 +94,5 @@ class ImageBackend(Enum):
     H5: Callable[[PathLike], H5Slide] = H5Slide
     ZARR: Callable[[PathLike], ZarrSlide] = ZarrSlide
 
-    def __call__(self, *args) -> Any:
+    def __call__(self, *args) -> "ImageBackend":
         return self.value(*args)

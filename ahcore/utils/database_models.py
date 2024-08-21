@@ -154,7 +154,6 @@ class FeatureDescription(Base):
     # use this to select which features we want to use
     version = Column(String, unique=True, nullable=False)
 
-
     model_name = Column(String)
     model_path = Column(String)
     feature_dimension = Column(Integer)
@@ -163,6 +162,7 @@ class FeatureDescription(Base):
     # but maybe this is not the best way to do it
 
     features: Mapped[List["ImageFeature"]] = relationship("ImageFeature", back_populates="feature_description")
+
 
 class Mask(Base):
     """Mask table."""

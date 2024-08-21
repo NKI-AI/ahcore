@@ -119,10 +119,14 @@ class FileImageReader(abc.ABC):
         self._num_samples = self._metadata["num_samples"]
         self._num_tiles = self._metadata["num_tiles"]
         # set a standard value if it is not present
-        self._data_format = DataFormat(self._metadata["data_format"]) if "data_format" in self._metadata.keys() else DataFormat.IMAGE
+        self._data_format = (
+            DataFormat(self._metadata["data_format"]) if "data_format" in self._metadata.keys() else DataFormat.IMAGE
+        )
         self._mpp = self._metadata["mpp"]
         # features are always read at tile_size (1, 1), possibly faster to read the whole feature at once
-        self._tile_size = (self._num_samples, 1) if self._data_format == DataFormat.FEATURE else self._metadata["tile_size"]
+        self._tile_size = (
+            (self._num_samples, 1) if self._data_format == DataFormat.FEATURE else self._metadata["tile_size"]
+        )
         self._tile_overlap = self._metadata["tile_overlap"]
         self._size = (self._num_samples, 1) if self._data_format == DataFormat.FEATURE else self._metadata["size"]
         self._num_channels = self._metadata["num_channels"]
@@ -164,6 +168,8 @@ class FileImageReader(abc.ABC):
         return self._metadata
 
     def _decompress_and_reshape_data(self, tile: GenericNumberArray) -> GenericNumberArray:
+        assert self._tile_size is not None, "Cannot happen as this is called inside read_region which also checks this"
+
         if self._is_binary:
             with PIL.Image.open(io.BytesIO(tile)) as img:
                 return np.array(img).transpose(
@@ -174,7 +180,8 @@ class FileImageReader(abc.ABC):
             if tile.ndim == 1:  # fixme: is this the correct location for this
                 if not self._tile_size[1] == 1:
                     raise NotImplementedError(
-                        f"Tile is single dimensional and {self._tile_size=} should be [x, 1], other cases have not been considered and cause unwanted behaviour."
+                        f"Tile is single dimensional and {self._tile_size=} should be [x, 1], "
+                        f"other cases have not been considered and cause unwanted behaviour."
                     )
                 return tile.reshape(self._num_channels, *self._tile_size)
             return tile
@@ -217,7 +224,10 @@ class FileImageReader(abc.ABC):
         total_rows = math.ceil((self._size[1] - self._tile_overlap[1]) / self._stride[1])
         total_cols = math.ceil((self._size[0] - self._tile_overlap[0]) / self._stride[0])
 
-        assert total_rows * total_cols == self._num_tiles or self._data_format == DataFormat.FEATURE, f"{total_rows=}, {total_cols=} and {self._num_tiles=}"  # Equality only holds if features where created without mask
+        assert (
+            total_rows * total_cols == self._num_tiles or self._data_format == DataFormat.FEATURE
+        ), f"{total_rows=}, {total_cols=} and {self._num_tiles=}"
+        # Equality only holds if features where created without mask
 
         x, y = location
         w, h = size
@@ -243,25 +253,21 @@ class FileImageReader(abc.ABC):
                 raise NotImplementedError("Stitching mode other than CROP is not supported for features.")
 
             if image_dataset.shape[0] != self._num_samples:
-                raise ValueError(f"Reading features expects that the saved feature vectors are the same "
-                                 f"length as the number of samples in the dataset. "
-                                 f"Feature vector length was {image_dataset.shape[0]}, "
-                                 f"number of samples in the dataset was {self._num_samples}")
+                raise ValueError(
+                    f"Reading features expects that the saved feature vectors are the same "
+                    f"length as the number of samples in the dataset. "
+                    f"Feature vector length was {image_dataset.shape[0]}, "
+                    f"number of samples in the dataset was {self._num_samples}"
+                )
 
-            if x+w > self._num_samples or y+h > 1:
-                if x+w == self._num_samples + 3:
-                    # fixme: this is ugly, but dlup does some resizing...
-                    w = w - 3
-                else:
-                    raise ValueError(f"Feature vectors are saved as (num_samples, 1) and the requested size {size} at location {location} is too large.")
+            if x + w > self._num_samples or y + h > 1:
+                raise ValueError(
+                    f"Feature vectors are saved as (num_samples, 1) "
+                    f"and the requested size {size} at location {location} is too large."
+                )
 
             # this simplified version of the crop is done as it is faster than the general crop
-            return pyvips.Image.new_from_array(np.expand_dims(image_dataset[x: x+w, :], axis=0))
-
-
-
-
-
+            return pyvips.Image.new_from_array(np.expand_dims(image_dataset[x : x + w, :], axis=0))
 
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):

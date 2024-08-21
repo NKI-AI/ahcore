@@ -8,7 +8,7 @@ from __future__ import annotations
 import functools
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, Generator, Literal, Optional, Type, TypedDict, cast
+from typing import Any, Callable, Generator, Literal, Optional, Type, TypedDict, cast, Tuple
 
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
@@ -16,7 +16,7 @@ from ahcore.backends import ImageBackend
 from dlup.data.dataset import RegionFromWsiDatasetSample, TiledWsiDataset, TileSample
 from dlup.tiling import GridOrder, TilingMode
 from pydantic import BaseModel
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, Column
 from sqlalchemy.engine import Engine
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session, sessionmaker
@@ -147,9 +147,9 @@ def get_labels_from_record(record: Image | Patient) -> list[tuple[str, str]] | N
     return _labels
 
 
-def get_relevant_feature_info_from_record(record: ImageFeature,
-                                          data_description: DataDescription,
-                                          feature_description: FeatureDescription) -> tuple[
+def get_relevant_feature_info_from_record(
+    record: ImageFeature, data_description: DataDescription, feature_description: FeatureDescription
+) -> tuple[
     Path,
     PositiveFloat,
     tuple[PositiveInt, PositiveInt],
@@ -166,25 +166,28 @@ def get_relevant_feature_info_from_record(record: ImageFeature,
 
     Returns
     -------
-    tuple[Path, PositiveFloat, tuple[PositiveInt, PositiveInt], tuple[PositiveInt, PositiveInt], TilingMode, ImageBackend, PositiveFloat]
+    tuple[Path, PositiveFloat, tuple[PositiveInt, PositiveInt],
+    tuple[PositiveInt, PositiveInt], TilingMode, ImageBackend, PositiveFloat]
         The features of the image.
     """
     image_path = data_description.data_dir / record.filename
-    mpp = feature_description.mpp
+    mpp = float(feature_description.mpp)
     tile_size = (
-        record.num_tiles,
+        int(record.num_tiles),
         1,
     )  # this would load all the features in one go --> can be extended to only load relevant tile level features
     tile_overlap = (0, 0)
 
     backend = ImageBackend[str(record.reader)].value
-    overwrite_mpp = feature_description.mpp
+    overwrite_mpp = float(feature_description.mpp)
     return image_path, mpp, tile_size, tile_overlap, backend, overwrite_mpp
 
 
 def _get_rois(mask: WsiAnnotations | None, data_description: DataDescription, stage: str) -> Optional[Rois]:
     if (mask is None) or (stage != "fit") or (not data_description.convert_mask_to_rois):
         return None
+
+    assert data_description.training_grid is not None
 
     tile_size = data_description.training_grid.tile_size
     tile_overlap = data_description.training_grid.tile_overlap
@@ -337,7 +340,9 @@ class DataManager:
         assert image is not None  # mypy
         return fetch_image_metadata(image)
 
-    def get_image_features_by_image_and_feature_version(self, image_id: int, feature_version: str) -> ImageFeature:
+    def get_image_features_by_image_and_feature_version(
+        self, image_id: Column[int], feature_version: str | None
+    ) -> Tuple[ImageFeature, FeatureDescription]:
         """
         Fetch the features for an image based on its ID and feature version.
 
@@ -353,13 +358,25 @@ class DataManager:
         ImageFeature
             The features of the image.
         """
+        if feature_version is None:
+            raise ValueError("feature_version cannot be None")
+
         feature_description = self._session.query(FeatureDescription).filter_by(version=feature_version).first()
-        image_feature = self._session.query(ImageFeature).filter_by(image_id=image_id, feature_description_id=feature_description.id).first()
+
+        if feature_description is None:
+            raise ValueError(f"Couldn't find feature description matching version {feature_version}")
+
+        image_feature = (
+            self._session.query(ImageFeature)
+            .filter_by(image_id=image_id, feature_description_id=feature_description.id)
+            .first()
+        )
         self._ensure_record(
             image_feature, f"No features found for image ID {image_id} and feature version {feature_version}"
         )
         assert image_feature is not None
-        # todo: make sure that this only allows to run one ImageFeature, I think it should be good bc of the unique constraint
+        # todo: make sure that this only allows to run one ImageFeature,
+        #  I think it should be good bc of the unique constraint
         return image_feature, feature_description
 
     def __enter__(self) -> "DataManager":
@@ -399,13 +416,13 @@ def datasets_from_data_description(
     else:
         grid_description = data_description.inference_grid
 
+    use_features = data_description.feature_version is not None
+
     patients = db_manager.get_records_by_split(
         manifest_name=data_description.manifest_name,
         split_version=data_description.split_version,
         split_category=stage,
     )
-
-    use_features = data_description.feature_version is not None
 
     for patient in patients:
         patient_labels = get_labels_from_record(patient)
@@ -428,12 +445,17 @@ def datasets_from_data_description(
                 )
                 tile_mode = TilingMode.skip
             else:
+                if grid_description is None:
+                    raise ValueError(
+                        f"grid_description for stage {stage} is None should be set if images are supposed to be used"
+                    )
+
                 image_path = image_root / image.filename
                 tile_size = grid_description.tile_size
                 tile_overlap = grid_description.tile_overlap
                 backend = ImageBackend[str(image.reader)]
-                mpp = grid_description.mpp
-                overwrite_mpp = image.mpp
+                mpp = grid_description.mpp  # type: ignore
+                overwrite_mpp = float(image.mpp)
                 tile_mode = TilingMode.overflow
 
             # fixme: something is still wrong here, in the reader or in the database, got empty tiles

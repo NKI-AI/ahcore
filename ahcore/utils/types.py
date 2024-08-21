@@ -87,6 +87,7 @@ class ViTEmbedMode(str, Enum):
     CONCAT = "embed_concat"
     # Extend as necessary
 
+
 class DataFormat(str, Enum):
     """Data format for the writer."""
 

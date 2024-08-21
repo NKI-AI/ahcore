@@ -198,7 +198,6 @@ class DlupDataModule(pl.LightningDataModule):
         self._limit_fit_samples = None
         self._limit_predict_samples = None
 
-
     @property
     def data_manager(self) -> DataManager:
         return self._data_manager
