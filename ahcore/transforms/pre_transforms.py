@@ -5,6 +5,7 @@ dataset.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 import numpy as np
@@ -40,10 +41,7 @@ class PreTransformTaskFactory:
             List of transforms to be used.
         """
         # These are always finally added.
-        transforms += [
-            ImageToTensor(),
-            AllowCollate(),
-        ]
+        transforms += [ImageToTensor(), AllowCollate(), SetTarget()]
         self._transforms = transforms
 
     @classmethod
@@ -100,7 +98,6 @@ class PreTransformTaskFactory:
 
         transforms.append(SampleNFeatures(n=1000))
 
-
         if not requires_target:
             return cls(transforms)
 
@@ -137,7 +134,6 @@ class SampleNFeatures:
         features = sample["image"]
 
         # Get the dimensions of the image
-        feature_dim = features.bands  # Number of channels (similar to feature_dim)
         h = features.height  # Height
         w = features.width  # Width
 
@@ -189,8 +185,11 @@ class SelectSpecificLabels:
         self._keys = keys
 
     def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
-        sample["labels"] = {label_key: label_value for label_key, label_value in sample["labels"].items() if label_key in self._keys}
+        sample["labels"] = {
+            label_key: label_value for label_key, label_value in sample["labels"].items() if label_key in self._keys
+        }
         return sample
+
 
 class OneHotEncodeMask:
     def __init__(self, index_map: dict[str, int]):
@@ -262,6 +261,25 @@ class AllowCollate:
         return output
 
 
+class SetTarget:
+
+    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
+        if "annotations_data" in sample and "mask" in sample["annotation_data"] and "labels" in sample.keys():
+            sample["target"] = (sample["annotation_data"]["mask"], sample["labels"])
+        elif "annotations_data" in sample and "mask" in sample["annotation_data"]:
+            sample["target"] = sample["annotation_data"]["mask"]
+        elif "labels" in sample.keys():
+            if len(sample["labels"].keys()) == 1:
+                # if there is only one label, then we just set this without retaining the key
+                # this makes it compatible with standard loss functions
+                sample["labels"] = next(iter(sample["labels"].values()))
+            sample["target"] = sample["labels"]
+        else:
+            logging.warning("No target set")
+
+        return sample
+
+
 class ImageToTensor:
     """
     Transform to translate the output of a dlup dataset to data_description supported by AhCore
@@ -283,6 +301,10 @@ class ImageToTensor:
         if sample["image"].sum() == 0:
             raise RuntimeError(f"Empty tile for {sample['path']} at {sample['coordinates']}")
 
+        if "labels" in sample:
+            for key, value in sample["labels"].items():
+                sample["labels"][key] = torch.tensor(value)
+
         # annotation_data is added by the ConvertPolygonToMask transform.
         if "annotation_data" not in sample:
             return sample
@@ -292,7 +314,7 @@ class ImageToTensor:
             if len(mask.shape) == 2:
                 # Mask is not one-hot encoded
                 mask = mask[np.newaxis, ...]
-            sample["target"] = torch.from_numpy(mask).float()
+            sample["annotation_data"]["mask"] = torch.from_numpy(mask).float()
 
         if "roi" in sample["annotation_data"] and sample["annotation_data"]["roi"] is not None:
             roi = sample["annotation_data"]["roi"]
