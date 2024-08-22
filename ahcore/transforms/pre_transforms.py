@@ -126,7 +126,14 @@ class ApplyHuggingfaceTransforms:
 
     def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
         # Apply the huggingface transforms here
-        sample["image"]: np.ndarray = self._processor(sample["image"])["pixel_values"]
+        if isinstance(sample["image"], pyvips.Image):
+            img = np.array(sample["image"]).numpy()
+        if isinstance(sample["image"], np.ndarray):
+            img = sample["image"]
+        else:
+            raise ValueError(f"The image must be a pyvips.Image or a numpy array, got {type(sample['image'])}")
+
+        sample["image"]: np.ndarray = self._processor(img)["pixel_values"][0]
 
         return sample
 

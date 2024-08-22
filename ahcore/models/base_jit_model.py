@@ -21,7 +21,7 @@ class BaseHuggingfaceModel(nn.Module):
             x if type(x) is dict else {"pixel_values": x}
         )  # todo check if huggingface models sometimes other things???
         model_output = self.model(**model_input)
-        return model_output.last_hidden_states
+        return model_output.last_hidden_state
 
     def get_raw_output(self, x: torch.Tensor) -> dict:
         model_input = {"pixel_values": x}
