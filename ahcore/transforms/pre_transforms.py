@@ -146,7 +146,7 @@ class SampleNFeatures:
 
         # Extract the selected columns (indices) from the image
         # Create a new image from the selected indices
-
+        # todo: this can probably be done without a for-loop quicker
         selected_columns = [features.crop(idx, 0, 1, h) for idx in n_random_indices]
 
         # Combine the selected columns back into a single image
@@ -288,15 +288,23 @@ class ImageToTensor:
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
         tile: pyvips.Image = sample["image"]
         # Flatten the image to remove the alpha channel, using white as the background color
+        using_features = False
+
         if tile.bands > 4:
             # assuming that more than four bands/channels means that we are handling features
+            using_features = True
             tile_ = tile
         else:
             tile_ = tile.flatten(background=[255, 255, 255])  # todo: check if this doesn't mess up features
 
         # Convert VIPS image to a numpy array then to a torch tensor
         np_image = tile_.numpy()
-        sample["image"] = torch.from_numpy(np_image).permute(2, 0, 1).float()
+        if using_features:
+            # n_tiles x 1 x feature_dim --> n_tiles x feature_dim
+            sample["image"] = torch.from_numpy(np_image).squeeze(1).float()
+        else:
+            # h x w x c --> c x h x w
+            sample["image"] = torch.from_numpy(np_image).permute(2, 0, 1).float()
 
         if sample["image"].sum() == 0:
             raise RuntimeError(f"Empty tile for {sample['path']} at {sample['coordinates']}")
