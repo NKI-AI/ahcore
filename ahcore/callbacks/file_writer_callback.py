@@ -132,6 +132,7 @@ class WriteFileCallback(AbstractWriterCallback):
             progress=None,
             precision=InferencePrecision(self._precision),
             grid=grid,
+            extra_metadata=None,
         )
 
         return writer

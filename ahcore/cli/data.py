@@ -38,8 +38,9 @@ def copy_data(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     with DataManager(manifest_url) as dm:
-        split_definition = dm.get_split_definition(manifest_name=args.manifest_name, split_version=args.split_name)
-        all_patients = dm.get_patients_by_split(split_definition=split_definition, split_category=None)
+        all_patients = dm.get_records_by_split(
+            manifest_name=args.manifest_name, split_version=args.split_name, split_category=None
+        )
         with Progress() as progress:
             task = progress.add_task("[cyan]Copying...")
             for patient in all_patients:

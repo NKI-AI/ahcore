@@ -66,7 +66,7 @@ class ViTEmbed(AhCoreFeatureEmbedding):
     def embed_patch_only(cls_token: torch.Tensor, patch_tokens: Optional[torch.Tensor]) -> torch.Tensor:
         if patch_tokens is None:
             raise ValueError("patch_tokens cannot be None for this embedding mode")
-        return patch_tokens.mean(dim=1)
+        return patch_tokens
 
     @staticmethod
     def embed_mean(cls_token: torch.Tensor, patch_tokens: Optional[torch.Tensor]) -> torch.Tensor:

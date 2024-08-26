@@ -67,3 +67,4 @@ class DataDescription(BaseModel):
     convert_mask_to_rois: bool = True
     use_roi: bool = True
     apply_color_profile: bool = False
+    use_cache_for_training: bool = False

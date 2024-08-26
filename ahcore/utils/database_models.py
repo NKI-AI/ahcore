@@ -29,7 +29,6 @@ class Manifest(Base):
     name = Column(String, unique=True)
 
     patients: Mapped[List["Patient"]] = relationship("Patient", back_populates="manifest")
-    split_definitions: Mapped[List["SplitDefinitions"]] = relationship("SplitDefinitions", back_populates="manifest")
 
     def __str__(self) -> str:
         return f"Manifest {self.name}"
@@ -140,7 +139,6 @@ class CacheDescription(Base):
 
     __tablename__ = "cache_description"
     id = Column(Integer, primary_key=True)
-    split_definition_id = Column(Integer, ForeignKey("split_definitions.id"))
     mpp = Column(Float)
     tile_size_width = Column(Integer)
     tile_size_height = Column(Integer)
@@ -152,9 +150,6 @@ class CacheDescription(Base):
     grid_order = Column(String)
 
     image_caches: Mapped[List["ImageCache"]] = relationship("ImageCache", back_populates="cache_description")
-    split_definitions: Mapped[List["SplitDefinitions"]] = relationship(
-        "SplitDefinitions", back_populates="cache_description"
-    )
 
 
 class SplitDefinitions(Base):
@@ -162,13 +157,10 @@ class SplitDefinitions(Base):
 
     __tablename__ = "split_definitions"
     id = Column(Integer, primary_key=True)
-    manifest_id = Column(Integer, ForeignKey("manifest.id"))
     version = Column(String, nullable=False, unique=True)
     description = Column(String)
 
-    manifest: Mapped["Manifest"] = relationship("Manifest", back_populates="split_definitions")
     splits: Mapped[List["Split"]] = relationship("Split", back_populates="split_definition")
-    cache_description: Mapped["CacheDescription"] = relationship("CacheDescription", back_populates="split_definitions")
 
 
 class Split(Base):
