@@ -119,24 +119,6 @@ class PreTransformTaskFactory:
         return f"PreTransformTaskFactory(transforms={self._transforms})"
 
 
-class ApplyHuggingfaceTransforms:
-
-    def __init__(self, pretrained_model_name_or_path: str, **kwargs):
-        self._processor = AutoImageProcessor.from_pretrained(pretrained_model_name_or_path, **kwargs)
-
-    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
-        # Apply the huggingface transforms here
-        if isinstance(sample["image"], pyvips.Image):
-            img = np.array(sample["image"]).numpy()
-        if isinstance(sample["image"], np.ndarray):
-            img = sample["image"]
-        else:
-            raise ValueError(f"The image must be a pyvips.Image or a numpy array, got {type(sample['image'])}")
-
-        sample["image"]: np.ndarray = self._processor(img)["pixel_values"][0]
-
-        return sample
-
 
 class LabelToClassIndex:
     """

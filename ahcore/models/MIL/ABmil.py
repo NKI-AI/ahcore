@@ -13,32 +13,12 @@ class ABMIL(nn.Module):
     This model is adapted from https://github.com/owkin/HistoSSLscaling/blob/main/rl_benchmarks/models/slide_models/abmil.py.
     It uses an attention mechanism to aggregate features from multiple instances (tiles) into a single prediction.
 
-    Parameters
-    ----------
-    in_features : int
-        Number of input features for each tile.
-    out_features : int, optional
-        Number of output features (typically 1 for binary classification), by default 1.
-    attention_dimension : int, optional
-        Dimensionality of the attention mechanism, by default 128.
-    temperature : float, optional
-        Temperature parameter for scaling the attention scores, by default 1.0.
-    embed_mlp_hidden : Optional[List[int]], optional
-        List of hidden layer sizes for the embedding MLP, by default None.
-    embed_mlp_dropout : Optional[List[float]], optional
-        List of dropout rates for the embedding MLP, by default None.
-    embed_mlp_activation : Optional[torch.nn.Module], optional
-        Activation function for the embedding MLP, by default nn.ReLU().
-    embed_mlp_bias : bool, optional
-        Whether to include bias in the embedding MLP layers, by default True.
-    classifier_hidden : Optional[List[int]], optional
-        List of hidden layer sizes for the classifier MLP, by default [128, 64].
-    classifier_dropout : Optional[List[float]], optional
-        List of dropout rates for the classifier MLP, by default None.
-    classifier_activation : Optional[torch.nn.Module], optional
-        Activation function for the classifier MLP, by default nn.ReLU().
-    classifier_bias : bool, optional
-        Whether to include bias in the classifier MLP layers, by default False.
+    Methods
+    -------
+    get_attention(x: torch.Tensor) -> torch.Tensor
+        Computes the attention weights for the input features.
+    forward(features: torch.Tensor, return_attention_weights: bool = False) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]
+        Forward pass of the ABMIL model.
 
     References
     ----------

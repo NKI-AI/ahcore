@@ -28,7 +28,6 @@ from omegaconf import DictConfig, ListConfig, OmegaConf
 from omegaconf.errors import InterpolationKeyError
 from pytorch_lightning import LightningModule
 from pytorch_lightning.utilities import rank_zero_only
-import transformers
 
 from ahcore.models.base_jit_model import BaseAhcoreJitModel
 
@@ -239,7 +238,7 @@ def load_weights(model: LightningModule, config: DictConfig) -> LightningModule:
         The model loaded from the checkpoint file.
     """
     _model = getattr(model, "_model")
-    if isinstance(_model, BaseAhcoreJitModel) or isinstance(_model, transformers.modeling_utils.PreTrainedModel):
+    if isinstance(_model, BaseAhcoreJitModel):
         return model
     else:
         # Load checkpoint weights
