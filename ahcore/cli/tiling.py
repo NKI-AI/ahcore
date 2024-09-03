@@ -20,7 +20,7 @@ import numpy.typing as npt
 import PIL.Image
 import PIL.ImageCms
 from dlup import SlideImage
-from dlup.backends import ImageBackend  # type: ignore
+from dlup.backends import ImageBackend  # type: ignore  # pylint: disable=no-name-in-module
 from dlup.data.dataset import TiledWsiDataset
 from dlup.tiling import GridOrder, TilingMode
 from PIL import Image

@@ -12,7 +12,7 @@ from typing import Any, Callable, Generator, Literal, Optional, Type, TypedDict,
 
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
-from dlup.backends import ImageBackend  # type: ignore
+from dlup.backends import ImageBackend  # type: ignore  # pylint: disable=no-name-in-module
 from dlup.data.dataset import RegionFromWsiDatasetSample, TiledWsiDataset, TileSample
 from dlup.tiling import GridOrder, TilingMode
 from pydantic import BaseModel
