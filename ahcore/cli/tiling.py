@@ -20,11 +20,11 @@ import numpy.typing as npt
 import PIL.Image
 import PIL.ImageCms
 from dlup import SlideImage
-from dlup.backends import ImageBackend  # type: ignore  # pylint: disable=no-name-in-module
 from dlup.data.dataset import TiledWsiDataset
 from dlup.tiling import GridOrder, TilingMode
+from dlup.utils.backends import ImageBackend
 from PIL import Image
-from PIL.ImageCms import ImageCmsProfile
+from PIL.ImageCms import Flags, ImageCmsProfile, Intent
 from pydantic import BaseModel
 from rich.progress import Progress
 
@@ -159,9 +159,9 @@ def _save_thumbnail(
         # If the color_profile is applied to the filtered tiles, apply it to the thumbnail too
         if dataset_cfg.color_profile_applied and slide_image.color_profile:
             to_profile = PIL.ImageCms.createProfile("sRGB")
-            intent = PIL.ImageCms.getDefaultIntent(ImageCmsProfile(slide_image.color_profile))  # type: ignore
+            intent = Intent(PIL.ImageCms.getDefaultIntent(ImageCmsProfile(slide_image.color_profile)))
             rgb_color_transform = PIL.ImageCms.buildTransform(
-                ImageCmsProfile(slide_image.color_profile), to_profile, "RGB", "RGB", intent, 0
+                ImageCmsProfile(slide_image.color_profile), to_profile, "RGB", "RGB", intent, Flags.NONE
             )
             PIL.ImageCms.applyTransform(thumbnail, rgb_color_transform, True)
 
