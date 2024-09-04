@@ -1,26 +1,17 @@
-# this file includes the original nystrom attention and transmil model from https://github.com/lucidrains/nystrom-attention/blob/main/nystrom_attention/nystrom_attention.py and https://github.com/szc19990412/TransMIL/blob/main/models/TransMIL.py, respectively.
-
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-
+# this file includes the original nystrom attention and transmil model
+# from https://github.com/lucidrains/nystrom-attention/blob/main/nystrom_attention/nystrom_attention.py
+# and https://github.com/szc19990412/TransMIL/blob/main/models/TransMIL.py, respectively.
 from math import ceil
+from typing import Any, Optional
+
+import numpy as np
 import torch
-from torch import nn, einsum
 import torch.nn.functional as F
-
 from einops import rearrange, reduce
-
-# helper functions
-
-
-def exists(val):
-    return val is not None
+from torch import nn as nn
 
 
-def moore_penrose_iter_pinv(x, iters=6):
+def moore_penrose_iter_pinv(x: torch.Tensor, iters: int = 6) -> torch.Tensor:
     device = x.device
 
     abs_x = torch.abs(x)
@@ -28,12 +19,12 @@ def moore_penrose_iter_pinv(x, iters=6):
     row = abs_x.sum(dim=-2)
     z = rearrange(x, "... i j -> ... j i") / (torch.max(col) * torch.max(row))
 
-    I = torch.eye(x.shape[-1], device=device)
-    I = rearrange(I, "i j -> () i j")
+    eye = torch.eye(x.shape[-1], device=device)
+    eye = rearrange(eye, "i j -> () i j")
 
     for _ in range(iters):
         xz = x @ z
-        z = 0.25 * z @ (13 * I - (xz @ (15 * I - (xz @ (7 * I - xz)))))
+        z = 0.25 * z @ (13 * eye - (xz @ (15 * eye - (xz @ (7 * eye - xz)))))
 
     return z
 
@@ -44,16 +35,16 @@ def moore_penrose_iter_pinv(x, iters=6):
 class NystromAttention(nn.Module):
     def __init__(
         self,
-        dim,
-        dim_head=64,
-        heads=8,
-        num_landmarks=256,
-        pinv_iterations=6,
-        residual=True,
-        residual_conv_kernel=33,
-        eps=1e-8,
-        dropout=0.0,
-    ):
+        dim: int,
+        dim_head: int = 64,
+        heads: int = 8,
+        num_landmarks: int = 256,
+        pinv_iterations: int = 6,
+        residual: bool = True,
+        residual_conv_kernel: int = 33,
+        eps: float = 1e-8,
+        dropout: float = 0.0,
+    ) -> None:
         super().__init__()
         self.eps = eps
         inner_dim = heads * dim_head
@@ -73,8 +64,10 @@ class NystromAttention(nn.Module):
             padding = residual_conv_kernel // 2
             self.res_conv = nn.Conv2d(heads, heads, (kernel_size, 1), padding=(padding, 0), groups=heads, bias=False)
 
-    def forward(self, x: torch.Tensor, mask=None, return_attn=False):
-        b, n, _  = x.shape
+    def forward(
+        self, x: torch.Tensor, mask: Optional[torch.Tensor] = None, return_attn: bool = False
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        b, n, _ = x.shape
         h, m, iters, eps = self.heads, self.num_landmarks, self.pinv_iterations, self.eps
         # pad so that sequence can be evenly divided into m landmarks
 
@@ -83,7 +76,7 @@ class NystromAttention(nn.Module):
             padding = m - (n % m)
             x = F.pad(x, (0, 0, padding, 0), value=0)
 
-            if exists(mask):
+            if mask is not None:
                 mask = F.pad(mask, (padding, 0), value=False)
 
         # derive query, keys, values
@@ -93,7 +86,7 @@ class NystromAttention(nn.Module):
 
         # set masked positions to 0 in queries, keys, values
 
-        if exists(mask):
+        if mask is not None:
             mask = rearrange(mask, "b n -> b () n")
             q, k, v = map(lambda t: t * mask[..., None], (q, k, v))
 
@@ -101,18 +94,19 @@ class NystromAttention(nn.Module):
 
         # generate landmarks by sum reduction, and then calculate mean using the mask
 
-        l = ceil(n / m)
+        l_dim = ceil(n / m)
         landmark_einops_eq = "... (n l) d -> ... n d"
-        q_landmarks = reduce(q, landmark_einops_eq, "sum", l=l)
-        k_landmarks = reduce(k, landmark_einops_eq, "sum", l=l)
+        q_landmarks = reduce(q, landmark_einops_eq, "sum", l=l_dim)
+        k_landmarks = reduce(k, landmark_einops_eq, "sum", l=l_dim)
 
         # calculate landmark mask, and also get sum of non-masked elements in preparation for masked mean
 
-        divisor = l
-        if exists(mask):
-            mask_landmarks_sum = reduce(mask, "... (n l) -> ... n", "sum", l=l)
+        if mask is not None:
+            mask_landmarks_sum = reduce(mask, "... (n l) -> ... n", "sum", l=l_dim)
             divisor = mask_landmarks_sum[..., None] + eps
             mask_landmarks = mask_landmarks_sum > 0
+        else:
+            divisor = torch.Tensor([l_dim]).to(q_landmarks.device)
 
         # masked mean (if mask exists)
 
@@ -122,13 +116,13 @@ class NystromAttention(nn.Module):
         # similarities
 
         einops_eq = "... i d, ... j d -> ... i j"
-        sim1 = einsum(einops_eq, q, k_landmarks)
-        sim2 = einsum(einops_eq, q_landmarks, k_landmarks)
-        sim3 = einsum(einops_eq, q_landmarks, k)
+        sim1 = torch.einsum(einops_eq, q, k_landmarks)
+        sim2 = torch.einsum(einops_eq, q_landmarks, k_landmarks)
+        sim3 = torch.einsum(einops_eq, q_landmarks, k)
 
         # masking
 
-        if exists(mask):
+        if mask is not None:
             mask_value = -torch.finfo(q.dtype).max
             sim1.masked_fill_(~(mask[..., None] * mask_landmarks[..., None, :]), mask_value)
             sim2.masked_fill_(~(mask_landmarks[..., None] * mask_landmarks[..., None, :]), mask_value)
@@ -139,7 +133,7 @@ class NystromAttention(nn.Module):
         attn1, attn2, attn3 = map(lambda t: t.softmax(dim=-1), (sim1, sim2, sim3))
         attn2_inv = moore_penrose_iter_pinv(attn2, iters)
 
-        out = (attn1 @ attn2_inv) @ (attn3 @ v)
+        out: torch.Tensor = (attn1 @ attn2_inv) @ (attn3 @ v)
 
         # add depth-wise conv residual of values
 
@@ -160,8 +154,7 @@ class NystromAttention(nn.Module):
 
 
 class TransLayer(nn.Module):
-
-    def __init__(self, norm_layer=nn.LayerNorm, dim=512):
+    def __init__(self, norm_layer: type = nn.LayerNorm, dim: int = 512) -> None:
         super().__init__()
         self.norm = norm_layer(dim)
         self.attn = NystromAttention(
@@ -176,20 +169,20 @@ class TransLayer(nn.Module):
             dropout=0.1,
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn(self.norm(x))
 
         return x
 
 
 class PPEG(nn.Module):
-    def __init__(self, dim=512):
+    def __init__(self, dim: int = 512) -> None:
         super(PPEG, self).__init__()
         self.proj = nn.Conv2d(dim, dim, 7, 1, 7 // 2, groups=dim)
         self.proj1 = nn.Conv2d(dim, dim, 5, 1, 5 // 2, groups=dim)
         self.proj2 = nn.Conv2d(dim, dim, 3, 1, 3 // 2, groups=dim)
 
-    def forward(self, x, H, W):
+    def forward(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
         B, _, C = x.shape
         cls_token, feat_token = x[:, 0], x[:, 1:]
         cnn_feat = feat_token.transpose(1, 2).view(B, C, H, W)
@@ -200,7 +193,7 @@ class PPEG(nn.Module):
 
 
 class TransMIL(nn.Module):
-    def __init__(self, n_classes):
+    def __init__(self, n_classes: int) -> None:
         super(TransMIL, self).__init__()
         self.pos_layer = PPEG(dim=512)
         self._fc1 = nn.Sequential(nn.Linear(1024, 512), nn.ReLU())
@@ -211,7 +204,7 @@ class TransMIL(nn.Module):
         self.norm = nn.LayerNorm(512)
         self._fc2 = nn.Linear(512, self.n_classes)
 
-    def forward(self, features, **kwargs):
+    def forward(self, features: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         h = features  # [B, n, 1024]
 
         h = self._fc1(h)  # [B, n, 512]
@@ -240,8 +233,6 @@ class TransMIL(nn.Module):
         h = self.norm(h)[:, 0]
 
         # ---->predict
-        logits = self._fc2(h)  # [B, n_classes]
-        Y_hat = torch.argmax(logits, dim=1)
-        Y_prob = F.softmax(logits, dim=1)
-        results_dict = {"logits": logits, "Y_prob": Y_prob, "Y_hat": Y_hat}
+        logits: torch.Tensor = self._fc2(h)  # [B, n_classes]
+
         return logits

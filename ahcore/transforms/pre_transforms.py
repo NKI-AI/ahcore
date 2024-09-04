@@ -117,7 +117,6 @@ class PreTransformTaskFactory:
         return f"PreTransformTaskFactory(transforms={self._transforms})"
 
 
-
 class LabelToClassIndex:
     """
     Maps label values to class indices according to the index_map specified in the data description.
@@ -217,14 +216,12 @@ class ImageToTensor:
     """
 
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
-        tile: pyvips.Image | np.ndarray = sample["image"]
+        tile: pyvips.Image = sample["image"]
         # Flatten the image to remove the alpha channel, using white as the background color
         tile_ = tile.flatten(background=[255, 255, 255])
 
         # Convert VIPS image to a numpy array then to a torch tensor
-        if type(tile_) == pyvips.Image:
-            np_image = tile_.numpy()
-
+        np_image = tile_.numpy()
         sample["image"] = torch.from_numpy(np_image).permute(2, 0, 1).float()
 
         if sample["image"].sum() == 0:

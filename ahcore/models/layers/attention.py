@@ -1,7 +1,6 @@
-from typing import Optional, List, Union, Tuple
-
 import torch
 from torch import nn
+
 
 class GatedAttention(nn.Module):
     """Gated Attention, as defined in https://arxiv.org/abs/1802.04712.
@@ -29,8 +28,8 @@ class GatedAttention(nn.Module):
     def forward(
         self,
         features: torch.Tensor,
-        return_attention_weights=False,
-    ) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
+        return_attention_weights: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Forward pass.
         Parameters
         ----------

@@ -1,23 +1,23 @@
-from ahcore.models.layers.MLP import MLP
-from ahcore.models.layers.attention import GatedAttention
-
 from typing import List, Optional
 
 import torch
 from torch import nn
 
+from ahcore.models.layers.attention import GatedAttention
+from ahcore.models.layers.MLP import MLP
+
 
 class ABMIL(nn.Module):
     """
     Attention-based MIL (Multiple Instance Learning) classification model (See [1]_).
-    This model is adapted from https://github.com/owkin/HistoSSLscaling/blob/main/rl_benchmarks/models/slide_models/abmil.py.
+    This model is adapted from
+    https://github.com/owkin/HistoSSLscaling/blob/main/rl_benchmarks/models/slide_models/abmil.py.
     It uses an attention mechanism to aggregate features from multiple instances (tiles) into a single prediction.
 
     Methods
     -------
-    get_attention(x: torch.Tensor) -> torch.Tensor
-        Computes the attention weights for the input features.
-    forward(features: torch.Tensor, return_attention_weights: bool = False) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]
+    forward(features: torch.Tensor, return_attention_weights: bool = False)
+    -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]
         Forward pass of the ABMIL model.
 
     References
@@ -98,25 +98,6 @@ class ABMIL(nn.Module):
             activation=classifier_activation,
         )
 
-    def get_attention(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Computes the attention weights for the input features.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor of shape (batch_size, n_tiles, in_features) representing the features of tiles.
-
-        Returns
-        -------
-        torch.Tensor
-            Attention weights for each tile.
-
-        """
-        tiles_emb = self.embed_mlp(x)
-        _, attention_weights = self.attention_layer(tiles_emb, return_attention_weights=True)
-        return attention_weights
-
     def forward(
         self,
         features: torch.Tensor,
@@ -144,7 +125,7 @@ class ABMIL(nn.Module):
         scaled_tiles_emb, attention_weights = self.attention_layer(
             tiles_emb, return_attention_weights=True
         )  # BxN_tilesx128 --> Bx128
-        logits = self.classifier(scaled_tiles_emb)  # Bx128 --> Bx1
+        logits: torch.Tensor = self.classifier(scaled_tiles_emb)  # Bx128 --> Bx1
 
         if return_attention_weights:
             return logits, attention_weights
