@@ -36,10 +36,12 @@ class AhCoreLightningModule(pl.LightningModule):
         "grid_index",
     ]
 
+    _model: nn.Module | BaseAhcoreJitModel
+
     def __init__(
         self,
-        model: nn.Module | BaseAhcoreJitModel | functools.partial,
-        optimizer: torch.optim.optimzer.Optimizer,  # noqa
+        model: nn.Module | BaseAhcoreJitModel | functools.partial[nn.Module],
+        optimizer: torch.optim.optimizer.Optimizer,  # noqa
         data_description: DataDescription,
         loss: nn.Module | None = None,
         augmentations: dict[str, nn.Module] | None = None,

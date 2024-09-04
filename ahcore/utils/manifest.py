@@ -8,34 +8,34 @@ from __future__ import annotations
 import functools
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, Generator, Literal, Optional, Type, TypedDict, cast, Tuple
+from typing import Any, Callable, Generator, Literal, Optional, Tuple, Type, TypedDict, cast
 
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
-from ahcore.backends import ImageBackend
 from dlup.data.dataset import RegionFromWsiDatasetSample, TiledWsiDataset, TileSample
 from dlup.tiling import GridOrder, TilingMode
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column
+from sqlalchemy import Column, create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql import exists
 
+from ahcore.backends import ImageBackend
 from ahcore.exceptions import RecordNotFoundError
 from ahcore.utils.data import DataDescription
 from ahcore.utils.database_models import (
     Base,
     CategoryEnum,
+    FeatureDescription,
     Image,
     ImageAnnotations,
+    ImageFeature,
     Manifest,
     Mask,
     Patient,
     Split,
     SplitDefinitions,
-    ImageFeature,
-    FeatureDescription,
 )
 from ahcore.utils.io import get_enum_key_from_value, get_logger
 from ahcore.utils.rois import compute_rois
@@ -428,7 +428,6 @@ def datasets_from_data_description(
         patient_labels = get_labels_from_record(patient)
 
         for image in patient.images:
-
             mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
             assert isinstance(mask, WsiAnnotations) or (mask is None)
             image_labels = get_labels_from_record(image)
@@ -440,9 +439,14 @@ def datasets_from_data_description(
                 image_feature, feature_description = db_manager.get_image_features_by_image_and_feature_version(
                     image.id, data_description.feature_version
                 )
-                image_path, mpp, tile_size, tile_overlap, backend, overwrite_mpp = (
-                    get_relevant_feature_info_from_record(image_feature, data_description, feature_description)
-                )
+                (
+                    image_path,
+                    mpp,
+                    tile_size,
+                    tile_overlap,
+                    backend,
+                    overwrite_mpp,
+                ) = get_relevant_feature_info_from_record(image_feature, data_description, feature_description)
                 tile_mode = TilingMode.skip
             else:
                 if grid_description is None:
@@ -475,7 +479,7 @@ def datasets_from_data_description(
                 annotations=annotations if stage != "predict" else None,
                 labels=labels,  # type: ignore
                 transform=transform,
-                backend=backend,
+                backend=backend,  # type: ignore
                 overwrite_mpp=(overwrite_mpp, overwrite_mpp),
                 limit_bounds=True,
                 apply_color_profile=data_description.apply_color_profile,

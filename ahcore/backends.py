@@ -3,7 +3,6 @@ from typing import Any, Callable
 
 import pyvips
 from dlup.backends.common import AbstractSlideBackend
-from dlup.types import PathLike  # type: ignore
 from dlup.backends.openslide_backend import OpenSlideSlide
 from dlup.backends.pyvips_backend import PyVipsSlide
 from dlup.backends.tifffile_backend import TifffileSlide
@@ -95,5 +94,5 @@ class ImageBackend(Enum):
     H5: Callable[[PathLike], H5Slide] = H5Slide
     ZARR: Callable[[PathLike], ZarrSlide] = ZarrSlide
 
-    def __call__(self, *args) -> "ImageBackend":
+    def __call__(self, *args: Any) -> OpenSlideSlide | PyVipsSlide | TifffileSlide | H5Slide | ZarrSlide:
         return self.value(*args)

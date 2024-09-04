@@ -124,7 +124,7 @@ class PreTransformTaskFactory:
 
 
 class SampleNFeatures:
-    def __init__(self, n=1000):
+    def __init__(self, n: int = 1000) -> None:
         self.n = n
         logger.warning(
             f"Sampling {n} features from the image. Sampling WITH replacement is done if there are not enough tiles."
@@ -262,7 +262,6 @@ class AllowCollate:
 
 
 class SetTarget:
-
     def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
         if "annotations_data" in sample and "mask" in sample["annotation_data"] and "labels" in sample.keys():
             sample["target"] = (sample["annotation_data"]["mask"], sample["labels"])

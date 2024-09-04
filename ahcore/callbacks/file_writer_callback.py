@@ -11,7 +11,7 @@ from ahcore.lit_module import AhCoreLightningModule
 from ahcore.utils.callbacks import get_output_filename as get_output_filename_
 from ahcore.utils.data import DataDescription, GridDescription
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import InferencePrecision, NormalizationType, DataFormat
+from ahcore.utils.types import DataFormat, InferencePrecision, NormalizationType
 from ahcore.writers import Writer
 
 logger = get_logger(__name__)
@@ -27,8 +27,8 @@ class WriteFileCallback(AbstractWriterCallback):
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
         callbacks: list[ConvertCallbacks] | None = None,
-        data_format=DataFormat.IMAGE,
-    ):
+        data_format: DataFormat = DataFormat.IMAGE,
+    ) -> None:
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
         files in a separate thread.
@@ -105,6 +105,8 @@ class WriteFileCallback(AbstractWriterCallback):
         num_samples = len(current_dataset)
 
         data_description: DataDescription = pl_module.data_description
+        if data_description.inference_grid is None:
+            raise ValueError("Inference grid is not defined in the data description.")
         inference_grid: GridDescription = data_description.inference_grid
 
         mpp = inference_grid.mpp
