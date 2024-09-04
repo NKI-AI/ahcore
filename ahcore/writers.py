@@ -49,7 +49,7 @@ def decode_array_to_pil(array: npt.NDArray[np.uint8]) -> PIL.Image.Image:
         image = PIL.Image.open(f)
         # If you don't this, the image will be a reference and will be closed when exiting the context manager.
         # Any explicit copy copies the image into memory as a standard PIL.Image.Image, losing the format information.
-        image.load()  # type: ignore  # PIL ImageFile.load is not typed
+        image.load()
     return image
 
 
