@@ -19,8 +19,6 @@ from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
 from ahcore.utils.types import DlupDatasetSample
 
-from transformers import AutoImageProcessor
-
 PreTransformCallable = Callable[[Any], Any]
 
 logger = get_logger(__name__)

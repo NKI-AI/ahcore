@@ -114,7 +114,7 @@ class ABMIL(nn.Module):
 
         """
         tiles_emb = self.embed_mlp(x)
-        attention_weights = self.attention_layer.attention(tiles_emb)
+        _, attention_weights = self.attention_layer(tiles_emb, return_attention_weights=True)
         return attention_weights
 
     def forward(
