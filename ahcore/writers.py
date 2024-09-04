@@ -68,7 +68,7 @@ class WriterMetadata(NamedTuple):
     num_channels: int
     dtype: str
     grid_offset: tuple[int, int] | None
-    versions: dict[str, str]
+    versions: dict[str, str | None]
 
 
 class Writer(abc.ABC):

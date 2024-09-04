@@ -28,7 +28,9 @@ logger = get_logger(__name__)
 logging.getLogger("pyvips").setLevel(logging.ERROR)
 
 
-def _validate_annotations(data_description, annotations: Optional[WsiAnnotations]) -> Optional[WsiAnnotations]:
+def _validate_annotations(
+    data_description: Optional[DataDescription], annotations: Optional[WsiAnnotations]
+) -> Optional[WsiAnnotations]:
     if annotations is None:
         return None
 
@@ -146,7 +148,7 @@ class _ValidationDataset(Dataset[DlupDatasetSample]):
             if roi is not None:
                 sample["roi"] = roi.astype(np.uint8)
             else:
-                sample["roi"] = None  # type: ignore
+                sample["roi"] = None
             sample["target"] = target
 
         return sample

@@ -3,10 +3,11 @@ from typing import Any, Callable
 
 import pyvips
 from dlup.backends.common import AbstractSlideBackend
+from dlup.types import PathLike  # type: ignore
 from dlup.backends.openslide_backend import OpenSlideSlide
 from dlup.backends.pyvips_backend import PyVipsSlide
 from dlup.backends.tifffile_backend import TifffileSlide
-from dlup.types import PathLike
+from dlup.types import PathLike  # type: ignore
 
 from ahcore.readers import H5FileImageReader, StitchingMode, ZarrFileImageReader
 
@@ -38,7 +39,7 @@ class ZarrSlide(AbstractSlideBackend):
         return self._reader.metadata
 
     @property
-    def magnification(self) -> None:
+    def magnification(self) -> float | None:
         return None
 
     def read_region(self, coordinates: tuple[int, int], level: int, size: tuple[int, int]) -> pyvips.Image:
