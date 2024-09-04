@@ -50,6 +50,8 @@ def create_colored_tiles(
 
 
 class TestFileImageReader(FileImageReader):
+    __test__ = False
+
     def _open_file_handle(self, filename: Path) -> h5py.File:
         return h5py.File(filename, "r")
 
