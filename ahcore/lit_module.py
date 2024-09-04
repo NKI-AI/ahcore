@@ -10,7 +10,7 @@ import functools
 from typing import Any
 
 import pytorch_lightning as pl
-import torch.optim.optimizer
+import torch
 from pytorch_lightning.trainer.states import TrainerFn
 from torch import nn
 
@@ -39,7 +39,7 @@ class AhCoreLightningModule(pl.LightningModule):
     def __init__(
         self,
         model: nn.Module | BaseAhcoreJitModel,
-        optimizer: torch.optim.Optimizer,  # noqa
+        optimizer: torch.optim.optimizer.Optimizer,  # noqa
         data_description: DataDescription,
         loss: nn.Module | None = None,
         augmentations: dict[str, nn.Module] | None = None,

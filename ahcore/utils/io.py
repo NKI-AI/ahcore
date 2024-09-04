@@ -276,7 +276,7 @@ def validate_checkpoint_paths(config: DictConfig) -> DictConfig:
         return config
 
 
-def get_git_hash():
+def get_git_hash() -> Optional[str]:
     try:
         # Check if we're in a git repository
         subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], check=True, capture_output=True, text=True)

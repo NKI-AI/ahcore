@@ -12,7 +12,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from dlup.data.dataset import Dataset, TiledWsiDataset
-from torch.utils.data import DataLoader, DistributedSampler, Sampler
+from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sampler, SequentialSampler
 
 from ahcore.utils.data import DataDescription, basemodel_to_uuid
 from ahcore.utils.debug_utils import time_it
@@ -224,7 +224,6 @@ class DlupDataModule(pl.LightningDataModule):
 
         setattr(self, f"_{stage}_data_iterator", dataset_iterator())
 
-    @time_it
     def _construct_concatenated_dataloader(
         self, data_iterator: Iterator[_DlupDataset], batch_size: int, stage: str, distributed: bool = False
     ) -> Optional[DataLoader[DlupDatasetSample]]:
@@ -258,7 +257,7 @@ class DlupDataModule(pl.LightningDataModule):
 
         sampler: Sampler[int]
         if stage == "fit":
-            sampler = torch.utils.data.RandomSampler(data_source=dataset)
+            sampler = RandomSampler(data_source=dataset)
 
         elif stage == "predict" and distributed:
             # this is necessary because Lightning changes backend logic for predict
@@ -269,7 +268,7 @@ class DlupDataModule(pl.LightningDataModule):
             )
 
         else:
-            sampler = torch.utils.data.SequentialSampler(data_source=dataset)
+            sampler = SequentialSampler(data_source=dataset)
 
         return DataLoader(
             dataset,
