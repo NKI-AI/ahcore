@@ -1,6 +1,5 @@
-from typing import Optional, List, Union, Tuple
+from typing import List, Optional
 
-import torch
 from torch import nn
 
 """Most of this stuff is adapted from utils from https://github.com/owkin/HistoSSLscaling/tree/main"""

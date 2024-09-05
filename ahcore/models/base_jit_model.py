@@ -1,9 +1,8 @@
 from pathlib import Path
 from typing import Any
 
-import torch
-from torch.jit import ScriptModule, load
 from torch import nn
+from torch.jit import ScriptModule, load
 
 
 class BaseAhcoreJitModel(ScriptModule):
