@@ -33,7 +33,7 @@ class ABMIL(nn.Module):
     def __init__(
         self,
         in_features: int,
-        out_features: int = 1,
+        num_classes: int = 1,
         attention_dimension: int = 128,
         temperature: float = 1.0,
         embed_mlp_hidden: Optional[List[int]] = None,
@@ -91,7 +91,7 @@ class ABMIL(nn.Module):
 
         self.classifier = MLP(
             in_features=attention_dimension,
-            out_features=out_features,
+            out_features=num_classes,
             bias=classifier_bias,
             hidden=classifier_hidden,
             dropout=classifier_dropout,

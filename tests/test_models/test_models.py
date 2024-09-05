@@ -23,7 +23,7 @@ def test_ABmil_shape(input_data: torch.Tensor) -> None:
 
 
 def test_TransMIL_shape(input_data: torch.Tensor) -> None:
-    model = TransMIL(in_features=768, out_features=2)
+    model = TransMIL(in_features=768, num_classes=2)
     output = model(input_data)
     assert output.shape == (16, 2)
 
