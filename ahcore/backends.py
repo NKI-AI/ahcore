@@ -8,6 +8,7 @@ from dlup.backends.pyvips_backend import PyVipsSlide
 from dlup.backends.tifffile_backend import TifffileSlide
 from dlup.types import PathLike  # type: ignore
 
+
 from ahcore.readers import H5FileImageReader, StitchingMode, ZarrFileImageReader
 
 
@@ -95,4 +96,4 @@ class ImageBackend(Enum):
     ZARR: Callable[[PathLike], ZarrSlide] = ZarrSlide
 
     def __call__(self, *args: Any) -> OpenSlideSlide | PyVipsSlide | TifffileSlide | H5Slide | ZarrSlide:
-        return self.value(*args)
+        return self.value(*args) # type: ignore
