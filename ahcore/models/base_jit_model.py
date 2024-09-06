@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Any
 
+from torch import nn
 from torch.jit import ScriptModule, load
-from torch.nn import Module
 
 
 class BaseAhcoreJitModel(ScriptModule):
@@ -46,7 +46,7 @@ class BaseAhcoreJitModel(ScriptModule):
         model = load(jit_path)  # type: ignore
         return cls(model)
 
-    def extend_model(self, modules: dict[str, Module]) -> None:
+    def extend_model(self, modules: dict[str, nn.Module]) -> None:
         """
         Add modules to a jit compiled model.
 
