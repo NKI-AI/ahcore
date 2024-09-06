@@ -65,7 +65,6 @@ class TestFileImageReader(FileImageReader):
             "dtype": self._file.attrs["dtype"],
             "precision": self._file.attrs["precision"],
             "multiplier": self._file.attrs["multiplier"],
-            "is_binary": self._file.attrs["is_binary"],
             "has_color_profile": self._file.attrs["has_color_profile"],
             "num_tiles": self._file.attrs["num_tiles"],
             "data_format": self._file.attrs["data_format"],
@@ -86,7 +85,6 @@ class TestFileImageReader(FileImageReader):
         self._stride = None
         self._precision = None
         self._multiplier = None
-        self._is_binary = None
         self._data_format = None
 
         if not self._filename.is_file():
@@ -107,7 +105,6 @@ class TestFileImageReader(FileImageReader):
         self._dtype = self._metadata["dtype"]
         self._precision = self._metadata["precision"]
         self._multiplier = self._metadata["multiplier"]
-        self._is_binary = self._metadata["is_binary"]
         self._stride = (
             self._tile_size[0] - self._tile_overlap[0],
             self._tile_size[1] - self._tile_overlap[1],
@@ -132,7 +129,6 @@ def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
     dtype = "uint8"
     precision = "FP32"
     multiplier = 1.0
-    is_binary = False
     has_color_profile = False
     num_tiles = 4  # 2x2 grid of tiles
 
@@ -145,7 +141,6 @@ def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
         f.attrs["dtype"] = dtype
         f.attrs["precision"] = precision
         f.attrs["multiplier"] = multiplier
-        f.attrs["is_binary"] = is_binary
         f.attrs["has_color_profile"] = has_color_profile
         f.attrs["num_tiles"] = num_tiles
         f.attrs["data_format"] = "image"

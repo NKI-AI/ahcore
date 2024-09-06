@@ -26,7 +26,7 @@ from dlup.tiling import Grid, GridOrder, TilingMode
 
 import ahcore
 from ahcore.utils.io import get_git_hash, get_logger
-from ahcore.utils.types import GenericNumberArray, InferencePrecision, DataFormat
+from ahcore.utils.types import DataFormat, GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
 
@@ -343,7 +343,7 @@ class Writer(abc.ABC):
             compression="gzip",
         )
 
-        if self._data_format == DataFormat.COMPRESSED_IMAGE:
+        if self._data_format != DataFormat.COMPRESSED_IMAGE:
             shape = first_batch.shape[1:]
             self._data = self.create_dataset(
                 file,
@@ -484,9 +484,7 @@ class H5FileImageWriter(Writer):
             raise ValueError(f"Batch should have a single element when writing h5. Got batch shape {batch.shape}.")
         batch_size = batch.shape[0]
         self._data[self._current_index : self._current_index + batch_size] = (
-            batch.flatten()
-            if self._data_format == DataFormat.COMPRESSED_IMAGE
-            else batch  # fixme: flatten shouldn't work here
+            batch.flatten() if self._data_format == DataFormat.COMPRESSED_IMAGE else batch
         )
 
     def create_dataset(

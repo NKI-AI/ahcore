@@ -24,7 +24,7 @@ import zarr
 from zarr.storage import ZipStore
 
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import BoundingBoxType, GenericNumberArray, InferencePrecision, DataFormat
+from ahcore.utils.types import BoundingBoxType, DataFormat, GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
 
@@ -133,7 +133,12 @@ class FileImageReader(abc.ABC):
         self._dtype = self._metadata["dtype"]
         self._precision = self._metadata["precision"]
         self._multiplier = self._metadata["multiplier"]
-        self._is_binary = self._metadata["is_binary"]
+        self._is_binary = getattr(self._metadata, "is_binary", None)
+        if self._is_binary is not None:
+            logger.warning(
+                f"Found is_binary in metadata, of file {self._filename}. "
+                f"This tag is deprecated and might be removed in future versions"
+            )
         self._stride = (
             self._tile_size[0] - self._tile_overlap[0],
             self._tile_size[1] - self._tile_overlap[1],
@@ -170,7 +175,7 @@ class FileImageReader(abc.ABC):
     def _decompress_and_reshape_data(self, tile: GenericNumberArray) -> GenericNumberArray:
         assert self._tile_size is not None, "Cannot happen as this is called inside read_region which also checks this"
 
-        if self._is_binary:
+        if self._is_binary or self._data_format == DataFormat.COMPRESSED_IMAGE:
             with PIL.Image.open(io.BytesIO(tile)) as img:
                 return np.array(img).transpose(
                     2, 0, 1
