@@ -66,6 +66,7 @@ class TestFileImageReader(FileImageReader):
             "is_binary": self._file.attrs["is_binary"],
             "has_color_profile": self._file.attrs["has_color_profile"],
             "num_tiles": self._file.attrs["num_tiles"],
+            "data_format": self._file.attrs["data_format"],
         }
 
     def _open_file(self) -> None:
@@ -84,6 +85,7 @@ class TestFileImageReader(FileImageReader):
         self._precision = None
         self._multiplier = None
         self._is_binary = None
+        self._data_format = None
 
         if not self._filename.is_file():
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(self._filename))
@@ -108,6 +110,9 @@ class TestFileImageReader(FileImageReader):
             self._tile_size[0] - self._tile_overlap[0],
             self._tile_size[1] - self._tile_overlap[1],
         )
+
+        self._num_tiles = self._metadata["num_tiles"]
+        self._data_format = self._metadata["data_format"]
 
     def close(self) -> None:
         if self._file is not None:
@@ -141,6 +146,7 @@ def temp_h5_file(tmp_path: Path) -> Generator[Path, None, None]:
         f.attrs["is_binary"] = is_binary
         f.attrs["has_color_profile"] = has_color_profile
         f.attrs["num_tiles"] = num_tiles
+        f.attrs["data_format"] = "image"
         f.create_dataset("data", (num_tiles, num_channels, tile_size[0], tile_size[1]), dtype=dtype)
         f.create_dataset("tile_indices", (num_tiles,), dtype=np.uint8)
 
