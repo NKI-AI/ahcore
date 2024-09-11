@@ -343,7 +343,26 @@ class Writer(abc.ABC):
             compression="gzip",
         )
 
-        if self._data_format != DataFormat.COMPRESSED_IMAGE:
+        if self._data_format == DataFormat.FEATURE:
+            shape = first_batch.shape[1:]
+            self._data = self.create_dataset(
+                file,
+                "data",
+                shape=(self._num_samples,) + shape,
+                dtype=first_batch.dtype,
+                compression="gzip",
+                chunks=(self._num_samples,) + shape,  # this should be the fastest as we are loading
+                # all features everytime
+            )
+        elif self._data_format == DataFormat.COMPRESSED_IMAGE:
+            self._data = self.create_variable_length_dataset(
+                file,
+                name="data",
+                shape=(self._num_samples,),
+                chunks=(1,),
+                compression="gzip",
+            )
+        else:  # data_format == DataFormat.IMAGE
             shape = first_batch.shape[1:]
             self._data = self.create_dataset(
                 file,
@@ -352,14 +371,6 @@ class Writer(abc.ABC):
                 dtype=first_batch.dtype,
                 compression="gzip",
                 chunks=(1,) + shape,
-            )
-        else:
-            self._data = self.create_variable_length_dataset(
-                file,
-                name="data",
-                shape=(self._num_samples,),
-                chunks=(1,),
-                compression="gzip",
             )
 
         if self._color_profile:

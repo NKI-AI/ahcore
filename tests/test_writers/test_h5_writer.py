@@ -33,12 +33,6 @@ def dummy_batch_data() -> Generator[tuple[GenericNumberArray, GenericNumberArray
     yield dummy_coordinates, dummy_batch
 
 
-@pytest.fixture
-def dummy_feature_batch_data() -> Generator[tuple[GenericNumberArray, GenericNumberArray], None, None]:
-    dummy_coordinates = np.array([[i, 0] for i in range(16)]).astype(np.float32)
-    dummy_batch = np.random.rand(16, 512).astype(np.float32)
-    yield dummy_coordinates, dummy_batch
-
 
 @pytest.fixture
 def dummy_batch_generator(
@@ -52,11 +46,14 @@ def dummy_batch_generator(
 
 @pytest.fixture
 def dummy_feature_batch_generator(
-    dummy_feature_batch_data: tuple[GenericNumberArray, GenericNumberArray]
 ) -> Generator[tuple[GenericNumberArray, GenericNumberArray], None, None]:
+    batch_size = 16
     def generator() -> Generator[tuple[GenericNumberArray, GenericNumberArray], None, None]:
-        for _ in range(1):
-            yield dummy_feature_batch_data
+        np.random.seed(42)
+        for batch_idx in range(2):
+            dummy_coordinates = np.array([[i, 0] for i in range(batch_size * batch_idx, batch_size * (batch_idx + 1))]).astype(np.float32)
+            dummy_batch = np.random.rand(batch_size, 512).astype(np.float32)
+            yield dummy_coordinates, dummy_batch
 
     return generator
 
@@ -115,7 +112,7 @@ def test_h5_file_image_writer_consume(temp_h5_file: Path, dummy_batch_generator:
 
 
 def test_h5_file_image_writer_consume_feature(temp_h5_feature_file: Path, dummy_feature_batch_generator: Any) -> None:
-    size = (32, 512)
+    size = (32, 1)
     mpp = 0.5
     tile_size = (1, 1)
     tile_overlap = (0, 0)
@@ -133,12 +130,13 @@ def test_h5_file_image_writer_consume_feature(temp_h5_feature_file: Path, dummy_
         data_format=data_format,
     )
 
+
     writer.consume(dummy_feature_batch_generator())
 
     with h5py.File(temp_h5_feature_file, "r") as h5file:
         assert "data" in h5file
         assert "coordinates" in h5file
-        assert np.array(h5file["data"]).shape == (num_samples, size[1])
+        assert np.array(h5file["data"]).shape == (num_samples, 512)
         assert np.array(h5file["coordinates"]).shape == (num_samples, 2)
 
         gen = dummy_feature_batch_generator()
@@ -146,7 +144,6 @@ def test_h5_file_image_writer_consume_feature(temp_h5_feature_file: Path, dummy_
             assert np.allclose(h5file["data"][idx * batch_size : (idx + 1) * batch_size, :], dummy_batch)
             assert np.allclose(h5file["coordinates"][idx * batch_size : (idx + 1) * batch_size, :], dummy_coordinates)
 
-        #
 
 
 def test_h5_file_image_writer_metadata(temp_h5_file: Path, dummy_batch_generator: Any) -> None:

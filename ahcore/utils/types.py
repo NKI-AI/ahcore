@@ -94,4 +94,3 @@ class DataFormat(str, Enum):
     FEATURE = "feature"
     IMAGE = "image"
     COMPRESSED_IMAGE = "compressed_image"
-    MASK = "mask"
