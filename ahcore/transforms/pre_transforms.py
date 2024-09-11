@@ -271,10 +271,11 @@ class SetTarget:
             if len(sample["labels"].keys()) == 1:
                 # if there is only one label, then we just set this without retaining the key
                 # this makes it compatible with standard loss functions
-                sample["labels"] = next(iter(sample["labels"].values()))
+                sample["labels"] = next(iter(sample["labels"].values()))  # todo: make this nice
             sample["target"] = sample["labels"]
         else:
-            logging.warning("No target set")
+            # logging.warning("No target set")  # this can be done only for training and validation???
+            pass
 
         return sample
 
@@ -308,9 +309,11 @@ class ImageToTensor:
         if sample["image"].sum() == 0:
             raise RuntimeError(f"Empty tile for {sample['path']} at {sample['coordinates']}")
 
-        if "labels" in sample:
+        if "labels" in sample.keys() and sample["labels"] is not None:
             for key, value in sample["labels"].items():
-                sample["labels"][key] = torch.tensor(value)
+                sample["labels"][key] = torch.tensor(value, dtype=torch.float32)
+                if sample["labels"][key].dim() == 0:
+                    sample["labels"][key] = sample["labels"][key].unsqueeze(0)
 
         # annotation_data is added by the ConvertPolygonToMask transform.
         if "annotation_data" not in sample:
