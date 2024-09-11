@@ -14,6 +14,7 @@ from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
 from dlup.data.dataset import RegionFromWsiDatasetSample, TiledWsiDataset, TileSample
 from dlup.tiling import GridOrder, TilingMode
+from dlup.backends import ImageBackend as DLUPImageBackend
 from pydantic import BaseModel
 from sqlalchemy import Column, create_engine
 from sqlalchemy.engine import Engine
@@ -397,6 +398,41 @@ class DataManager:
             self.__session.close()
             self.__session = None
 
+def get_image_info(db_manager: DataManager,
+                   data_description: DataDescription,
+                   image: Image) -> tuple[Path, tuple[PositiveInt, PositiveInt], tuple[PositiveInt, PositiveInt], ImageBackend, PositiveFloat, PositiveFloat, TilingMode]:
+    if data_description.feature_version is not None:
+        # if feature_version is defined we use features
+        # right now this selects all features, todo: add some argument tile_size to overwrite this
+
+        image_feature, feature_description = db_manager.get_image_features_by_image_and_feature_version(
+            image.id, data_description.feature_version
+        )
+
+        (
+            image_path,
+            mpp,
+            tile_size,
+            tile_overlap,
+            backend,
+            overwrite_mpp,
+        ) = get_relevant_feature_info_from_record(image_feature, data_description, feature_description)
+
+        tile_mode = TilingMode.skip
+
+        return image_path, tile_size, tile_overlap, backend, mpp, overwrite_mpp, tile_mode
+
+    else:
+        image_path = data_description.data_dir / image.filename
+        tile_size = (data_description.training_grid.tile_size, data_description.training_grid.tile_size)
+        tile_overlap = (data_description.training_grid.tile_overlap, data_description.training_grid.tile_overlap)
+        backend = DLUPImageBackend[str(image.reader)]
+        mpp = data_description.training_grid.mpp
+        overwrite_mpp = float(image.mpp)
+        tile_mode = TilingMode.overflow
+        return image_path, tile_size, tile_overlap, backend, mpp, overwrite_mpp, tile_mode
+
+
 
 def datasets_from_data_description(
     db_manager: DataManager,
@@ -435,34 +471,7 @@ def datasets_from_data_description(
             rois = _get_rois(mask, data_description, stage)
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
 
-            if use_features:
-                image_feature, feature_description = db_manager.get_image_features_by_image_and_feature_version(
-                    image.id, data_description.feature_version
-                )
-                (
-                    image_path,
-                    mpp,
-                    tile_size,
-                    tile_overlap,
-                    backend,
-                    overwrite_mpp,
-                ) = get_relevant_feature_info_from_record(image_feature, data_description, feature_description)
-                tile_mode = TilingMode.skip
-            else:
-                if grid_description is None:
-                    raise ValueError(
-                        f"grid_description for stage {stage} is None should be set if images are supposed to be used"
-                    )
-
-                image_path = image_root / image.filename
-                tile_size = grid_description.tile_size
-                tile_overlap = grid_description.tile_overlap
-                backend = ImageBackend[str(image.reader)]
-                mpp = grid_description.mpp  # type: ignore
-                overwrite_mpp = float(image.mpp)
-                tile_mode = TilingMode.overflow
-
-            # fixme: something is still wrong here, in the reader or in the database, got empty tiles
+            image_path, tile_size, tile_overlap, backend, mpp, overwrite_mpp, tile_mode = get_image_info(db_manager, data_description, image)
 
             dataset = TiledWsiDataset.from_standard_tiling(
                 path=image_path,

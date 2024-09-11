@@ -124,11 +124,10 @@ class FileImageReader(abc.ABC):
         )
         self._mpp = self._metadata["mpp"]
         # features are always read at tile_size (1, 1), possibly faster to read the whole feature at once
-        self._tile_size = (
-            (self._num_samples, 1) if self._data_format == DataFormat.FEATURE else self._metadata["tile_size"]
-        )
+        # this should be fixed in the writer and features have to be remade so this doesn't have to be hardcoded
+        self._tile_size = self._metadata["tile_size"]
         self._tile_overlap = self._metadata["tile_overlap"]
-        self._size = (self._num_samples, 1) if self._data_format == DataFormat.FEATURE else self._metadata["size"]
+        self._size = self._metadata["size"]
         self._num_channels = self._metadata["num_channels"]
         self._dtype = self._metadata["dtype"]
         self._precision = self._metadata["precision"]
@@ -139,6 +138,8 @@ class FileImageReader(abc.ABC):
                 f"Found is_binary in metadata, of file {self._filename}. "
                 f"This tag is deprecated and might be removed in future versions"
             )
+            if self._is_binary:
+                self._data_format = DataFormat.COMPRESSED_IMAGE
         self._stride = (
             self._tile_size[0] - self._tile_overlap[0],
             self._tile_size[1] - self._tile_overlap[1],
@@ -175,62 +176,20 @@ class FileImageReader(abc.ABC):
     def _decompress_and_reshape_data(self, tile: GenericNumberArray) -> GenericNumberArray:
         assert self._tile_size is not None, "Cannot happen as this is called inside read_region which also checks this"
 
-        if self._is_binary or self._data_format == DataFormat.COMPRESSED_IMAGE:
+        if self._data_format == DataFormat.COMPRESSED_IMAGE:
             with PIL.Image.open(io.BytesIO(tile)) as img:
                 return np.array(img).transpose(
                     2, 0, 1
                 )  # fixme: this also shouldn't work because the thing is flattened and doesn't have 3 dimensions
         else:
-            # If handling features, we need to expand dimensions to match the expected shape.
-            if tile.ndim == 1:  # fixme: is this the correct location for this
-                if not self._tile_size[1] == 1:
-                    raise NotImplementedError(
-                        f"Tile is single dimensional and {self._tile_size=} should be [x, 1], "
-                        f"other cases have not been considered and cause unwanted behaviour."
-                    )
-                return tile.reshape(self._num_channels, *self._tile_size)
             return tile
 
-    def read_region(self, location: tuple[int, int], level: int, size: tuple[int, int]) -> pyvips.Image:
-        """
-        Reads a region in the stored h5 file. This function stitches the regions as saved in the cache file. Doing this
-        it takes into account:
-        1) The region overlap, several region merging strategies are implemented: cropping, averaging across borders
-          and taking the maximum across borders.
-        2) If tiles are saved or not. In case the tiles are skipped due to a background mask, an empty tile is returned.
-
-        Parameters
-        ----------
-        location : tuple[int, int]
-            Coordinates (x, y) of the upper left corner of the region.
-        level : int
-            The level of the region. Only level 0 is supported.
-        size : tuple[int, int]
-            The (h, w) size of the extracted region.
-
-        Returns
-        -------
-        pyvips.Image
-            Extracted region
-        """
-        if level != 0:
-            raise ValueError("Only level 0 is supported")
-
-        if self._file is None:
-            self._open_file()
-        assert self._file, "File is not open. Should not happen"
-        assert self._tile_size is not None, "self._tile_size should not be None"
-        assert self._tile_overlap is not None, "self._tile_overlap should not be None"
-
-        image_dataset = self._file["data"]
-
-        tile_indices = self._file["tile_indices"]
-
+    def _read_image_region(self, image_dataset, tile_indices, size, location):
         total_rows = math.ceil((self._size[1] - self._tile_overlap[1]) / self._stride[1])
         total_cols = math.ceil((self._size[0] - self._tile_overlap[0]) / self._stride[0])
 
         assert (
-            total_rows * total_cols == self._num_tiles or self._data_format == DataFormat.FEATURE
+                total_rows * total_cols == self._num_tiles
         ), f"{total_rows=}, {total_cols=} and {self._num_tiles=}"
         # Equality only holds if features where created without mask
 
@@ -252,27 +211,6 @@ class FileImageReader(abc.ABC):
 
         if self._stitching_mode == StitchingMode.AVERAGE:
             average_mask = np.zeros((h, w), dtype=self._dtype)
-
-        if self._data_format == DataFormat.FEATURE:
-            if self._stitching_mode != StitchingMode.CROP:
-                raise NotImplementedError("Stitching mode other than CROP is not supported for features.")
-
-            if image_dataset.shape[0] != self._num_samples:
-                raise ValueError(
-                    f"Reading features expects that the saved feature vectors are the same "
-                    f"length as the number of samples in the dataset. "
-                    f"Feature vector length was {image_dataset.shape[0]}, "
-                    f"number of samples in the dataset was {self._num_samples}"
-                )
-
-            if x + w > self._num_samples or y + h > 1:
-                raise ValueError(
-                    f"Feature vectors are saved as (num_samples, 1) "
-                    f"and the requested size {size} at location {location} is too large."
-                )
-
-            # this simplified version of the crop is done as it is faster than the general crop
-            return pyvips.Image.new_from_array(np.expand_dims(image_dataset[x : x + w, :], axis=0))
 
         for i in range(start_row, end_row):
             for j in range(start_col, end_col):
@@ -315,8 +253,9 @@ class FileImageReader(abc.ABC):
 
                     average_mask[img_start_y:img_end_y, img_start_x:img_end_x] += 1
                     stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] += tile[
-                        :, tile_start_y:tile_end_y, tile_start_x:tile_end_x
-                    ]
+                                                                                       :, tile_start_y:tile_end_y,
+                                                                                       tile_start_x:tile_end_x
+                                                                                       ]
 
                 elif self._stitching_mode == StitchingMode.MAXIMUM:
                     tile_start_y = max(0, -start_y)
@@ -327,25 +266,94 @@ class FileImageReader(abc.ABC):
                     if i == start_row and j == start_col:
                         # The first tile cannot be compared with anything. So, we just copy it.
                         stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = tile[
-                            :, tile_start_y:tile_end_y, tile_start_x:tile_end_x
-                        ]
+                                                                                          :, tile_start_y:tile_end_y,
+                                                                                          tile_start_x:tile_end_x
+                                                                                          ]
 
                     stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = np.maximum(
                         stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x],
                         tile[:, tile_start_y:tile_end_y, tile_start_x:tile_end_x],
                     )
 
-        # Adjust the precision and convert to float32 before averaging to avoid loss of precision.
-        if self._precision != str(InferencePrecision.UINT8) or self._stitching_mode == StitchingMode.AVERAGE:
-            stitched_image = stitched_image / self._multiplier
-            stitched_image = stitched_image.astype(np.float32)
+            # Adjust the precision and convert to float32 before averaging to avoid loss of precision.
+            if self._precision != str(InferencePrecision.UINT8) or self._stitching_mode == StitchingMode.AVERAGE:
+                stitched_image = stitched_image / self._multiplier
+                stitched_image = stitched_image.astype(np.float32)
 
-        if self._stitching_mode == StitchingMode.AVERAGE:
-            overlap_regions = average_mask > 0
-            # Perform division to average the accumulated pixel values
-            stitched_image[:, overlap_regions] = stitched_image[:, overlap_regions] / average_mask[overlap_regions]
+            if self._stitching_mode == StitchingMode.AVERAGE:
+                overlap_regions = average_mask > 0
+                # Perform division to average the accumulated pixel values
+                stitched_image[:, overlap_regions] = stitched_image[:, overlap_regions] / average_mask[overlap_regions]
 
-        return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
+            return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
+
+    def _read_feature_region(self, image_dataset, tile_indices, size, location):
+        x, y = location
+        w, h = size
+
+        if self._stitching_mode != StitchingMode.CROP:
+            raise NotImplementedError("Stitching mode other than CROP is not supported for features.")
+
+        if image_dataset.shape[0] != self._num_samples:
+            raise ValueError(
+                f"Reading features expects that the saved feature vectors are the same "
+                f"length as the number of samples in the dataset. "
+                f"Feature vector length was {image_dataset.shape[0]}, "
+                f"number of samples in the dataset was {self._num_samples}"
+            )
+
+        if x + w > self._num_samples or y + h > 1:
+            raise ValueError(
+                f"Feature vectors are saved as (num_samples, 1) "
+                f"and the requested size {size} at location {location} is too large."
+            )
+
+        # this simplified version of the crop is done as it is faster than the crop for images crop
+        return pyvips.Image.new_from_array(np.expand_dims(image_dataset[x: x + w, :], axis=0))
+
+    def read_region(self, location: tuple[int, int], level: int, size: tuple[int, int]) -> pyvips.Image:
+        """
+        Reads a region in the stored h5 file. This function stitches the regions as saved in the cache file. Doing this
+        it takes into account:
+        1) The region overlap, several region merging strategies are implemented: cropping, averaging across borders
+          and taking the maximum across borders.
+        2) If tiles are saved or not. In case the tiles are skipped due to a background mask, an empty tile is returned.
+
+        Parameters
+        ----------
+        location : tuple[int, int]
+            Coordinates (x, y) of the upper left corner of the region.
+        level : int
+            The level of the region. Only level 0 is supported.
+        size : tuple[int, int]
+            The (h, w) size of the extracted region.
+
+        Returns
+        -------
+        pyvips.Image
+            Extracted region
+        """
+        if level != 0:
+            raise ValueError("Only level 0 is supported")
+
+        if self._file is None:
+            self._open_file()
+        assert self._file, "File is not open. Should not happen"
+        assert self._tile_size is not None, "self._tile_size should not be None"
+        assert self._tile_overlap is not None, "self._tile_overlap should not be None"
+
+        image_dataset = self._file["data"]
+
+        tile_indices = self._file["tile_indices"]
+
+        if self._data_format == DataFormat.IMAGE:
+            return self._read_image_region(image_dataset, tile_indices, size, location)
+        elif self._data_format == DataFormat.FEATURE:
+            return self._read_feature_region(image_dataset, tile_indices, size, location)
+
+
+
+
 
     @abc.abstractmethod
     def close(self) -> None:
