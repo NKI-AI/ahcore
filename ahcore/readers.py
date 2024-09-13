@@ -279,17 +279,17 @@ class FileImageReader(abc.ABC):
                         tile[:, tile_start_y:tile_end_y, tile_start_x:tile_end_x],
                     )
 
-            # Adjust the precision and convert to float32 before averaging to avoid loss of precision.
-            if self._precision != str(InferencePrecision.UINT8) or self._stitching_mode == StitchingMode.AVERAGE:
-                stitched_image = stitched_image / self._multiplier
-                stitched_image = stitched_image.astype(np.float32)
+        # Adjust the precision and convert to float32 before averaging to avoid loss of precision.
+        if self._precision != str(InferencePrecision.UINT8) or self._stitching_mode == StitchingMode.AVERAGE:
+            stitched_image = stitched_image / self._multiplier
+            stitched_image = stitched_image.astype(np.float32)
 
-            if self._stitching_mode == StitchingMode.AVERAGE:
-                overlap_regions = average_mask > 0
-                # Perform division to average the accumulated pixel values
-                stitched_image[:, overlap_regions] = stitched_image[:, overlap_regions] / average_mask[overlap_regions]
+        if self._stitching_mode == StitchingMode.AVERAGE:
+            overlap_regions = average_mask > 0
+            # Perform division to average the accumulated pixel values
+            stitched_image[:, overlap_regions] = stitched_image[:, overlap_regions] / average_mask[overlap_regions]
 
-            return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
+        return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
 
     def _read_feature_region(self, size: tuple[int, int], location: tuple[int, int]) -> pyvips.Image:
         assert self._num_samples is not None
@@ -356,6 +356,8 @@ class FileImageReader(abc.ABC):
             return self._read_image_region(size, location)
         elif self._data_format == DataFormat.FEATURE:
             return self._read_feature_region(size, location)
+        else:
+            raise NotImplementedError(f"Data format {self._data_format} is not supported.")
 
     @abc.abstractmethod
     def close(self) -> None:
