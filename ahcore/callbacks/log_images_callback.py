@@ -1,8 +1,6 @@
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 import numpy as np
-import io
-from PIL import Image
 from matplotlib.colors import to_rgb
 
 
@@ -14,7 +12,8 @@ class LogImagesCallback(pl.Callback):
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0) -> None:
         val_images = batch['image']
         val_images_numpy = val_images.permute(0, 2, 3, 1).detach().cpu().numpy()
-        val_images_numpy = (val_images_numpy - val_images_numpy.min()) / (val_images_numpy.max() - val_images_numpy.min())
+        val_images_numpy = (val_images_numpy - val_images_numpy.min()) / (
+                    val_images_numpy.max() - val_images_numpy.min())
 
         val_predictions = outputs['prediction']
         val_predictions_numpy = val_predictions.permute(0, 2, 3, 1).detach().cpu().numpy()
@@ -22,17 +21,17 @@ class LogImagesCallback(pl.Callback):
         val_targets = batch['target']
         val_targets_numpy = val_targets.permute(0, 2, 3, 1).detach().cpu().numpy()
 
-        self._plot_and_log(val_images_numpy, val_predictions_numpy, val_targets_numpy, pl_module, trainer.global_step, batch_idx)
+        self._plot_and_log(val_images_numpy, val_predictions_numpy, val_targets_numpy, pl_module, trainer.global_step,
+                           batch_idx)
 
     def _plot_and_log(self, images_numpy, predictions_numpy, targets_numpy, pl_module, step, batch_idx) -> None:
         batch_size = images_numpy.shape[0]
-        plt.figure(figsize=(15, batch_size * 5))  # Adjust the figure size to fit the grid
+        figure = plt.figure(figsize=(15, batch_size * 5))  # Adjust the figure size to fit the grid
 
         for i in range(batch_size):
             # Plot the original image
             plt.subplot(batch_size, 3, i * 3 + 1)
             plt.imshow(images_numpy[i])
-            plt.title("Original Image")
             plt.axis("off")
 
             # Plot the ground truth mask
@@ -40,7 +39,6 @@ class LogImagesCallback(pl.Callback):
             class_indices_gt = np.argmax(targets_numpy[i], axis=-1)
             colored_img_gt = apply_color_map(class_indices_gt, self.color_map)  # Apply color map to ground truth
             plt.imshow(colored_img_gt)
-            plt.title("Ground Truth Mask")
             plt.axis("off")
 
             # Plot the prediction mask
@@ -48,24 +46,15 @@ class LogImagesCallback(pl.Callback):
             class_indices_pred = np.argmax(predictions_numpy[i], axis=-1)
             colored_img_pred = apply_color_map(class_indices_pred, self.color_map)  # Apply color map to prediction
             plt.imshow(colored_img_pred)
-            plt.title("Prediction Mask")
             plt.axis("off")
 
-        # Save the figure to a buffer
-        buf = io.BytesIO()
-        plt.savefig(buf, format="png")
-        plt.close()
-        buf.seek(0)
-        image_grid = Image.open(buf)
-
-        # Log the image using the logger's experiment interface and mlflow log_image
         artifact_file_name = f"validation_global_step{step:03d}_batch{batch_idx:03d}.png"
-        pl_module.logger.experiment.log_image(
+        pl_module.logger.experiment.log_figure(
             pl_module.logger.run_id,
-            image_grid,
+            figure,
             artifact_file=artifact_file_name
         )
-        buf.close()
+        plt.close()
 
 
 def apply_color_map(image, color_map):
