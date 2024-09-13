@@ -53,13 +53,14 @@ class FileImageReader(abc.ABC):
         self._mpp = None
         self._tile_size = None
         self._tile_overlap = None
-        self._size = None
+        self._size: Optional[tuple[int, int]] = None
         self._num_channels = None
         self._dtype = None
         self._stride = None
         self._precision = None
         self._multiplier = None
         self._is_binary = None
+        self._num_samples = None
 
     @classmethod
     def from_file_path(cls, filename: Path, stitching_mode: StitchingMode = StitchingMode.CROP) -> "FileImageReader":
@@ -69,8 +70,9 @@ class FileImageReader(abc.ABC):
     def size(self) -> tuple[int, int]:
         if not self._size:
             self._open_file()
-            assert self._size
-        return tuple(self._size)
+
+        assert self._size and len(self.size) == 2
+        return self._size[0], self._size[1]
 
     @property
     def mpp(self) -> float:
@@ -123,8 +125,6 @@ class FileImageReader(abc.ABC):
             DataFormat(self._metadata["data_format"]) if "data_format" in self._metadata.keys() else DataFormat.IMAGE
         )
         self._mpp = self._metadata["mpp"]
-        # features are always read at tile_size (1, 1), possibly faster to read the whole feature at once
-        # this should be fixed in the writer and features have to be remade so this doesn't have to be hardcoded
         self._tile_size = self._metadata["tile_size"]
         self._tile_overlap = self._metadata["tile_overlap"]
         self._size = self._metadata["size"]
@@ -184,13 +184,19 @@ class FileImageReader(abc.ABC):
         else:
             return tile
 
-    def _read_image_region(self, image_dataset, tile_indices, size, location):
+    def _read_image_region(self, size: tuple[int, int], location: tuple[int, int]) -> pyvips.Image:
+        assert self._size is not None
+        assert self._tile_size is not None
+        assert self._tile_overlap is not None
+
+        image_dataset: h5py.Dataset = self._file["data"]
+
+        tile_indices: h5py.Dataset = self._file["tile_indices"]
+
         total_rows = math.ceil((self._size[1] - self._tile_overlap[1]) / self._stride[1])
         total_cols = math.ceil((self._size[0] - self._tile_overlap[0]) / self._stride[0])
 
-        assert (
-                total_rows * total_cols == self._num_tiles
-        ), f"{total_rows=}, {total_cols=} and {self._num_tiles=}"
+        assert total_rows * total_cols == self._num_tiles, f"{total_rows=}, {total_cols=} and {self._num_tiles=}"
         # Equality only holds if features where created without mask
 
         x, y = location
@@ -253,9 +259,8 @@ class FileImageReader(abc.ABC):
 
                     average_mask[img_start_y:img_end_y, img_start_x:img_end_x] += 1
                     stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] += tile[
-                                                                                       :, tile_start_y:tile_end_y,
-                                                                                       tile_start_x:tile_end_x
-                                                                                       ]
+                        :, tile_start_y:tile_end_y, tile_start_x:tile_end_x
+                    ]
 
                 elif self._stitching_mode == StitchingMode.MAXIMUM:
                     tile_start_y = max(0, -start_y)
@@ -266,9 +271,8 @@ class FileImageReader(abc.ABC):
                     if i == start_row and j == start_col:
                         # The first tile cannot be compared with anything. So, we just copy it.
                         stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = tile[
-                                                                                          :, tile_start_y:tile_end_y,
-                                                                                          tile_start_x:tile_end_x
-                                                                                          ]
+                            :, tile_start_y:tile_end_y, tile_start_x:tile_end_x
+                        ]
 
                     stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x] = np.maximum(
                         stitched_image[:, img_start_y:img_end_y, img_start_x:img_end_x],
@@ -287,7 +291,13 @@ class FileImageReader(abc.ABC):
 
             return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
 
-    def _read_feature_region(self, image_dataset, tile_indices, size, location):
+    def _read_feature_region(self, size: tuple[int, int], location: tuple[int, int]) -> pyvips.Image:
+        assert self._num_samples is not None
+
+        image_dataset: h5py.Dataset = self._file["data"]
+
+        assert image_dataset is not None
+
         x, y = location
         w, h = size
 
@@ -309,7 +319,7 @@ class FileImageReader(abc.ABC):
             )
 
         # this simplified version of the crop is done as it is faster than the crop for images crop
-        return pyvips.Image.new_from_array(np.expand_dims(image_dataset[x: x + w, :], axis=0))
+        return pyvips.Image.new_from_array(np.expand_dims(image_dataset[x : x + w, :], axis=0))
 
     def read_region(self, location: tuple[int, int], level: int, size: tuple[int, int]) -> pyvips.Image:
         """
@@ -342,18 +352,10 @@ class FileImageReader(abc.ABC):
         assert self._tile_size is not None, "self._tile_size should not be None"
         assert self._tile_overlap is not None, "self._tile_overlap should not be None"
 
-        image_dataset = self._file["data"]
-
-        tile_indices = self._file["tile_indices"]
-
         if self._data_format == DataFormat.IMAGE:
-            return self._read_image_region(image_dataset, tile_indices, size, location)
+            return self._read_image_region(size, location)
         elif self._data_format == DataFormat.FEATURE:
-            return self._read_feature_region(image_dataset, tile_indices, size, location)
-
-
-
-
+            return self._read_feature_region(size, location)
 
     @abc.abstractmethod
     def close(self) -> None:

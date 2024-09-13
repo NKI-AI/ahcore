@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Type
 
 from dlup.data.dataset import TiledWsiDataset
+from dlup.tiling import Grid
 
 from ahcore.callbacks.abstract_writer_callback import AbstractWriterCallback
 from ahcore.callbacks.converters.common import ConvertCallbacks
@@ -27,7 +28,7 @@ class WriteFileCallback(AbstractWriterCallback):
         normalization_type: str = NormalizationType.LOGITS,
         precision: str = InferencePrecision.FP32,
         callbacks: list[ConvertCallbacks] | None = None,
-        data_format: DataFormat = DataFormat.IMAGE,
+        data_format: str = DataFormat.IMAGE,
     ) -> None:
         """
         Callback to write predictions to H5 files. This callback is used to write whole-slide predictions to single H5
@@ -55,7 +56,7 @@ class WriteFileCallback(AbstractWriterCallback):
         self._suffix = ".cache"
         self._normalization_type: NormalizationType = NormalizationType(normalization_type)
         self._precision: InferencePrecision = InferencePrecision(precision)
-        self._data_format = data_format
+        self._data_format = DataFormat(data_format)
 
         super().__init__(
             writer_class=writer_class,
@@ -99,36 +100,15 @@ class WriteFileCallback(AbstractWriterCallback):
         with open(link_fn, "a" if link_fn.is_file() else "w") as file:
             file.write(f"{filename},{output_filename}\n")
 
-        current_dataset: TiledWsiDataset
-        current_dataset, _ = self._total_dataset.index_to_dataset(self._dataset_index)  # type: ignore
-        slide_image = current_dataset.slide_image
-        num_samples = len(current_dataset)
-
-        data_description: DataDescription = pl_module.data_description
-        if data_description.inference_grid is None:
-            raise ValueError("Inference grid is not defined in the data description.")
-        inference_grid: GridDescription = data_description.inference_grid
-
-        mpp = inference_grid.mpp
-        if mpp is None:
-            mpp = slide_image.mpp
-
-        _, size = slide_image.get_scaled_slide_bounds(slide_image.get_scaling(mpp))
-
-        # Let's get the data_description, so we can figure out the tile size and things like that
-        tile_size = inference_grid.tile_size
-        tile_overlap = inference_grid.tile_overlap
-
-        if stage == "validate":
-            grid = current_dataset._grids[0][0]  # pylint: disable=protected-access
-        else:
-            grid = None  # During inference we don't have a grid around ROI
+        size, mpp, tile_size, tile_overlap, num_samples, grid = self._get_writer_data_args(
+            pl_module, data_format=self._data_format, stage=stage
+        )
 
         writer = self._writer_class(
             output_filename,
-            size=size,
+            size=size,  # --> (num_samples,1)
             mpp=mpp,
-            tile_size=tile_size,
+            tile_size=tile_size,  # --> (1,1)
             tile_overlap=tile_overlap,
             num_samples=num_samples,
             color_profile=None,
@@ -139,3 +119,45 @@ class WriteFileCallback(AbstractWriterCallback):
         )
 
         return writer
+
+    def _get_writer_data_args(
+        self, pl_module: AhCoreLightningModule, data_format: DataFormat, stage: str
+    ) -> tuple[tuple[int, int], float, tuple[int, int], tuple[int, int], int, Grid | None]:
+        current_dataset: TiledWsiDataset
+        current_dataset, _ = self._total_dataset.index_to_dataset(self._dataset_index)  # type: ignore
+        slide_image = current_dataset.slide_image
+        num_samples = len(current_dataset)
+
+        if data_format == DataFormat.IMAGE or data_format == DataFormat.COMPRESSED_IMAGE:
+            data_description: DataDescription = pl_module.data_description
+            if data_description.inference_grid is None:
+                raise ValueError("Inference grid is not defined in the data description.")
+            inference_grid: GridDescription = data_description.inference_grid
+
+            mpp = inference_grid.mpp
+            if mpp is None:
+                mpp = slide_image.mpp
+
+            _, size = slide_image.get_scaled_slide_bounds(slide_image.get_scaling(mpp))
+
+            # Let's get the data_description, so we can figure out the tile size and things like that
+            tile_size = inference_grid.tile_size
+            tile_overlap = inference_grid.tile_overlap
+
+            if stage == "validate":
+                grid = current_dataset._grids[0][0]  # pylint: disable=protected-access
+            else:
+                grid = None  # During inference we don't have a grid around ROI
+
+        elif data_format == DataFormat.FEATURE:
+            size = (num_samples, 1)
+            mpp = 1.0
+            tile_size = (1, 1)
+            tile_overlap = (0, 0)
+            num_samples = num_samples
+            grid = None  # just let the writer make a new grid
+
+        else:
+            raise NotImplementedError(f"Data format {data_format} is not yet supported.")
+
+        return size, mpp, tile_size, tile_overlap, num_samples, grid

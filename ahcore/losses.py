@@ -7,7 +7,6 @@ All the relevant loss modules. In ahcore, losses are returned per sample in the 
 
 from __future__ import annotations
 
-import logging
 from typing import Callable, Optional, Union, cast
 
 import numpy as np
@@ -188,7 +187,6 @@ def cross_entropy(
         torch.Tensor,
         torch.topk(_cross_entropy.view(input.shape[0], -1), k).values.sum(dim=1),
     ) / (roi_sum * topk)
-
 
 
 def soft_dice(

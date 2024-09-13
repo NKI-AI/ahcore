@@ -12,9 +12,9 @@ from typing import Any, Callable, Generator, Literal, Optional, Tuple, Type, Typ
 
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
+from dlup.backends import ImageBackend as DLUPImageBackend
 from dlup.data.dataset import RegionFromWsiDatasetSample, TiledWsiDataset, TileSample
 from dlup.tiling import GridOrder, TilingMode
-from dlup.backends import ImageBackend as DLUPImageBackend
 from pydantic import BaseModel
 from sqlalchemy import Column, create_engine
 from sqlalchemy.engine import Engine
@@ -398,9 +398,19 @@ class DataManager:
             self.__session.close()
             self.__session = None
 
-def get_image_info(db_manager: DataManager,
-                   data_description: DataDescription,
-                   image: Image) -> tuple[Path, tuple[PositiveInt, PositiveInt], tuple[PositiveInt, PositiveInt], ImageBackend, PositiveFloat, PositiveFloat, TilingMode]:
+
+def get_image_info(
+    db_manager: DataManager, data_description: DataDescription, image: Image, stage: str
+) -> tuple[
+    Path,
+    tuple[PositiveInt, PositiveInt],
+    tuple[PositiveInt, PositiveInt],
+    ImageBackend,
+    PositiveFloat,
+    PositiveFloat,
+    TilingMode,
+    Optional[Tuple[int, int]],
+]:
     if data_description.feature_version is not None:
         # if feature_version is defined we use features
         # right now this selects all features, todo: add some argument tile_size to overwrite this
@@ -420,18 +430,29 @@ def get_image_info(db_manager: DataManager,
 
         tile_mode = TilingMode.skip
 
-        return image_path, tile_size, tile_overlap, backend, mpp, overwrite_mpp, tile_mode
+        output_tile_size = None
+
+        return image_path, tile_size, tile_overlap, backend, mpp, overwrite_mpp, tile_mode, output_tile_size
 
     else:
+        if stage == "fit":
+            grid_description = data_description.training_grid
+        else:
+            grid_description = data_description.inference_grid
+
+        if grid_description is None:
+            raise ValueError(f"Grid (for stage {stage}) is not defined in the data description.")
+
         image_path = data_description.data_dir / image.filename
-        tile_size = (data_description.training_grid.tile_size, data_description.training_grid.tile_size)
-        tile_overlap = (data_description.training_grid.tile_overlap, data_description.training_grid.tile_overlap)
+        tile_size = grid_description.tile_size
+        tile_overlap = grid_description.tile_overlap
         backend = DLUPImageBackend[str(image.reader)]
-        mpp = data_description.training_grid.mpp
+        mpp = getattr(grid_description, "mpp", 1.0)
         overwrite_mpp = float(image.mpp)
         tile_mode = TilingMode.overflow
-        return image_path, tile_size, tile_overlap, backend, mpp, overwrite_mpp, tile_mode
+        output_tile_size = getattr(grid_description, "output_tile_size", None)
 
+        return image_path, tile_size, tile_overlap, backend, mpp, overwrite_mpp, tile_mode, output_tile_size
 
 
 def datasets_from_data_description(
@@ -442,17 +463,9 @@ def datasets_from_data_description(
 ) -> Generator[TiledWsiDataset, None, None]:
     logger.info(f"Reading manifest from {data_description.manifest_database_uri} for stage {stage}")
 
-    image_root = data_description.data_dir
     annotations_root = data_description.annotations_dir
 
     assert isinstance(stage, str), "Stage should be a string."
-
-    if stage == "fit":
-        grid_description = data_description.training_grid
-    else:
-        grid_description = data_description.inference_grid
-
-    use_features = data_description.feature_version is not None
 
     patients = db_manager.get_records_by_split(
         manifest_name=data_description.manifest_name,
@@ -471,7 +484,16 @@ def datasets_from_data_description(
             rois = _get_rois(mask, data_description, stage)
             mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
 
-            image_path, tile_size, tile_overlap, backend, mpp, overwrite_mpp, tile_mode = get_image_info(db_manager, data_description, image)
+            (
+                image_path,
+                tile_size,
+                tile_overlap,
+                backend,
+                mpp,
+                overwrite_mpp,
+                tile_mode,
+                output_tile_size,
+            ) = get_image_info(db_manager, data_description, image, stage)
 
             dataset = TiledWsiDataset.from_standard_tiling(
                 path=image_path,
@@ -483,7 +505,7 @@ def datasets_from_data_description(
                 crop=False,
                 mask=mask,
                 mask_threshold=mask_threshold,
-                output_tile_size=getattr(grid_description, "output_tile_size", None),
+                output_tile_size=output_tile_size,
                 rois=rois if rois is not None else None,
                 annotations=annotations if stage != "predict" else None,
                 labels=labels,  # type: ignore
