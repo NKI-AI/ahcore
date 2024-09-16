@@ -71,7 +71,8 @@ class FileImageReader(abc.ABC):
         if not self._size:
             self._open_file()
 
-        assert self._size and len(self.size) == 2
+        assert self._size, "Size should be set after opening the file"
+
         return self._size[0], self._size[1]
 
     @property
@@ -319,7 +320,7 @@ class FileImageReader(abc.ABC):
             )
 
         # this simplified version of the crop is done as it is faster than the crop for images crop
-        return pyvips.Image.new_from_array(np.expand_dims(image_dataset[x : x + w, :], axis=0))
+        return pyvips.Image.new_from_array(np.expand_dims(image_dataset[x : x + w, :], axis=0).astype(np.float32))
 
     def read_region(self, location: tuple[int, int], level: int, size: tuple[int, int]) -> pyvips.Image:
         """
