@@ -10,19 +10,20 @@ class LogImagesCallback(pl.Callback):
         self.color_map = {k: np.array(to_rgb(v)) * 255 for k, v in color_map.items()}
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0) -> None:
-        val_images = batch['image']
-        val_images_numpy = val_images.permute(0, 2, 3, 1).detach().cpu().numpy()
-        val_images_numpy = (val_images_numpy - val_images_numpy.min()) / (
-                    val_images_numpy.max() - val_images_numpy.min())
+        if batch_idx == 0:
+            val_images = batch['image']
+            val_images_numpy = val_images.permute(0, 2, 3, 1).detach().cpu().numpy()
+            val_images_numpy = (val_images_numpy - val_images_numpy.min()) / (
+                        val_images_numpy.max() - val_images_numpy.min())
 
-        val_predictions = outputs['prediction']
-        val_predictions_numpy = val_predictions.permute(0, 2, 3, 1).detach().cpu().numpy()
+            val_predictions = outputs['prediction']
+            val_predictions_numpy = val_predictions.permute(0, 2, 3, 1).detach().cpu().numpy()
 
-        val_targets = batch['target']
-        val_targets_numpy = val_targets.permute(0, 2, 3, 1).detach().cpu().numpy()
+            val_targets = batch['target']
+            val_targets_numpy = val_targets.permute(0, 2, 3, 1).detach().cpu().numpy()
 
-        self._plot_and_log(val_images_numpy, val_predictions_numpy, val_targets_numpy, pl_module, trainer.global_step,
-                           batch_idx)
+            self._plot_and_log(val_images_numpy, val_predictions_numpy, val_targets_numpy, pl_module, trainer.global_step,
+                               batch_idx)
 
     def _plot_and_log(self, images_numpy, predictions_numpy, targets_numpy, pl_module, step, batch_idx) -> None:
         batch_size = images_numpy.shape[0]
