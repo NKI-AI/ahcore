@@ -2,24 +2,24 @@ import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
-from dlup import SlideImage
 
 
 class LogImagesCallback(pl.Callback):
     def __init__(self, color_map):
         super().__init__()
         self.color_map = {k: np.array(to_rgb(v)) * 255 for k, v in color_map.items()}
+        self._already_seen_scanner = []
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0) -> None:
-        already_seen_wsi = []
-        if batch_idx == 0:
-            val_images = batch['image']
-            if batch["path"][0] not in already_seen_wsi:
-                slide = SlideImage.from_file_path(batch["path"][0])
-                already_seen_wsi.append(batch["path"][0])
-                scanner_name = slide.properties.get('mirax.NONHIERLAYER_1_SECTION.SCANNER_HARDWARE_VERSION', None)
-                if scanner_name is None:
-                    scanner_name = "Aperio"
+        scanner_name = None
+        val_images = batch['image']
+        path = batch['path'][0]
+        if path.split('.')[-1] == 'svs':
+            scanner_name = "Aperio"
+        elif path.split('.')[-1] == 'mrxs':
+            scanner_name = "P1000"
+
+        if scanner_name not in self._already_seen_scanner:
             val_images_numpy = val_images.permute(0, 2, 3, 1).detach().cpu().numpy()
             val_images_numpy = (val_images_numpy - val_images_numpy.min()) / (
                         val_images_numpy.max() - val_images_numpy.min())
@@ -32,6 +32,10 @@ class LogImagesCallback(pl.Callback):
 
             self._plot_and_log(val_images_numpy, val_predictions_numpy, val_targets_numpy, pl_module, trainer.global_step,
                                batch_idx, scanner_name)
+            self._already_seen_scanner.append(scanner_name)
+
+    def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        self._already_seen_scanner = []
 
     def _plot_and_log(self, images_numpy, predictions_numpy, targets_numpy, pl_module, step, batch_idx, scanner_name) -> None:
         batch_size = images_numpy.shape[0]
