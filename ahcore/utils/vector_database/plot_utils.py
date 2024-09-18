@@ -8,7 +8,7 @@ from dlup.annotations import WsiAnnotations
 from dlup.data.dataset import TiledWsiDataset
 from PIL import Image, ImageDraw
 from pymilvus.client.abstract import Hit
-from shapely import Polygon
+from shapely import MultiPolygon, Polygon
 
 
 def plot_wsi_and_annotation_overlay(
@@ -185,3 +185,54 @@ def plot_tile(hit: Hit) -> None:
     plt.imshow(tile)
     plt.savefig("/home/e.marcus/projects/ahcore/debug_tile_plots/tile.png")
     plt.close()
+
+
+def plot_multipolygons(
+    mpoly1: MultiPolygon | Polygon,
+    mpoly2: MultiPolygon | Polygon,
+    plot_size: tuple[int, int] = (10, 10),
+    savename: str = "test.png",
+) -> None:
+    # Plot the polygons
+    fig, ax = plt.subplots(figsize=plot_size)
+
+    if isinstance(mpoly1, Polygon):
+        mpoly1 = MultiPolygon([mpoly1])
+    if isinstance(mpoly2, Polygon):
+        mpoly2 = MultiPolygon([mpoly2])
+
+    # Plot first MultiPolygon
+    if not mpoly1.is_empty:
+        for polygon in mpoly1.geoms:
+            x, y = polygon.exterior.xy
+            ax.fill(x, y, alpha=0.5, fc="blue", ec="black")
+        min_x_1, min_y_1, max_x_1, max_y_1 = mpoly1.bounds
+    else:
+        # it is empty
+        min_x_1, min_y_1, max_x_1, max_y_1 = 0, 0, 0, 0
+
+    # Plot second MultiPolygon
+    if not mpoly2.is_empty:
+        for polygon in mpoly2.geoms:
+            x, y = polygon.exterior.xy
+            ax.fill(x, y, alpha=0.5, fc="red", ec="black")
+        min_x_2, min_y_2, max_x_2, max_y_2 = mpoly2.bounds
+    else:
+        # it is empty
+        min_x_2, min_y_2, max_x_2, max_y_2 = 0, 0, 0, 0
+
+    # Set the aspect ratio to be equal, so the shapes are not distorted
+    ax.set_aspect("equal")
+
+    # Set limits to encompass both multipolygons
+    min_x = min(min_x_1, min_x_2)
+    min_y = min(min_y_1, min_y_2)
+    max_x = max(max_x_1, max_x_2)
+    max_y = max(max_y_1, max_y_2)
+
+    ax.set_xlim(min_x, max_x)
+    ax.set_ylim(min_y, max_y)
+
+    # Set title and save the plot
+    ax.set_title("MultiPolygon Comparison")
+    plt.savefig(savename)

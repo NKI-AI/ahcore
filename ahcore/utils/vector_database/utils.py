@@ -8,8 +8,6 @@ from typing import Any, Generator
 import dotenv
 import hydra
 import numpy as np
-import numpy.typing as npt
-import shapely
 from dlup import SlideImage
 from dlup.annotations import AnnotationClass
 from dlup.annotations import Polygon as DlupPolygon
@@ -63,53 +61,6 @@ def calculate_total_annotation_area(annotation: WsiAnnotations, scaling: float) 
     poly_list = annotation.read_region(bounding_box_xy, scaling=scaling, size=bounding_box_wh)
     area = sum([poly.area for poly in poly_list])
     return area
-
-
-def compute_precision_recall(
-    image: SlideImage,
-    annotation: WsiAnnotations,
-    model_output: WsiAnnotations,
-    mpp: float,
-    tile_size: tuple[int, int],
-    distance_cutoff: float,
-) -> tuple[float, float]:
-    scaling = image.get_scaling(mpp)
-    distance_cutoff = distance_cutoff * scaling
-    dataset_annotation = TiledWsiDataset.from_standard_tiling(
-        image.identifier, mpp=mpp, tile_size=tile_size, tile_overlap=(0, 0), mask=annotation, internal_handler="vips"
-    )
-
-    dataset_model_output = TiledWsiDataset.from_standard_tiling(
-        image.identifier, mpp=mpp, tile_size=tile_size, tile_overlap=(0, 0), mask=model_output, internal_handler="vips"
-    )
-
-    true_positives = 0
-    false_positives = 0
-    false_negatives = 0
-
-    # Convert annotations and model outputs to a set of coordinates for easier comparison
-    annotation_tiles = set((d["coordinates"][0], d["coordinates"][1]) for d in dataset_annotation)
-    model_output_tiles = set((d["coordinates"][0], d["coordinates"][1]) for d in dataset_model_output)
-
-    for coords in model_output_tiles:
-        if (
-            calculate_distance_to_annotation(annotation, coords[0], coords[1], scaling=scaling) <= distance_cutoff
-        ):  # make sure we stay within annotated region -- multiple tissue samples per slide, but only one annotated
-            # if calculate_tile_overlap_ratio(coords, annotation_tiles, tile_size) > 0.5:
-            # true_positives += 1
-            if coords in annotation_tiles:
-                true_positives += 1
-            else:
-                false_positives += 1
-    # Evaluate false negatives separately
-    for coords in annotation_tiles:
-        if coords not in model_output_tiles:
-            false_negatives += 1
-
-    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
-    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
-
-    return precision, recall, true_positives, false_positives, false_negatives
 
 
 def delete_collection(collection_name: str) -> None:
@@ -215,7 +166,7 @@ def load_data_description(file_path: str) -> DataDescription:
     return data_description
 
 
-def generate_filenames(filename: str, data_dir: str, annotations_dir: str) -> tuple[str, str]:
+def generate_paths(filename: str, data_dir: str, annotations_dir: str) -> tuple[str, str]:
     """Generates the image and annotations filenames from the WSI filename"""
     image_filename = Path(data_dir) / filename
     annotations_filename = Path(annotations_dir) / filename.replace(".svs", ".svs.geojson")
@@ -251,6 +202,21 @@ def dict_to_uuid(input_dict: dict) -> uuid.UUID:
     return unique_id
 
 
+def create_wsi_annotation_from_regions(regions: list[dict[str, Any]], masked_indices: np.ndarray) -> WsiAnnotations:
+    """Creates a WsiAnnotations object from the hits"""
+    polygon_list = []
+
+    for index in masked_indices:
+        x, y, width, height, _ = regions[index]
+        rect = box(x, y, x + width, y + height)
+        polygon = DlupPolygon(rect, a_cls=AnnotationClass(label="annotation_boxes", annotation_type="POLYGON"))
+        polygon_list.append(polygon)
+
+    annotations = WsiAnnotations(layers=polygon_list)
+
+    return annotations
+
+
 def create_wsi_annotation_from_dict(hits: list[dict[str, Any]]) -> WsiAnnotations:
     """Creates a WsiAnnotations object from the hits"""
     polygon_list = []
@@ -270,66 +236,27 @@ def connect_to_milvus(host: str, port: int, alias: str, user: str, password: str
     connections.connect(alias=alias, host=host, port=port, user=user, password=password)
 
 
-def create_wsi_annotation_from_hits(hits: list[Hit]) -> WsiAnnotations:
+def create_wsi_annotation_from_hits(
+    hits: list[Hit], slide_image: SlideImage, annotation: WsiAnnotations, max_distance: float
+) -> WsiAnnotations:
     """Creates a WsiAnnotations object from the hits"""
-    # import matplotlib.pyplot as plt
-    # fig, ax = plt.subplots()
-    # ax.set_aspect("equal")
+    scaling = slide_image.get_scaling(0.5)  # We inference at 0.5 mpp
+    max_distance = max_distance * scaling
     polygon_list = []
 
     for hit in hits:
         x, y, width, height = hit.coordinate_x, hit.coordinate_y, hit.tile_size, hit.tile_size
+        if (
+            calculate_distance_to_annotation(annotation, x, y, scaling) > max_distance
+        ):  # we are on the wrong 'slice' in the WSI
+            continue
         rect = box(x, y, x + width, y + height)
-        # rect2 = plt.Rectangle((x, y), width, height, edgecolor="red", facecolor="none")
-        # ax.add_patch(rect2)
         polygon = DlupPolygon(rect, a_cls=AnnotationClass(label="hits", annotation_type="POLYGON"))
         polygon_list.append(polygon)
-
-    # ax.autoscale_view()
-    # ax.grid(True)
-    # ax.invert_yaxis()
-    # plt.savefig("hits.png")
 
     annotations = WsiAnnotations(layers=polygon_list)
 
     return annotations
-
-
-def compute_iou_from_hits(image: SlideImage, annotation: WsiAnnotations, hits: list[Hit]) -> float:
-    """Computes IoU between a hit and the annotations"""
-    # total_union_area = 0.0
-    total_intersection_area = 0.0
-    scaling = image.get_scaling(0.5)  # We inference at 0.5 mpp
-    total_annotation_area = calculate_total_annotation_area(annotation, scaling)
-
-    for hit in hits:
-        x, y, width, height = hit.coordinate_x, hit.coordinate_y, hit.tile_size, hit.tile_size
-        location = (x, y)
-
-        if (
-            calculate_distance_to_annotation(annotation, x, y) > 15000
-        ):  # We are on the second 'slice' of the WSI where pathologist did not annotate
-            continue
-
-        def _affine_coords(coords: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
-            return coords * scaling - np.asarray(location, dtype=np.float_)
-
-        rect = box(x, y, x + width, y + height)
-        rect = shapely.transform(rect, _affine_coords)  # Transform the coordinates
-        annotations = annotation.read_region((x, y), scaling, (width, height))
-
-        local_intersection_area = 0
-        for local_annotation in annotations:
-            local_intersection = local_annotation.intersection(rect)
-            # local_intersection_area += local_intersection.area
-            if local_intersection.area != 0:  # the box intersects with annotation
-                local_intersection_area += local_intersection.area
-
-        if local_intersection_area != 0:
-            total_intersection_area += local_intersection_area
-
-    total_iou = total_intersection_area / total_annotation_area if total_annotation_area != 0 else 0
-    return total_iou
 
 
 def extract_results_per_wsi(search_results: SearchResult) -> dict[str, list[Hit]]:
@@ -344,17 +271,22 @@ def extract_results_per_wsi(search_results: SearchResult) -> dict[str, list[Hit]
     return hits_per_wsi
 
 
-def compute_global_metrics(
-    metrics_per_wsi: dict[str, tuple[float, float, int, int, int]]
-) -> tuple[float, float, float]:
-    """Computes global metrics from the metrics per WSI"""
-    true_positives = sum([x[2] for x in metrics_per_wsi.values()])
-    false_positives = sum([x[3] for x in metrics_per_wsi.values()])
-    false_negatives = sum([x[4] for x in metrics_per_wsi.values()])
-    precision = true_positives / (true_positives + false_positives)
-    recall = true_positives / (true_positives + false_negatives)
-    f1_score = 2 * precision * recall / (precision + recall)
-    return precision, recall, f1_score
+def extract_filenames_from_data_description(data_description: DataDescription) -> list[str]:
+    db_manager = DataManager(data_description.manifest_database_uri)
+
+    patients = db_manager.get_records_by_split(
+        manifest_name=data_description.manifest_name,
+        split_version=data_description.split_version,
+        split_category="predict",
+    )
+
+    image_filenames = []
+    for patient in patients:
+        for image in patient.images:
+            image_filename = image.filename
+            if not image_filename in image_filenames:
+                image_filenames.append(image_filename)
+    return image_filenames
 
 
 # if __name__ == "__main__":

@@ -1,8 +1,8 @@
 _target_: ahcore.utils.vector_database.vector_lookup.perform_vector_lookup_multi
 reduce_method: "kmeans5"
-search_radius: 0.7
+search_radius: 0.65
 annotated_region_overlap: 0.1
-min_count: 6
+min_count: 5
 limit_results: 15000
 range_filter: 1.
 force_recompute_annotated_vectors: false

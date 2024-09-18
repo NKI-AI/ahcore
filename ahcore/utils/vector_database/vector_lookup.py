@@ -6,12 +6,8 @@ import hydra
 from pymilvus import RRFRanker, WeightedRanker
 
 from ahcore.utils.vector_database.annotated_vector_querier import AnnotatedVectorQuerier
-from ahcore.utils.vector_database.utils import (
-    compute_global_metrics,
-    compute_metrics_per_wsi,
-    connect_to_milvus,
-    load_data_description,
-)
+from ahcore.utils.vector_database.metrics import Metrics
+from ahcore.utils.vector_database.utils import connect_to_milvus, load_data_description
 from ahcore.utils.vector_database.vector_searcher import VectorSearcher
 
 dotenv.load_dotenv(override=True)
@@ -66,18 +62,14 @@ def perform_vector_lookup_single(
     )
 
     logger.info("Computing metrics")
-    metrics_per_wsi = compute_metrics_per_wsi(
-        search_results, data_description=data_description_test, plot_results=plot_results
-    )
-    precision, recall, f1_score = compute_global_metrics(metrics_per_wsi)
+    metrics = Metrics(data_description=data_description_test, metrics=["iou", "precision", "recall", "f1"])
+    metrics_per_wsi, global_metrics = metrics.compute_metrics(search_results, plot_results=plot_results)
 
     if print_results:
         print(f"----------------- Search radius: {search_radius} overlap: {annotated_region_overlap} -----------------")
-        print(f"Precision: {precision}")
-        print(f"Recall: {recall}")
-        print(f"F1 score: {f1_score}")
+        print(f"Global metrics: {global_metrics}")
 
-    return f1_score
+    return global_metrics.get("f1", 0.0)
 
 
 def perform_vector_lookup_multi(
@@ -137,18 +129,14 @@ def perform_vector_lookup_multi(
         )
 
     logger.info("Computing metrics")
-    metrics_per_wsi = compute_metrics_per_wsi(
-        search_results, data_description=data_description_test, plot_results=plot_results
-    )
-    precision, recall, f1_score = compute_global_metrics(metrics_per_wsi)
+    metrics = Metrics(data_description=data_description_test, metrics=["iou", "precision", "recall", "f1"])
+    metrics_per_wsi, global_metrics = metrics.compute_metrics(search_results, plot_results=plot_results)
 
     if print_results:
         print(f"----------------- Search radius: {search_radius} overlap: {annotated_region_overlap} -----------------")
-        print(f"Precision: {precision}")
-        print(f"Recall: {recall}")
-        print(f"F1 score: {f1_score}")
+        print(f"Global metrics: {global_metrics}")
 
-    return f1_score
+    return global_metrics.get("f1", 0.0)
 
 
 @hydra.main(
