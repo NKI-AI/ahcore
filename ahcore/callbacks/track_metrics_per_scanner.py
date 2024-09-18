@@ -51,13 +51,13 @@ class TrackMetricsPerScanner(pl.Callback):
         if self._aperio_batch_count > 0:
             averaged_aperio_metrics = {f"Aperio/{key}": value / self._aperio_batch_count for key, value in
                                        self._aperio_metrics.items()}
-            trainer.logger.log_metrics(averaged_aperio_metrics)
+            trainer.logger.log_metrics(averaged_aperio_metrics, step=trainer.global_step)
 
         # Compute the average metrics for P1000
         if self._p1000_batch_count > 0:
             averaged_p1000_metrics = {f"P1000/{key}": value / self._p1000_batch_count for key, value in
                                       self._p1000_metrics.items()}
-            trainer.logger.log_metrics(averaged_p1000_metrics)
+            trainer.logger.log_metrics(averaged_p1000_metrics, step=trainer.global_step)
 
         self._aperio_metrics = {'dice/background': 0.0, 'dice/stroma': 0.0, 'dice/tumor': 0.0, 'dice/ignore': 0.0}
         self._p1000_metrics = {'dice/background': 0.0, 'dice/stroma': 0.0, 'dice/tumor': 0.0, 'dice/ignore': 0.0}
