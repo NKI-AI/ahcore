@@ -261,7 +261,7 @@ def create_wsi_annotation_from_hits(
 
 def extract_results_per_wsi(search_results: SearchResult) -> dict[str, list[Hit]]:
     """Extracts search results per WSI. Note this is only used for testing purposes on a small dataset."""
-    hits = search_results[0]
+    hits = search_results
     hits_per_wsi = {}
     for hit in hits:
         filename = hit.filename

@@ -26,8 +26,8 @@ dotenv.load_dotenv(override=True)
 
 class ReduceMethod(Enum):
     MEAN = "MEAN"
-    KMEANS5 = "KMEANS5"
-    MEAN_KMEANS5 = "MEAN_KMEANS5"
+    KMEANS = "KMEANS"
+    MEAN_KMEANS = "MEAN_KMEANS"
 
     @staticmethod
     def from_value(value: str):
@@ -204,7 +204,7 @@ class AnnotatedVectorQuerier:
         return annotated_vector_dict
 
     def get_reference_vectors(
-        self, overlap_threshold: float, reduce_method: str = "mean", force_recompute: bool = False
+        self, overlap_threshold: float, reduce_method: str = "mean", force_recompute: bool = False, **kwargs
     ) -> np.ndarray:
         """
         Computes reference vectors by aggregating embeddings from database entries that are within
@@ -245,12 +245,12 @@ class AnnotatedVectorQuerier:
         if reduce_method == ReduceMethod.MEAN:
             reference_vectors = np.mean(embeddings, axis=0)
             reference_vectors = reference_vectors.tolist()  # Convert to list for compatibility with Milvus
-        elif reduce_method == ReduceMethod.KMEANS5:
-            kmean_centroids = self._find_kmeans_centroids(embeddings, k=100)
+        elif reduce_method == ReduceMethod.KMEANS:
+            kmean_centroids = self._find_kmeans_centroids(embeddings, **kwargs)
             reference_vectors = kmean_centroids.tolist()
-        elif reduce_method == ReduceMethod.MEAN_KMEANS5:
+        elif reduce_method == ReduceMethod.MEAN_KMEANS:
             mean_vector = np.mean(embeddings, axis=0)
-            kmean_centroids = self._find_kmeans_centroids(embeddings, k=100)
+            kmean_centroids = self._find_kmeans_centroids(embeddings, **kwargs)
             reference_vectors = np.vstack([mean_vector, kmean_centroids])
             reference_vectors = reference_vectors.tolist()
         else:

@@ -58,6 +58,16 @@ class VectorSearcher:
             }
         return search_param
 
+    def _create_filename_expr(self, filenames: list[str] | str | None = None) -> str | None:
+        if filenames is not None:
+            if isinstance(filenames, str):
+                filenames = [filenames]
+            quoted_filenames = ", ".join([f"'{filename}'" for filename in filenames])
+            expr = f"filename in [{quoted_filenames}]"
+        else:
+            expr = None
+        return expr
+
     @staticmethod
     def _extract_unique_entries(search_results: SearchResult) -> tuple[list[dict[str, Any]], dict[str, int]]:
         unique_ids = set()
@@ -77,43 +87,23 @@ class VectorSearcher:
 
         return unique_entries, id_counts
 
-    def search_single_vector(
+    def search_vectors(
         self,
-        reference_vector: list[float],
-        limit_results: int = 10,
-        partitions: list[str] | None = None,
-        search_param: dict[str, Any] | None = None,
-    ) -> list[dict[str, Any]]:
-        """
-        Search with a single reference vector in the Milvus collection.
-        """
-        param = self._setup_search_param(search_param)
-
-        with self._manager.manage_resource(partitions) as collection:
-            results = collection.search(
-                data=[reference_vector],
-                anns_field=self._vector_entry_name,
-                param=param,
-                limit=limit_results,
-                partition_names=partitions,
-                output_fields=["*"],
-            )
-            log.info(f"Search completed with {len(results[0])} results.")
-
-        return results
-
-    def search_multi_vector(
-        self,
-        reference_vectors: list[list[float]],
+        reference_vectors: list[list[float]] | list[float],
         min_count: int = 1,
         limit_results: int = 10,
         partitions: list[str] | None = None,
         search_param: dict[str, Any] | None = None,
+        filenames: list[str] | str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search with multiple reference vectors in the Milvus collection.
         """
+        if isinstance(reference_vectors[0], (int, float)):
+            reference_vectors = [reference_vectors]
+
         param = self._setup_search_param(search_param)
+        expr = self._create_filename_expr(filenames)
 
         with self._manager.manage_resource(partitions) as collection:
             results = collection.search(
@@ -122,34 +112,42 @@ class VectorSearcher:
                 param=param,
                 limit=limit_results,
                 partition_names=partitions,
+                expr=expr,
                 output_fields=["*"],
             )
 
         unique_entries, counts = self._extract_unique_entries(results)
         unique_entries = [entry for entry in unique_entries if counts[entry.id] >= min_count]
         log.info(f"Search completed with {len(unique_entries)} results.")
-        return [unique_entries]
+        return unique_entries
 
-    def search_multi_vector_rerank(
+    def search_vectors_rerank(
         self,
-        reference_vectors: list[list[float]],
+        reference_vectors: list[list[float]] | list[float],
         ranker: WeightedRanker | RRFRanker,
         limit_results: int = 10,
         partitions: list[str] | None = None,
         search_param: dict[str, Any] | None = None,
+        filenames: list[str] | str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search with multiple reference vectors in the Milvus collection.
         Results of the multiple searches are subsequently re-ranked using the ranker.
         """
+        if isinstance(reference_vectors[0], (int, float)):
+            reference_vectors = [reference_vectors]
+
         base_param = self._setup_search_param(search_param)
+        expr = self._create_filename_expr(filenames)
 
         # prepare AnnSearches
         searches = []
         for vector in reference_vectors:
             param = base_param.copy()
             searches.append(
-                AnnSearchRequest(data=[vector], anns_field=self._vector_entry_name, param=param, limit=limit_results)
+                AnnSearchRequest(
+                    data=[vector], anns_field=self._vector_entry_name, param=param, limit=limit_results, expr=expr
+                )
             )  # Note that these annsearches can also have an additional 'expr' for other fields
 
         with self._manager.manage_resource(partitions) as collection:
