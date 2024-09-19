@@ -286,23 +286,28 @@ class Metrics:
             hit_annotations.read_region(read_bbox[0], scaling=1.0, size=read_bbox[1])
         ).buffer(0)
 
-        # Grid for creating the annotation blocks
-        grid = Grid.from_tiling(
-            offset=annotation_bbox[0],
-            size=annotation_bbox[1],
-            tile_size=(self.tile_size, self.tile_size),
-            tile_overlap=(0, 0),
-            mode="overflow",
-            order="C",
-        )
-        regions = [(x, y, self.tile_size, self.tile_size, 0.5) for x, y in grid]  # [x, y, width, height, mpp]
-        masked_indices = compute_masked_indices(image, annotation, regions, threshold=self.annotation_threshold)
-        boxed_annotation = create_wsi_annotation_from_regions(regions=regions, masked_indices=masked_indices)
+        # check if annotation bbox is nonzero
+        if annotation_bbox[0] == annotation_bbox[1]:
+            annotation_multipolygon = MultiPolygon()
 
-        # Create MultiPolygon for annotations
-        annotation_multipolygon = MultiPolygon(
-            boxed_annotation.read_region(read_bbox[0], scaling=1.0, size=read_bbox[1])
-        ).buffer(0)
+        else:
+            # Grid for creating the annotation blocks
+            grid = Grid.from_tiling(
+                offset=annotation_bbox[0],
+                size=annotation_bbox[1],
+                tile_size=(self.tile_size, self.tile_size),
+                tile_overlap=(0, 0),
+                mode="overflow",
+                order="C",
+            )
+            regions = [(x, y, self.tile_size, self.tile_size, 0.5) for x, y in grid]  # [x, y, width, height, mpp]
+            masked_indices = compute_masked_indices(image, annotation, regions, threshold=self.annotation_threshold)
+            boxed_annotation = create_wsi_annotation_from_regions(regions=regions, masked_indices=masked_indices)
+
+            # Create MultiPolygon for annotations
+            annotation_multipolygon = MultiPolygon(
+                boxed_annotation.read_region(read_bbox[0], scaling=1.0, size=read_bbox[1])
+            ).buffer(0)
 
         return hit_multipolygon, annotation_multipolygon
 
