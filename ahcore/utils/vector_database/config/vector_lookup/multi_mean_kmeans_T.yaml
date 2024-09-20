@@ -1,9 +1,9 @@
 _target_: ahcore.utils.vector_database.vector_lookup.perform_vector_lookup
 reduce_method: "kmeans"
-annotated_search_kwargs: {k: 50}
-search_radius: 0.50
+annotated_search_kwargs: {k: 100}
+search_radius: 0.65
 annotated_region_overlap: 0.1
-min_count: 7
+min_count: 10
 limit_results: 15000
 range_filter: 1.
 force_recompute_annotated_vectors: false
@@ -11,9 +11,10 @@ metric_config:
     data_dir: ${data_setup.data_dir_metrics}
     annotations_dir: ${data_setup.annotations_dir_metrics}
     annotation_label: ${data_setup.annotation_label_metrics}
-    metrics: ["iou", "precision", "recall", "f1"]
+    metrics: ["iou", "precision", "recall", "f1", "weighted_f1"]
+    f1_weight: 0.75
 print_results: true
-plot_results: true
+plot_results: false
 # target_filenames: ["K102428.svs"]
 # target_filenames: ["K102489.svs"]
 target_filenames: [

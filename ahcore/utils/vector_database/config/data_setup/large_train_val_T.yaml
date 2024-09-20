@@ -1,0 +1,8 @@
+data_description_path_annotated: "/home/e.marcus/projects/ahcore/ahcore/utils/vector_database/config/data_description/susan_komen_annotated_T.yaml"
+
+train_collection_name: susan_komen_uni_train_concat
+test_collection_name: susan_komen_uni_val_concat
+
+data_dir_metrics: "/processing/e.marcus/susankomen_data/images/"
+annotations_dir_metrics: "/processing/e.marcus/susankomen_data/annotations/v20250625"
+annotation_label_metrics: "T"

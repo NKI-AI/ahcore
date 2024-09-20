@@ -1,0 +1,21 @@
+_target_: ahcore.utils.data.DataDescription
+data_dir: "/processing/e.marcus/susankomen_data/images/"
+annotations_dir: "/processing/e.marcus/susankomen_data/annotations/v20250625"
+manifest_database_uri: sqlite:////home/e.marcus/projects/ahcore/testdb/susan_komen_train.db
+manifest_name: v20240708vDEBUG
+split_version: "v1"
+roi_name: "T" # This is the name of the label that carries the ROI
+training_grid:
+  mpp: 0.5
+  output_tile_size: null
+  tile_size: [224, 224]
+  tile_overlap: [0, 0]
+inference_grid:
+  mpp: 0.5
+  output_tile_size: null
+  tile_size: [224, 224]
+  tile_overlap: [0, 0]
+
+num_classes: 2
+index_map:
+  T: 1
