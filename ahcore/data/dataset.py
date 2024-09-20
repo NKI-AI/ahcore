@@ -12,7 +12,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from dlup.data.dataset import Dataset, TiledWsiDataset
-from torch.utils.data import DataLoader, DistributedSampler, WeightedRandomSampler, RandomSampler, Sampler, SequentialSampler
+from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sampler, SequentialSampler
 
 from ahcore.utils.data import DataDescription, basemodel_to_uuid
 from ahcore.utils.debug_utils import time_it
@@ -302,42 +302,14 @@ class DlupDataModule(pl.LightningDataModule):
 
         return obj
 
-    def _construct_weighted_sampler(self, dataset: ConcatDataset) -> WeightedRandomSampler:
-        """Constructs a weighted sampler based on the .mrxs extension."""
-        # Initialize weights list based on dataset length
-        weights = torch.ones(len(dataset))  # Initialize all weights to 1.0
-
-        # Loop through datasets and adjust weights for .mrxs datasets
-        for i, ds in enumerate(dataset.datasets):
-            # Check if the dataset has a .mrxs extension
-            if hasattr(ds, 'path') and ds.path.suffix == ".mrxs":
-                start_idx = dataset.cumulative_sizes[i - 1] if i > 0 else 0  # Get the start index for the current dataset
-                end_idx = start_idx + len(ds)  # Get the end index for the current dataset
-                weights[start_idx:end_idx] = 10.0
-
-        sampler = WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
-        return sampler
-
     def train_dataloader(self) -> Optional[DataLoader[DlupDatasetSample]]:
         if not self._fit_data_iterator:
             self.setup("fit")
         assert self._fit_data_iterator
-        dataset = self._construct_concatenated_dataloader(
+        return self._construct_concatenated_dataloader(
             self._fit_data_iterator,
             batch_size=self._batch_size,
             stage="fit",
-        ).dataset
-
-        sampler = self._construct_weighted_sampler(dataset)
-
-        return DataLoader(
-            dataset,
-            num_workers=self._num_workers,
-            sampler=sampler,
-            batch_size=self._batch_size,
-            drop_last=True,
-            persistent_workers=self._persistent_workers,
-            pin_memory=self._pin_memory,
         )
 
     def val_dataloader(self) -> Optional[DataLoader[DlupDatasetSample]]:

@@ -11,28 +11,29 @@ class LogImagesCallback(pl.Callback):
         self._already_seen_scanner = []
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0) -> None:
-        scanner_name = None
-        val_images = batch['image']
-        path = batch['path'][0]
-        if path.split('.')[-1] == 'svs':
-            scanner_name = "Aperio"
-        elif path.split('.')[-1] == 'mrxs':
-            scanner_name = "P1000"
+        if trainer.current_epoch % 10 == 0:
+            scanner_name = None
+            val_images = batch['image']
+            path = batch['path'][0]
+            if path.split('.')[-1] == 'svs':
+                scanner_name = "Aperio"
+            elif path.split('.')[-1] == 'mrxs':
+                scanner_name = "P1000"
 
-        if scanner_name not in self._already_seen_scanner:
-            val_images_numpy = val_images.permute(0, 2, 3, 1).detach().cpu().numpy()
-            val_images_numpy = (val_images_numpy - val_images_numpy.min()) / (
-                        val_images_numpy.max() - val_images_numpy.min())
+            if scanner_name not in self._already_seen_scanner:
+                val_images_numpy = val_images.permute(0, 2, 3, 1).detach().cpu().numpy()
+                val_images_numpy = (val_images_numpy - val_images_numpy.min()) / (
+                            val_images_numpy.max() - val_images_numpy.min())
 
-            val_predictions = outputs['prediction']
-            val_predictions_numpy = val_predictions.permute(0, 2, 3, 1).detach().cpu().numpy()
+                val_predictions = outputs['prediction']
+                val_predictions_numpy = val_predictions.permute(0, 2, 3, 1).detach().cpu().numpy()
 
-            val_targets = batch['target']
-            val_targets_numpy = val_targets.permute(0, 2, 3, 1).detach().cpu().numpy()
+                val_targets = batch['target']
+                val_targets_numpy = val_targets.permute(0, 2, 3, 1).detach().cpu().numpy()
 
-            self._plot_and_log(val_images_numpy, val_predictions_numpy, val_targets_numpy, pl_module, trainer.global_step,
-                               batch_idx, scanner_name)
-            self._already_seen_scanner.append(scanner_name)
+                self._plot_and_log(val_images_numpy, val_predictions_numpy, val_targets_numpy, pl_module, trainer.global_step,
+                                   batch_idx, scanner_name)
+                self._already_seen_scanner.append(scanner_name)
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._already_seen_scanner = []
