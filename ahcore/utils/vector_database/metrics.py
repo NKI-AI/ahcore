@@ -57,7 +57,9 @@ class Metrics:
 
     def __init__(
         self,
-        data_description: DataDescription,
+        data_dir: str,
+        annotations_dir: str,
+        annotation_label: str,
         metrics: List[str],
         tile_size: int = 224,
         annotation_threshold: float = 0.5,
@@ -69,7 +71,6 @@ class Metrics:
             data_description (DataDescription): The data description object.
             metrics (List[str]): List of metrics to compute as strings.
         """
-        self.data_description = data_description
         self.metrics = [MetricType.from_value(m) for m in metrics]
         self.metric_functions = {
             MetricType.IOU: self.compute_iou,
@@ -79,6 +80,10 @@ class Metrics:
         }
         self.tile_size = tile_size  # Assuming square tiles
         self.annotation_threshold = annotation_threshold
+
+        self.data_dir = data_dir
+        self.annotations_dir = annotations_dir
+        self.annotation_label = annotation_label
 
         self._max_distance = 15000  # Maximum distance used to avoid other slices in the same WSI
         self._aggregated_values: Dict[str, float] = {
@@ -235,12 +240,12 @@ class Metrics:
         """
         image_filename, annotations_filename = generate_paths(
             filename,
-            self.data_description.data_dir,
-            self.data_description.annotations_dir,
+            self.data_dir,
+            self.annotations_dir,
         )
         image = SlideImage.from_file_path(image_filename, internal_handler="vips")
         annotation = WsiAnnotations.from_geojson(annotations_filename)
-        annotation.filter(self.data_description.roi_name)
+        annotation.filter(self.annotation_label)
         return image, annotation
 
     def create_hit_annotations(self, hits: List[Hit], image: SlideImage, annotation: WsiAnnotations) -> WsiAnnotations:

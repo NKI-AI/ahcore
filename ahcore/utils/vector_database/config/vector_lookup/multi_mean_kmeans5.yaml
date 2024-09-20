@@ -7,6 +7,11 @@ min_count: 7
 limit_results: 15000
 range_filter: 1.
 force_recompute_annotated_vectors: false
+metric_config:
+    data_dir: ${data_setup.data_dir_metrics}
+    annotations_dir: ${data_setup.annotations_dir_metrics}
+    annotation_label: ${data_setup.annotation_label_metrics}
+    metrics: ["iou", "precision", "recall", "f1"]
 print_results: true
 plot_results: true
 # target_filenames: ["K102428.svs"]

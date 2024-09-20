@@ -22,6 +22,7 @@ def perform_vector_lookup(
     reduce_method: str,
     search_radius: list[float] | float,
     target_filenames: list[str] | str,
+    metric_config: dict[str, Any],
     annotated_search_kwargs: dict[str, Any] = {},
     ranker: WeightedRanker | RRFRanker | None = None,
     force_recompute_annotated_vectors: bool = False,
@@ -32,8 +33,9 @@ def perform_vector_lookup(
     plot_results: bool = False,
     num_processes: int = 0,
 ) -> dict[str, list[float]] | None:
+    # This data description contains the db we consider, the labels, roi_name etc.
     data_description_annotated = load_data_description(data_setup["data_description_path_annotated"])
-    data_description_test = load_data_description(data_setup["data_description_path_test"])
+
     train_collection_name = data_setup["train_collection_name"]
     test_collection_name = data_setup["test_collection_name"]
 
@@ -43,7 +45,6 @@ def perform_vector_lookup(
 
     vec_searcher = VectorSearcher(
         collection_name=test_collection_name,
-        data_description=data_description_test,
         alias=os.environ.get("MILVUS_ALIAS"),
         use_partitions=False,
     )
@@ -122,7 +123,7 @@ def perform_vector_lookup(
             all_search_results.extend(search_results)
 
     logger.info("Computing metrics")
-    metrics = Metrics(data_description=data_description_test, metrics=["iou", "precision", "recall", "f1"])
+    metrics = Metrics(**metric_config)
     metrics_per_wsi, global_metrics = metrics.compute_metrics(all_search_results, plot_results=plot_results)
 
     if print_results:

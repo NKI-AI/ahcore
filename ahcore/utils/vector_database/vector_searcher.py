@@ -14,19 +14,15 @@ dotenv.load_dotenv(override=True)
 
 
 class VectorSearcher:
-    # TODO: Async search
-    # TODO: update types or convert search result to dicts
     def __init__(
         self,
         collection_name: str,
-        data_description: DataDescription,
         use_partitions: bool,
         index_param: dict[str, Any] | None = None,
         alias: str = "default",
     ):
         self.collection_name = collection_name
         self.alias = alias
-        self.data_description = data_description
         self._vector_entry_name = "embedding"  # The vector entry in the Milvus collection
 
         if use_partitions:
