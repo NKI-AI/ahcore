@@ -29,7 +29,7 @@ class TileMetric:
 
 
 class DiceMetric(TileMetric):
-    def __init__(self, data_description: DataDescription) -> None:
+    def __init__(self, data_description: DataDescription, ignore_index: int) -> None:
         r"""
         Metric computing dice over classes. The classes are derived from the index_map that's defined in the
         data_description.
@@ -50,6 +50,9 @@ class DiceMetric(TileMetric):
         Parameters
         ----------
         data_description : DataDescription
+            The data description object.
+        ignore_index : int
+            The index to ignore in the computation of the dice score.
         """
         super().__init__(data_description=data_description)
         self._num_classes = self._data_description.num_classes
@@ -64,6 +67,7 @@ class DiceMetric(TileMetric):
         _label_to_class = {v: k for k, v in _index_map.items()}
         _label_to_class[0] = "background"
         self._label_to_class = _label_to_class
+        self._ignore_index = ignore_index
 
         self.name = "dice"
 
@@ -77,7 +81,11 @@ class DiceMetric(TileMetric):
             dice_score = _compute_dice(intersection, cardinality)
             dices.append(dice_score)
 
-        output = {f"{self.name}/{self._label_to_class[idx]}": dices[idx] for idx in range(0, self._num_classes)}
+        output = {
+            f"{self.name}/{self._label_to_class[idx]}": dices[idx]
+            for idx in range(0, self._num_classes)
+            if idx != self._ignore_index
+        }
         return output
 
     def __repr__(self) -> str:
@@ -162,9 +170,12 @@ class WSIMetric(abc.ABC):
 class WSIDiceMetric(WSIMetric):
     """WSI Dice metric class, computes the dice score over the whole WSI"""
 
-    def __init__(self, data_description: DataDescription, compute_overall_dice: bool = False) -> None:
+    def __init__(
+        self, data_description: DataDescription, ignore_index: int, compute_overall_dice: bool = False
+    ) -> None:
         super().__init__(data_description=data_description)
         self.compute_overall_dice = compute_overall_dice
+        self._ignore_index = ignore_index
         self._num_classes = self._data_description.num_classes
         # self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._device = "cpu"
@@ -200,11 +211,15 @@ class WSIDiceMetric(WSIMetric):
             self._num_classes,
         )
         for class_idx, (intersection, cardinality) in enumerate(dice_components):
+            if class_idx == self._ignore_index:
+                continue
             self.wsis[wsi_name][class_idx]["intersection"] += intersection
             self.wsis[wsi_name][class_idx]["cardinality"] += cardinality
 
     def get_wsi_score(self, wsi_name: str) -> None:
         for class_idx in self.wsis[wsi_name]:
+            if class_idx == self._ignore_index:
+                continue
             intersection = self.wsis[wsi_name][class_idx]["intersection"]
             cardinality = self.wsis[wsi_name][class_idx]["cardinality"]
             self.wsis[wsi_name][class_idx]["wsi_dice"] = _compute_dice(intersection, cardinality)
@@ -225,18 +240,24 @@ class WSIDiceMetric(WSIMetric):
                 "overall_dice": 0.0,
             }
             for class_idx in range(self._num_classes)
+            if class_idx != self._ignore_index
         }
         for wsi_name in self.wsis:
             for class_idx in range(self._num_classes):
+                if class_idx == self._ignore_index:
+                    continue
                 overall_dices[class_idx]["total_intersection"] += self.wsis[wsi_name][class_idx]["intersection"]
                 overall_dices[class_idx]["total_cardinality"] += self.wsis[wsi_name][class_idx]["cardinality"]
         for class_idx in overall_dices.keys():
+            if class_idx == self._ignore_index:
+                continue
             intersection = overall_dices[class_idx]["total_intersection"]
             cardinality = overall_dices[class_idx]["total_cardinality"]
             overall_dices[class_idx]["overall_dice"] = (2 * intersection + 0.01) / (cardinality + 0.01)
         return {
             class_idx: torch.tensor(overall_dices[class_idx]["overall_dice"]).item()
             for class_idx in overall_dices.keys()
+            if class_idx != self._ignore_index
         }
 
     def _get_dice_averaged_over_total_wsis(self) -> dict[int, float]:
@@ -248,16 +269,26 @@ class WSIDiceMetric(WSIMetric):
         dict
             Dictionary with the dice scores averaged over all the WSIs per class
         """
-        dices: dict[int, list[float]] = {class_idx: [] for class_idx in range(self._num_classes)}
+        dices: dict[int, list[float]] = {
+            class_idx: [] for class_idx in range(self._num_classes) if class_idx != self._ignore_index
+        }
         for wsi_name in self.wsis:
             self.get_wsi_score(wsi_name)
             for class_idx in range(self._num_classes):
+                if class_idx == self._ignore_index:
+                    continue
                 dices[class_idx].append(self.wsis[wsi_name][class_idx]["dice"].item())
-        return {class_idx: sum(dices[class_idx]) / len(dices[class_idx]) for class_idx in dices.keys()}
+        return {
+            class_idx: sum(dices[class_idx]) / len(dices[class_idx])
+            for class_idx in dices.keys()
+            if class_idx != self._ignore_index
+        }
 
     def _initialize_wsi_dict(self, wsi_name: str) -> None:
         self.wsis[wsi_name] = {
-            class_idx: {"intersection": 0, "cardinality": 0, "dice": None} for class_idx in range(self._num_classes)
+            class_idx: {"intersection": 0, "cardinality": 0, "dice": None}
+            for class_idx in range(self._num_classes)
+            if class_idx != self._ignore_index
         }
 
     def get_average_score(
@@ -275,7 +306,11 @@ class WSIDiceMetric(WSIMetric):
             dices = self._get_overall_dice()
         else:
             dices = self._get_dice_averaged_over_total_wsis()
-        avg_dict = {f"{self.name}/{self._label_to_class[idx]}": value for idx, value in dices.items()}
+        avg_dict = {
+            f"{self.name}/{self._label_to_class[idx]}": value
+            for idx, value in dices.items()
+            if idx != self._ignore_index
+        }
         return avg_dict
 
     @staticmethod
