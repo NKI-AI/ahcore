@@ -10,6 +10,7 @@ from typing import Any, List, Tuple
 
 import torch
 import torch.nn.functional as F  # noqa
+from monai.metrics.surface_dice import compute_surface_dice
 
 from ahcore.exceptions import ConfigurationError
 from ahcore.utils.data import DataDescription
@@ -159,10 +160,155 @@ class WSIMetric(abc.ABC):
         pass
 
 
+class WSiSurfaceDiceMetric(WSIMetric):
+    def __init__(
+        self,
+        data_description: DataDescription,
+        class_thresholds: List[float],
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(data_description=data_description)
+        self._class_thresholds = class_thresholds
+        self._device = "cpu"
+        # Invert the index map
+        _index_map = {}
+        if self._data_description.index_map is None:
+            raise ConfigurationError("`index_map` is required for to setup the wsi-dice metric.")
+        else:
+            _index_map = self._data_description.index_map
+
+        _label_to_class: dict[int, str] = {v: k for k, v in _index_map.items()}
+        _label_to_class[0] = "background"
+        self._label_to_class = _label_to_class
+        self._num_classes = self._data_description.num_classes
+
+    @property
+    def name(self) -> str:
+        return "wsi_surface_dice"
+
+    def process_batch(
+        self,
+        predictions: torch.Tensor,
+        target: torch.Tensor,
+        roi: torch.Tensor | None,
+        wsi_name: str,
+    ) -> None:
+        if wsi_name not in self.wsis:
+            self._initialize_wsi_dict(wsi_name)
+        surface_dice_components = self._get_surface_dice(predictions, target, roi)
+        for class_idx in range(0, self._num_classes):
+            self.wsis[wsi_name][class_idx]["surface_dice"] += surface_dice_components[0, class_idx]
+        self.wsis[wsi_name]["total_tiles"] += 1
+
+    def get_wsi_score(self, wsi_name: str) -> None:
+        for class_idx in range(self._num_classes):
+            self.wsis[wsi_name][class_idx]["wsi_surface_dice"] = (
+                self.wsis[wsi_name][class_idx]["surface_dice"] / self.wsis[wsi_name]["total_tiles"]
+            )
+
+    def one_hot_encode(self, predictions: torch.Tensor) -> torch.Tensor:
+        # Create a tensor of zeros with shape (batch_size, num_classes, height, width)
+        one_hot = torch.zeros(predictions.size(0), self._num_classes, predictions.size(1), predictions.size(2))
+
+        # Scatter 1s in the appropriate locations
+        one_hot = one_hot.scatter_(1, predictions.unsqueeze(1), 1.0)
+
+        return one_hot
+
+    def _get_surface_dice(
+        self,
+        predictions: torch.Tensor,
+        target: torch.Tensor,
+        roi: torch.Tensor | None,
+    ) -> torch.Tensor:
+        # One-hot encode the predictions and target
+        arg_max_predictions = predictions.argmax(dim=1)
+        one_hot_predictions = self.one_hot_encode(arg_max_predictions)
+
+        if roi is not None:
+            one_hot_predictions = one_hot_predictions * roi.squeeze(1)
+            target = target * roi.squeeze(1)
+
+        surface_dice = compute_surface_dice(
+            one_hot_predictions,
+            target,
+            class_thresholds=self._class_thresholds,
+            distance_metric="chessboard",
+            include_background=True,
+        )
+
+        surface_dice[surface_dice.isnan()] = torch.ones(1)
+
+        return surface_dice
+
+    def _get_surface_dice_averaged_over_total_wsis(self) -> dict[int, float]:
+        surface_dices: dict[int, list[float]] = {class_idx: [] for class_idx in range(self._num_classes)}
+        for wsi_name in self.wsis:
+            self.get_wsi_score(wsi_name)
+            for class_idx in range(self._num_classes):
+                surface_dices[class_idx].append(
+                    self.wsis[wsi_name][class_idx]["surface_dice"] / self.wsis[wsi_name]["total_tiles"]
+                )
+        return {
+            class_idx: sum(surface_dices[class_idx]) / len(surface_dices[class_idx])
+            for class_idx in surface_dices.keys()
+        }
+
+    def _initialize_wsi_dict(self, wsi_name: str) -> None:
+        self.wsis[wsi_name] = {class_idx: {"surface_dice": torch.zeros(1)} for class_idx in range(self._num_classes)}
+        self.wsis[wsi_name]["total_tiles"] = 0
+
+    def get_average_score(
+        self, precomputed_output: list[list[dict[str, dict[str, float]]]] | None = None
+    ) -> dict[Any, Any]:
+        surface_dices = self._get_surface_dice_averaged_over_total_wsis()
+        avg_dict = {
+            f"{self.name}/surface_dice/{self._label_to_class[idx]}": value for idx, value in surface_dices.items()
+        }
+        return avg_dict
+
+    @staticmethod
+    def static_average_wsi_surface_dice(
+        precomputed_output: list[list[dict[str, dict[str, float]]]]
+    ) -> dict[str, float]:
+        """Static method to compute the average WSI surface dice score over a list of WSI surface dice scores,
+        useful for multiprocessing."""
+        # Initialize defaultdicts to handle the sum and count of dice scores for each class
+        class_sum: dict[str, float] = defaultdict(float)
+        class_count: dict[str, int] = defaultdict(int)
+
+        # Flatten the list and extract 'wsi_dice' dictionaries
+        wsi_surface_dices: list[dict[str, float]] = [
+            wsi_metric.get("wsi_surface_dice", {}) for sublist in precomputed_output for wsi_metric in sublist
+        ]
+        # Check if the list is empty -- then the precomputed output did not contain any wsi dice scores
+        if not wsi_surface_dices:
+            return {}
+
+        # Update sum and count for each class in a single pass
+        for wsi_surface_dice in wsi_surface_dices:
+            for class_name, surface_dice_score in wsi_surface_dice.items():
+                class_sum[class_name] += surface_dice_score
+                class_count[class_name] += 1
+
+        # Compute average dice scores in a dictionary comprehension with consistent naming
+        avg_surface_dice_scores = {
+            f"{'wsi_surface_dice'}/{class_name}": class_sum[class_name] / class_count[class_name]
+            for class_name in class_sum.keys()
+        }
+        return avg_surface_dice_scores
+
+    def reset(self) -> None:
+        self.wsis = {}
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(num_classes={self._num_classes})"
+
+
 class WSIDiceMetric(WSIMetric):
     """WSI Dice metric class, computes the dice score over the whole WSI"""
 
-    def __init__(self, data_description: DataDescription, compute_overall_dice: bool = False) -> None:
+    def __init__(self, data_description: DataDescription, compute_overall_dice: bool = False, **kwargs: Any) -> None:
         super().__init__(data_description=data_description)
         self.compute_overall_dice = compute_overall_dice
         self._num_classes = self._data_description.num_classes
@@ -331,7 +477,8 @@ class WSIMetricFactory:
     @classmethod
     def for_segmentation(cls, *args: Any, **kwargs: Any) -> WSIMetricFactory:
         dices = WSIDiceMetric(*args, **kwargs)
-        return cls([dices])
+        surface_dices = WSiSurfaceDiceMetric(*args, **kwargs)
+        return cls([dices, surface_dices])
 
     @classmethod
     def for_wsi_classification(cls, *args: Any, **kwargs: Any) -> WSIMetricFactory:
