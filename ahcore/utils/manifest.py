@@ -62,7 +62,10 @@ _AnnotationReaders: _AnnotationReadersDict = {
     "DARWIN_JSON": WsiAnnotations.from_darwin_json,
     "GEOJSON": WsiAnnotations.from_geojson,
     "PYVIPS": functools.partial(SlideImage.from_file_path, backend=DLUPImageBackend.PYVIPS),
-    "TIFFFILE": functools.partial(SlideImage.from_file_path, backend=DLUPImageBackend.TIFFFILE),
+    "TIFFFILE": functools.partial(
+        SlideImage.from_file_path,
+        backend=DLUPImageBackend.TIFFFILE,
+    ),
     "OPENSLIDE": functools.partial(SlideImage.from_file_path, backend=DLUPImageBackend.OPENSLIDE),
 }
 
@@ -200,11 +203,12 @@ def get_relevant_feature_info_from_record(
     return image_path, mpp, tile_size, tile_overlap, backend, overwrite_mpp
 
 
-def _get_rois(mask: Optional[WsiAnnotations], data_description: DataDescription, stage: str) -> Optional[Rois]:
+def _get_rois(mask: Optional[_AnnotationReturnTypes], data_description: DataDescription, stage: str) -> Optional[Rois]:
     if (mask is None) or (stage != "fit") or (not data_description.convert_mask_to_rois):
         return None
 
     assert data_description.training_grid is not None
+    assert isinstance(mask, WsiAnnotations)  # this is necessary for the compute_rois to work
 
     tile_size = data_description.training_grid.tile_size
     tile_overlap = data_description.training_grid.tile_overlap
@@ -485,7 +489,7 @@ def get_image_info(
             raise ValueError(f"Grid (for stage {stage}) is not defined in the data description.")
 
         mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
-        assert isinstance(mask, WsiAnnotations) or (mask is None)
+        assert isinstance(mask, WsiAnnotations) or (mask is None) or isinstance(mask, SlideImage)
         mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
         rois = _get_rois(mask, data_description, stage)
 
@@ -495,7 +499,11 @@ def get_image_info(
         backend = DLUPImageBackend[str(image.reader)]
         mpp = getattr(grid_description, "mpp", 1.0)
         overwrite_mpp = float(image.mpp)
-        tile_mode = TilingMode.overflow
+        tile_mode = (
+            TilingMode(data_description.tiling_mode)
+            if data_description.tiling_mode is not None
+            else TilingMode.overflow
+        )
         output_tile_size = getattr(grid_description, "output_tile_size", None)
 
         # Update the dictionary with the actual values
@@ -535,7 +543,7 @@ def datasets_from_data_description(
         split_category=stage,
     )
 
-    for patient in patients:
+    for patient_idx, patient in enumerate(patients):
         patient_labels = get_labels_from_record(patient)
 
         for image in patient.images:
@@ -583,7 +591,7 @@ def datasets_from_data_description(
                 and all(isinstance(i, int) for i in output_tile_size)  # pylint: disable=not-an-iterable
                 or (output_tile_size is None)
             )
-            assert isinstance(mask, WsiAnnotations) or (mask is None)
+            assert isinstance(mask, WsiAnnotations) or (mask is None) or isinstance(mask, SlideImage)
             assert isinstance(mask_threshold, float) or mask_threshold is None
             assert isinstance(annotations, WsiAnnotations) or (annotations is None)
 

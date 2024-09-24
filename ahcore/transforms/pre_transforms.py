@@ -5,7 +5,6 @@ dataset.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Callable
 
 import numpy as np
@@ -26,7 +25,9 @@ logger = get_logger(__name__)
 
 
 class PreTransformTaskFactory:
-    def __init__(self, transforms: list[PreTransformCallable]):
+    def __init__(
+        self, transforms: list[PreTransformCallable], data_description: DataDescription, requires_target: bool
+    ) -> None:
         """
         Pre-transforms are transforms that are applied to the samples directly originating from the dataset.
         These transforms are typically the same for the specific tasks (e.g., segmentation,
@@ -71,7 +72,7 @@ class PreTransformTaskFactory:
         """
         transforms: list[PreTransformCallable] = []
         if not requires_target:
-            return cls(transforms)
+            return cls(transforms, data_description, requires_target)
 
         if data_description.index_map is None:
             raise ConfigurationError("`index_map` is required for segmentation models when the target is required.")
@@ -88,7 +89,7 @@ class PreTransformTaskFactory:
         if not multiclass:
             transforms.append(OneHotEncodeMask(index_map=data_description.index_map))
 
-        return cls(transforms)
+        return cls(transforms, data_description, requires_target)
 
     @classmethod
     def for_wsi_classification(
@@ -99,7 +100,7 @@ class PreTransformTaskFactory:
         transforms.append(SampleNFeatures(n=1000))
 
         if not requires_target:
-            return cls(transforms)
+            return cls(transforms, data_description, requires_target)
 
         index_map = data_description.index_map
         if index_map is None:
@@ -112,7 +113,7 @@ class PreTransformTaskFactory:
 
         transforms.append(LabelToClassIndex(index_map=index_map))
 
-        return cls(transforms)
+        return cls(transforms, data_description, requires_target)
 
     def __call__(self, data: DlupDatasetSample) -> DlupDatasetSample:
         for transform in self._transforms:
@@ -311,9 +312,10 @@ class ImageToTensor:
 
         if "labels" in sample.keys() and sample["labels"] is not None:
             for key, value in sample["labels"].items():
-                sample["labels"][key] = torch.tensor(value, dtype=torch.float32)
-                if sample["labels"][key].dim() == 0:
-                    sample["labels"][key] = sample["labels"][key].unsqueeze(0)
+                if isinstance(value, float) or isinstance(value, int):
+                    sample["labels"][key] = torch.tensor(value, dtype=torch.float32)
+                    if sample["labels"][key].dim() == 0:
+                        sample["labels"][key] = sample["labels"][key].unsqueeze(0)
 
         # annotation_data is added by the ConvertPolygonToMask transform.
         if "annotation_data" not in sample:

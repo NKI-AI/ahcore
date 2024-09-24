@@ -155,7 +155,7 @@ class WriteFileCallback(AbstractWriterCallback):
             tile_size = (1, 1)
             tile_overlap = (0, 0)
             num_samples = num_samples
-            grid = None  # just let the writer make a new grid
+            grid = current_dataset._grids[0][0]  # give grid, bc doesn't work otherwise
 
         else:
             raise NotImplementedError(f"Data format {data_format} is not yet supported.")

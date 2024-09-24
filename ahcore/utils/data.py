@@ -69,3 +69,4 @@ class DataDescription(BaseModel):
     convert_mask_to_rois: bool = True
     use_roi: bool = True
     apply_color_profile: bool = False
+    tiling_mode: Optional[str] = None
