@@ -149,17 +149,12 @@ class FeatureDescription(Base):
     tile_size_height = Column(Integer)
     tile_overlap_width = Column(Integer)
     tile_overlap_height = Column(Integer)
-    description = Column(String)
 
     # use this to select which features we want to use
     version = Column(String, unique=True, nullable=False)
 
     model_name = Column(String)
-    model_path = Column(String)
     feature_dimension = Column(Integer)
-    image_transforms_description = Column(String)
-    # it would be nice to have a way to track which transforms the feature extractors used,
-    # but maybe this is not the best way to do it
 
     features: Mapped[List["ImageFeature"]] = relationship("ImageFeature", back_populates="feature_description")
 

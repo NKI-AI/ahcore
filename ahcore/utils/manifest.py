@@ -169,14 +169,7 @@ def get_labels_from_record(record: Image | Patient) -> list[tuple[str, str]] | N
 
 def get_relevant_feature_info_from_record(
     record: ImageFeature, data_description: DataDescription, feature_description: FeatureDescription
-) -> tuple[
-    Path,
-    PositiveFloat,
-    tuple[PositiveInt, PositiveInt],
-    tuple[PositiveInt, PositiveInt],
-    ImageBackend,
-    PositiveFloat,
-]:
+) -> ImageInfoDict:
     """Get the features from a record of type Image.
 
     Parameters
@@ -200,7 +193,68 @@ def get_relevant_feature_info_from_record(
 
     backend = ImageBackend[str(record.reader)].value
     overwrite_mpp = float(feature_description.mpp)
-    return image_path, mpp, tile_size, tile_overlap, backend, overwrite_mpp
+
+    output_dict: ImageInfoDict = {
+        "image_path": image_path,
+        "tile_size": tile_size,
+        "tile_overlap": tile_overlap,
+        "backend": backend,
+        "mpp": mpp,
+        "overwrite_mpp": overwrite_mpp,
+        "tile_mode": TilingMode.skip,
+        "output_tile_size": None,
+        "mask": None,
+        "mask_threshold": None,
+        "rois": None,
+        "annotations": None,
+    }
+
+    return output_dict
+
+
+def get_relevant_image_info_from_record(
+    image: Image, data_description: DataDescription, annotations_root: Path, stage: str
+) -> ImageInfoDict:
+    if stage == "fit":
+        grid_description = data_description.training_grid
+    else:
+        grid_description = data_description.inference_grid
+
+    if grid_description is None:
+        raise ValueError(f"Grid (for stage {stage}) is not defined in the data description.")
+
+    mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
+    assert isinstance(mask, WsiAnnotations) or (mask is None) or isinstance(mask, SlideImage)
+    mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
+    rois = _get_rois(mask, data_description, stage)
+
+    image_path = data_description.data_dir / image.filename
+    tile_size = grid_description.tile_size
+    tile_overlap = grid_description.tile_overlap
+    backend = DLUPImageBackend[str(image.reader)]
+    mpp = getattr(grid_description, "mpp", 1.0)
+    overwrite_mpp = float(image.mpp)
+    tile_mode = (
+        TilingMode(data_description.tiling_mode) if data_description.tiling_mode is not None else TilingMode.overflow
+    )
+    output_tile_size = getattr(grid_description, "output_tile_size", None)
+
+    output_dict: ImageInfoDict = {
+        "image_path": image_path,
+        "tile_size": tile_size,
+        "tile_overlap": tile_overlap,
+        "backend": backend,
+        "mpp": mpp,
+        "overwrite_mpp": overwrite_mpp,
+        "tile_mode": tile_mode,
+        "output_tile_size": output_tile_size,
+        "mask": mask,
+        "mask_threshold": mask_threshold,
+        "rois": rois,
+        "annotations": annotations,
+    }
+
+    return output_dict
 
 
 def _get_rois(mask: Optional[_AnnotationReturnTypes], data_description: DataDescription, stage: str) -> Optional[Rois]:
@@ -450,79 +504,14 @@ def get_image_info(
             # Directly return the initialized dictionary with None values
             return image_info
 
-        (
-            image_path,
-            mpp,
-            tile_size,
-            tile_overlap,
-            backend,
-            overwrite_mpp,
-        ) = get_relevant_feature_info_from_record(image_feature, data_description, feature_description)
-
         # Update the dictionary with the actual values
-        image_info.update(
-            {
-                "image_path": image_path,
-                "tile_size": tile_size,
-                "tile_overlap": tile_overlap,
-                "backend": backend,
-                "mpp": mpp,
-                "overwrite_mpp": overwrite_mpp,
-                "tile_mode": TilingMode.skip,
-                "output_tile_size": None,
-                "mask": None,
-                "mask_threshold": None,
-                "rois": None,
-                "annotations": None,
-            }
-        )
+        image_info.update(get_relevant_feature_info_from_record(image_feature, data_description, feature_description))
 
         return image_info
 
     else:
-        if stage == "fit":
-            grid_description = data_description.training_grid
-        else:
-            grid_description = data_description.inference_grid
-
-        if grid_description is None:
-            raise ValueError(f"Grid (for stage {stage}) is not defined in the data description.")
-
-        mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
-        assert isinstance(mask, WsiAnnotations) or (mask is None) or isinstance(mask, SlideImage)
-        mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
-        rois = _get_rois(mask, data_description, stage)
-
-        image_path = data_description.data_dir / image.filename
-        tile_size = grid_description.tile_size
-        tile_overlap = grid_description.tile_overlap
-        backend = DLUPImageBackend[str(image.reader)]
-        mpp = getattr(grid_description, "mpp", 1.0)
-        overwrite_mpp = float(image.mpp)
-        tile_mode = (
-            TilingMode(data_description.tiling_mode)
-            if data_description.tiling_mode is not None
-            else TilingMode.overflow
-        )
-        output_tile_size = getattr(grid_description, "output_tile_size", None)
-
         # Update the dictionary with the actual values
-        image_info.update(
-            {
-                "image_path": image_path,
-                "tile_size": tile_size,
-                "tile_overlap": tile_overlap,
-                "backend": backend,
-                "mpp": mpp,
-                "overwrite_mpp": overwrite_mpp,
-                "tile_mode": tile_mode,
-                "output_tile_size": output_tile_size,
-                "mask": mask,
-                "mask_threshold": mask_threshold,
-                "rois": rois,
-                "annotations": annotations,
-            }
-        )
+        image_info.update(get_relevant_image_info_from_record(image, data_description, annotations_root, stage))
 
         return image_info
 
