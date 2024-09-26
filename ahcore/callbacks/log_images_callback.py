@@ -187,6 +187,6 @@ class LogImagesCallback(pl.Callback):
 
 def apply_color_map(image, color_map, num_classes) -> np.ndarray:
     colored_image = np.zeros((*image.shape, 3), dtype=np.uint8)
-    for i in range(1, num_classes - 1):
+    for i in range(1, num_classes):
         colored_image[image == i] = color_map[i]
     return colored_image
