@@ -86,3 +86,21 @@ class ViTEmbedMode(str, Enum):
     CONCAT_MEAN = "embed_concat_mean"
     CONCAT = "embed_concat"
     # Extend as necessary
+
+
+class ScannerEnum(Enum):
+    SVS = ("svs", "Aperio")
+    MRXS = ("mrxs", "P1000")
+    DEFAULT = ("default", "Unknown Scanner")
+
+    def __init__(self, extension, scanner_name):
+        self.extension = extension
+        self.scanner_name = scanner_name
+
+    @classmethod
+    def get_scanner_name(cls, file_extension):
+        for scanner in cls:
+            if scanner.extension == file_extension:
+                return scanner.scanner_name
+        # Return a default value if extension is not found
+        return cls.DEFAULT.scanner_name
