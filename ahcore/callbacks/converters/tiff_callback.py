@@ -115,7 +115,7 @@ def _write_tiff(
     file_reader: Type[FileImageReader],
     iterator_from_reader: Callable[[FileImageReader, tuple[int, int]], Iterator[npt.NDArray[np.int_]]],
 ) -> None:
-    with file_reader(filename, stitching_mode=StitchingMode.CROP) as cache_reader:
+    with file_reader(filename, stitching_mode=StitchingMode.AVERAGE) as cache_reader:
         writer = TifffileImageWriter(
             filename.with_suffix(".tiff"),
             size=cache_reader.size,
