@@ -180,8 +180,17 @@ class LogImagesCallback(pl.Callback):
             plt.axis("off")
             plt.tight_layout()
 
-        artifact_file_name = f"validation_global_step{step:03d}_batch{batch_idx:03d}.png"
-        pl_module.logger.experiment.log_figure(pl_module.logger.run_id, figure, artifact_file=artifact_file_name)
+        logger = pl_module.logger
+
+        if hasattr(logger.experiment, "log_figure"):  # MLFlow logger case
+            artifact_file_name = f"validation_global_step{step:03d}_batch{batch_idx:03d}.png"
+            logger.experiment.log_figure(logger.run_id, figure, artifact_file=artifact_file_name)
+        elif hasattr(logger.experiment, "add_figure"):  # TensorBoard logger case
+            logger.experiment.add_figure(f"validation_step_{step}_batch_{batch_idx}", figure, global_step=step)
+        else:
+            # If another logger is being used, raise a warning or add additional logic
+            raise NotImplementedError(f"Logging method for logger {type(logger).__name__} not implemented.")
+
         plt.close()
 
 
