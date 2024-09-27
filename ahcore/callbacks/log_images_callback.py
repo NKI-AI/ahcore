@@ -156,6 +156,7 @@ class LogImagesCallback(pl.Callback):
         scanner_name: str,
         dices: List[dict[int, float]],
     ) -> None:
+        class_wise_dice = None
         batch_size = images_numpy.shape[0]
         figure = plt.figure(figsize=(15, batch_size * 5))
         for i in range(batch_size):
@@ -176,8 +177,9 @@ class LogImagesCallback(pl.Callback):
             plt.subplot(batch_size, 3, i * 3 + 3)
             class_indices_pred = np.argmax(predictions_numpy[i], axis=-1)
             colored_img_pred = apply_color_map(class_indices_pred, self.color_map, self._num_classes)
-            if dices is not None:
-                plt.title(f"Dice: {class_wise_dice[1]:.2f} {class_wise_dice[2]:.2f} {class_wise_dice[3]:.2f}")
+            if dices is not None and class_wise_dice is not None:
+                dice_values = ' '.join([f"{class_wise_dice[i]:.2f}" for i in range(1, self._num_classes)])
+                plt.title(f"Dice: {dice_values}")
             plt.imshow(colored_img_pred)
             plt.axis("off")
             plt.tight_layout()
