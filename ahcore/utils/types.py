@@ -104,3 +104,10 @@ class ScannerEnum(Enum):
                 return scanner.scanner_name
         # Return a default value if extension is not found
         return cls.DEFAULT.scanner_name
+
+
+class LoggerEnum(Enum):
+    TENSORBOARD = "tensorboard"
+    MLFLOW = "mlflow"
+    UNKNOWN = "unknown"
+    # Extend as necessary

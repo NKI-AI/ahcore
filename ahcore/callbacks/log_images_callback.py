@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from matplotlib.colors import to_rgb
 
 from ahcore.metrics.metrics import _compute_dice
+from ahcore.utils.callbacks import AhCoreLogger
 from ahcore.utils.types import ScannerEnum
 
 
@@ -97,8 +98,11 @@ class LogImagesCallback(pl.Callback):
         self._plot_scanner_wise = plot_scanner_wise
         self._plot_every_n_epochs = plot_every_n_epochs
         self._plot_dice = plot_dice
+        self._logger: AhCoreLogger | None = None
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0) -> None:
+        if self._logger is None:
+            self._logger = AhCoreLogger(pl_module.logger)
         if trainer.current_epoch % self._plot_every_n_epochs == 0:
             val_images = batch["image"]
             roi = batch["roi"]
@@ -130,7 +134,6 @@ class LogImagesCallback(pl.Callback):
                     val_images_numpy,
                     val_predictions_numpy,
                     val_targets_numpy,
-                    pl_module,
                     trainer.global_step,
                     batch_idx,
                     scanner_name,
@@ -148,7 +151,6 @@ class LogImagesCallback(pl.Callback):
         images_numpy: np.ndarray,
         predictions_numpy: np.ndarray,
         targets_numpy: np.ndarray,
-        pl_module: "pl.LightningModule",
         step: int,
         batch_idx: int,
         scanner_name: str,
@@ -179,18 +181,7 @@ class LogImagesCallback(pl.Callback):
             plt.imshow(colored_img_pred)
             plt.axis("off")
             plt.tight_layout()
-
-        logger = pl_module.logger
-
-        if hasattr(logger.experiment, "log_figure"):  # MLFlow logger case
-            artifact_file_name = f"validation_global_step{step:03d}_batch{batch_idx:03d}.png"
-            logger.experiment.log_figure(logger.run_id, figure, artifact_file=artifact_file_name)
-        elif hasattr(logger.experiment, "add_figure"):  # TensorBoard logger case
-            logger.experiment.add_figure(f"validation_step_{step}_batch_{batch_idx}", figure, global_step=step)
-        else:
-            # If another logger is being used, raise a warning or add additional logic
-            raise NotImplementedError(f"Logging method for logger {type(logger).__name__} not implemented.")
-
+        self._logger.log_figure(figure, step, batch_idx)
         plt.close()
 
 
