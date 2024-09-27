@@ -14,6 +14,8 @@ from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
 from dlup.data.transforms import convert_annotations, rename_labels
 from dlup.tiling import Grid, GridOrder, TilingMode
+from matplotlib.figure import Figure
+from pytorch_lightning.loggers import Logger
 from shapely.geometry import MultiPoint, Point
 from torch.utils.data import Dataset
 
@@ -244,10 +246,10 @@ def get_output_filename(dump_dir: Path, input_path: Path, model_name: str, count
 
 
 class AhCoreLogger:
-    def __init__(self, logger):
-        self.logger = logger
+    def __init__(self, pl_logger: Logger | Any) -> None:
+        self.logger = pl_logger
 
-    def get_logger_type(self):
+    def get_logger_type(self) -> LoggerEnum:
         if hasattr(self.logger.experiment, "log_figure"):
             return LoggerEnum.MLFLOW
         elif hasattr(self.logger.experiment, "add_figure"):
@@ -255,7 +257,7 @@ class AhCoreLogger:
         else:
             return LoggerEnum.UNKNOWN
 
-    def log_figure(self, figure, step, batch_idx):
+    def log_figure(self, figure: Figure, step: int, batch_idx: int) -> None:
         if self.get_logger_type() == LoggerEnum.MLFLOW:
             artifact_file_name = f"validation_global_step{step:03d}_batch{batch_idx:03d}.png"
             self.logger.experiment.log_figure(self.logger.run_id, figure, artifact_file=artifact_file_name)
@@ -264,7 +266,7 @@ class AhCoreLogger:
         else:
             raise NotImplementedError(f"Logging method for logger {type(self.logger).__name__} not implemented.")
 
-    def log_metrics(self, metrics, step):
+    def log_metrics(self, metrics: dict[str, Any], step: int) -> None:
         logger_type = self.get_logger_type()
         if logger_type == LoggerEnum.MLFLOW:
             for metric_name, value in metrics.items():

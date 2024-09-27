@@ -1,4 +1,4 @@
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 
 from ahcore.metrics.metrics import _compute_dice
 from ahcore.utils.callbacks import AhCoreLogger
-from ahcore.utils.types import ScannerVendors
+from ahcore.utils.types import GenericNumberArray, ScannerVendors
 
 
 def get_sample_wise_dice_components(
@@ -64,7 +64,7 @@ def get_sample_wise_dice(
     dices = []
     dice_components = get_sample_wise_dice_components(outputs["prediction"], batch["target"], roi, num_classes)
     for samplewise_dice_components in dice_components:
-        classwise_dices_for_a_sample = {1: 0, 2: 0, 3: 0}
+        classwise_dices_for_a_sample: dict[int, float] = {1: 0.0, 2: 0.0, 3: 0.0}
         for class_idx in range(num_classes):
             if class_idx == 0:
                 continue
@@ -75,7 +75,7 @@ def get_sample_wise_dice(
     return dices
 
 
-def _extract_scanner_name(path) -> str:
+def _extract_scanner_name(path: str) -> str:
     # Extract file extension
     extension = path.split(".")[-1]
     # Use the ScannerEnum to get the scanner name
@@ -94,13 +94,21 @@ class LogImagesCallback(pl.Callback):
         super().__init__()
         self.color_map = {k: np.array(to_rgb(v)) * 255 for k, v in color_map.items()}
         self._num_classes = num_classes
-        self._already_seen_scanner = []
+        self._already_seen_scanner: List[str] = []
         self._plot_scanner_wise = plot_scanner_wise
         self._plot_every_n_epochs = plot_every_n_epochs
         self._plot_dice = plot_dice
-        self._logger: AhCoreLogger | None = None
+        self._logger: Optional[AhCoreLogger | None] = None
 
-    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0) -> None:
+    def on_validation_batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        outputs: dict[str, Any],  # type: ignore
+        batch: dict[str, Any],
+        batch_idx: int,
+        dataloader_idx: int = 0,
+    ) -> None:
         if self._logger is None:
             self._logger = AhCoreLogger(pl_module.logger)
         if trainer.current_epoch % self._plot_every_n_epochs == 0:
@@ -148,13 +156,13 @@ class LogImagesCallback(pl.Callback):
 
     def _plot_and_log(
         self,
-        images_numpy: np.ndarray,
-        predictions_numpy: np.ndarray,
-        targets_numpy: np.ndarray,
+        images_numpy: GenericNumberArray,
+        predictions_numpy: GenericNumberArray,
+        targets_numpy: GenericNumberArray,
         step: int,
         batch_idx: int,
-        scanner_name: str,
-        dices: List[dict[int, float]],
+        scanner_name: Optional[str | None] = None,
+        dices: Optional[List[dict[int, float]] | None] = None,
     ) -> None:
         class_wise_dice = None
         batch_size = images_numpy.shape[0]
@@ -178,16 +186,19 @@ class LogImagesCallback(pl.Callback):
             class_indices_pred = np.argmax(predictions_numpy[i], axis=-1)
             colored_img_pred = apply_color_map(class_indices_pred, self.color_map, self._num_classes)
             if dices is not None and class_wise_dice is not None:
-                dice_values = ' '.join([f"{class_wise_dice[i]:.2f}" for i in range(1, self._num_classes)])
+                dice_values = " ".join([f"{class_wise_dice[i]:.2f}" for i in range(1, self._num_classes)])
                 plt.title(f"Dice: {dice_values}")
             plt.imshow(colored_img_pred)
             plt.axis("off")
             plt.tight_layout()
-        self._logger.log_figure(figure, step, batch_idx)
+        if self._logger:  # This is for mypy
+            self._logger.log_figure(figure, step, batch_idx)
         plt.close()
 
 
-def apply_color_map(image, color_map, num_classes) -> np.ndarray:
+def apply_color_map(
+    image: GenericNumberArray, color_map: dict[int, Any], num_classes: int
+) -> np.ndarray[Any, np.dtype[np.uint8]]:
     colored_image = np.zeros((*image.shape, 3), dtype=np.uint8)
     for i in range(1, num_classes):
         colored_image[image == i] = color_map[i]
