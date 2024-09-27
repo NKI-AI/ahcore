@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 
 from ahcore.metrics import TileMetric
 from ahcore.utils.callbacks import AhCoreLogger
-from ahcore.utils.types import ScannerEnum
+from ahcore.utils.types import ScannerVendors
 
 
 class TrackTileMetricsPerScanner(pl.Callback):
@@ -18,9 +18,9 @@ class TrackTileMetricsPerScanner(pl.Callback):
         self.index_map = index_map
         self._metrics_per_scanner = {
             scanner.scanner_name: {f"{metric.name}/{class_name}": 0.0 for class_name in self.index_map.keys() for metric in self.metrics}
-            for scanner in ScannerEnum
+            for scanner in ScannerVendors
         }
-        self._batch_count_per_scanner = {scanner.scanner_name: 0 for scanner in ScannerEnum}
+        self._batch_count_per_scanner = {scanner.scanner_name: 0 for scanner in ScannerVendors}
         self._logger: AhCoreLogger | None = None
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0) -> None:
@@ -29,7 +29,7 @@ class TrackTileMetricsPerScanner(pl.Callback):
 
         path = batch["path"][0]
         file_extension = path.split(".")[-1]
-        scanner_name = ScannerEnum.get_scanner_name(file_extension)
+        scanner_name = ScannerVendors.get_vendor_name(file_extension)
 
         prediction = outputs["prediction"]
         target = batch["target"]
@@ -52,6 +52,6 @@ class TrackTileMetricsPerScanner(pl.Callback):
 
         self._metrics_per_scanner = {
             scanner.scanner_name: {f"{metric.name}/{class_name}": 0.0 for class_name in self.index_map.keys() for metric in self.metrics}
-            for scanner in ScannerEnum
+            for scanner in ScannerVendors
         }
-        self._batch_count_per_scanner = {scanner.scanner_name: 0 for scanner in ScannerEnum}
+        self._batch_count_per_scanner = {scanner.scanner_name: 0 for scanner in ScannerVendors}

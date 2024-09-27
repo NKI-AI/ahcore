@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 
 from ahcore.metrics.metrics import _compute_dice
 from ahcore.utils.callbacks import AhCoreLogger
-from ahcore.utils.types import ScannerEnum
+from ahcore.utils.types import ScannerVendors
 
 
 def get_sample_wise_dice_components(
@@ -79,7 +79,7 @@ def _extract_scanner_name(path) -> str:
     # Extract file extension
     extension = path.split(".")[-1]
     # Use the ScannerEnum to get the scanner name
-    return ScannerEnum.get_scanner_name(extension)
+    return ScannerVendors.get_vendor_name(extension)
 
 
 class LogImagesCallback(pl.Callback):

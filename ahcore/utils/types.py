@@ -88,9 +88,9 @@ class ViTEmbedMode(str, Enum):
     # Extend as necessary
 
 
-class ScannerEnum(Enum):
+class ScannerVendors(Enum):
     SVS = ("svs", "Aperio")
-    MRXS = ("mrxs", "P1000")
+    MRXS = ("mrxs", "3DHistech")
     DEFAULT = ("default", "Unknown Scanner")
 
     def __init__(self, extension, scanner_name):
@@ -98,7 +98,7 @@ class ScannerEnum(Enum):
         self.scanner_name = scanner_name
 
     @classmethod
-    def get_scanner_name(cls, file_extension):
+    def get_vendor_name(cls, file_extension):
         for scanner in cls:
             if scanner.extension == file_extension:
                 return scanner.scanner_name
