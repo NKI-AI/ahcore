@@ -33,9 +33,8 @@ from pydantic import BaseModel
 from rich.progress import Progress
 
 from ahcore.cli import dir_path, file_path
-from ahcore.writers import H5FileImageWriter, Writer, ZarrFileImageWriter
-
 from ahcore.utils.types import DataFormat
+from ahcore.writers import H5FileImageWriter, Writer, ZarrFileImageWriter
 
 _WriterClass = Type[Writer]
 
@@ -365,7 +364,7 @@ def _tiling_pipeline(
             tile_size=dataset_cfg.tile_size,
             tile_overlap=dataset_cfg.tile_overlap,
             num_samples=len(dataset),
-            data_format=DataFormat.COMPRESSED_IMAGE if compression != "none" else DataFormat.IMAGE,
+            data_format=DataFormat.IMAGE,
             color_profile=color_profile,
             extra_metadata=extra_metadata,
             grid=dataset.grids[0][0],

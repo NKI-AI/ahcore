@@ -95,6 +95,22 @@ class PreTransformTaskFactory:
     def for_wsi_classification(
         cls, data_description: DataDescription, requires_target: bool = True
     ) -> PreTransformTaskFactory:
+        """
+        Pre-transforms for whole-slide classification tasks.
+        If the target is required these transforms are applied as follows:
+        - Features from a 1000 tiles are randomly sampled.
+        - The labels are selected from the data description.
+
+        Parameters
+        ----------
+        data_description : DataDescription
+        requires_target : bool
+
+        Returns
+        -------
+        PreTransformTaskFactory
+            The `PreTransformTaskFactory` initialized for whole-slide classification tasks.
+        """
         transforms: list[PreTransformCallable] = []
 
         transforms.append(SampleNFeatures(n=1000))
@@ -125,6 +141,13 @@ class PreTransformTaskFactory:
 
 
 class SampleNFeatures:
+    """Sample N features from the image. Sampling is done with replacement if there are not enough tiles.
+    Parameters
+    ----------
+    n : int
+        Number of features to sample.
+    """
+
     def __init__(self, n: int = 1000) -> None:
         self.n = n
         logger.warning(
@@ -180,6 +203,13 @@ class LabelToClassIndex:
 
 
 class SelectSpecificLabels:
+    """Removes labels that are not in the list of keys.
+    Parameters
+    ----------
+    keys : list[str] | str
+        List of keys to retain.
+    """
+
     def __init__(self, keys: list[str] | str):
         if isinstance(keys, str):
             keys = [keys]

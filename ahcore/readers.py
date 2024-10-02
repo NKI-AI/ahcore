@@ -186,6 +186,10 @@ class FileImageReader(abc.ABC):
             return tile
 
     def _read_image_region(self, size: tuple[int, int], location: tuple[int, int]) -> pyvips.Image:
+        """
+        Reads a region in the stored h5 file. This function allows for multiple stitching modes,
+        such as cropping, averaging and taking the maximum across borders.
+        """
         assert self._size is not None
         assert self._tile_size is not None
         assert self._tile_overlap is not None
@@ -293,6 +297,8 @@ class FileImageReader(abc.ABC):
         return pyvips.Image.new_from_array(stitched_image.transpose(1, 2, 0))
 
     def _read_feature_region(self, size: tuple[int, int], location: tuple[int, int]) -> pyvips.Image:
+        """Reads a region in the stored h5 file. This function reads the feature vectors as saved in the cache file.
+        Features are assumed to have no overlap and only work with stitching mode CROP."""
         assert self._num_samples is not None
 
         image_dataset: h5py.Dataset = self._file["data"]
@@ -312,6 +318,9 @@ class FileImageReader(abc.ABC):
                 f"Feature vector length was {image_dataset.shape[0]}, "
                 f"number of samples in the dataset was {self._num_samples}"
             )
+
+        if self._tile_overlap != (0, 0):
+            raise ValueError("Reading features expects that the saved feature vectors have no overlap.")
 
         if x + w > self._num_samples or y + h > 1:
             raise ValueError(
