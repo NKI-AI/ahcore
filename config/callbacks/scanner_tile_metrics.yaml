@@ -1,0 +1,6 @@
+scanner_tile_metrics_callback:
+  _target_: ahcore.callbacks.scanner_tile_metrics_callback.ScannerTileMetricsCallback
+  metrics:
+    - _target_: ahcore.metrics.DiceMetric
+      data_description: ${data_description}
+  index_map: ${data_description.index_map}

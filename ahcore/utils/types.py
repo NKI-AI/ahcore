@@ -86,3 +86,28 @@ class ViTEmbedMode(str, Enum):
     CONCAT_MEAN = "embed_concat_mean"
     CONCAT = "embed_concat"
     # Extend as necessary
+
+
+class ScannerVendors(Enum):
+    SVS = ("svs", "Aperio")
+    MRXS = ("mrxs", "3DHistech")
+    DEFAULT = ("default", "Unknown Scanner")
+
+    def __init__(self, extension: str, scanner_name: str) -> None:
+        self.extension = extension
+        self.scanner_name = scanner_name
+
+    @classmethod
+    def get_vendor_name(cls, file_extension: str) -> str:
+        for scanner in cls:
+            if scanner.extension == file_extension:
+                return scanner.scanner_name
+        # Return a default value if extension is not found
+        return cls.DEFAULT.scanner_name
+
+
+class LoggerEnum(Enum):
+    TENSORBOARD = "tensorboard"
+    MLFLOW = "mlflow"
+    UNKNOWN = "unknown"
+    # Extend as necessary

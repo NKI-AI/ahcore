@@ -14,6 +14,8 @@ from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
 from dlup.data.transforms import convert_annotations, rename_labels
 from dlup.tiling import Grid, GridOrder, TilingMode
+from matplotlib.figure import Figure
+from pytorch_lightning.loggers import Logger
 from shapely.geometry import MultiPoint, Point
 from torch.utils.data import Dataset
 
@@ -21,7 +23,7 @@ from ahcore.readers import FileImageReader
 from ahcore.transforms.pre_transforms import one_hot_encoding
 from ahcore.utils.data import DataDescription
 from ahcore.utils.io import get_logger
-from ahcore.utils.types import DlupDatasetSample
+from ahcore.utils.types import DlupDatasetSample, LoggerEnum
 
 logger = get_logger(__name__)
 
@@ -241,3 +243,36 @@ def get_output_filename(dump_dir: Path, input_path: Path, model_name: str, count
     if counter is not None:
         return dump_dir / "outputs" / model_name / f"{counter}" / f"{hex_dig}.cache"
     return dump_dir / "outputs" / model_name / f"{hex_dig}.cache"
+
+
+class AhCoreLogger:
+    def __init__(self, pl_logger: Logger | Any) -> None:
+        self.logger = pl_logger
+
+    def get_logger_type(self) -> LoggerEnum:
+        if hasattr(self.logger.experiment, "log_figure"):
+            return LoggerEnum.MLFLOW
+        elif hasattr(self.logger.experiment, "add_figure"):
+            return LoggerEnum.TENSORBOARD
+        else:
+            return LoggerEnum.UNKNOWN
+
+    def log_figure(self, figure: Figure, step: int, batch_idx: int) -> None:
+        if self.get_logger_type() == LoggerEnum.MLFLOW:
+            artifact_file_name = f"validation_global_step{step:03d}_batch{batch_idx:03d}.png"
+            self.logger.experiment.log_figure(self.logger.run_id, figure, artifact_file=artifact_file_name)
+        elif self.get_logger_type() == LoggerEnum.TENSORBOARD:
+            self.logger.experiment.add_figure(f"validation_step_{step}_batch_{batch_idx}", figure, global_step=step)
+        else:
+            raise NotImplementedError(f"Logging method for logger {type(self.logger).__name__} not implemented.")
+
+    def log_metrics(self, metrics: dict[str, Any], step: int) -> None:
+        logger_type = self.get_logger_type()
+        if logger_type == LoggerEnum.MLFLOW:
+            for metric_name, value in metrics.items():
+                self.logger.experiment.log_metric(self.logger.run_id, key=metric_name, value=value, step=step)
+        elif logger_type == LoggerEnum.TENSORBOARD:
+            for metric_name, value in metrics.items():
+                self.logger.experiment.add_scalar(metric_name, value, global_step=step)
+        else:
+            raise NotImplementedError(f"Logging method for logger {type(self.logger).__name__} not implemented.")

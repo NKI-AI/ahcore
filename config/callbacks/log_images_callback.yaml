@@ -1,0 +1,7 @@
+log_images_callback:
+  _target_: ahcore.callbacks.log_images_callback.LogImagesCallback
+  color_map: ${data_description.color_map}
+  num_classes: ${data_description.num_classes}
+  plot_scanner_wise: True
+  plot_every_n_epochs: 10
+  plot_dice: True
