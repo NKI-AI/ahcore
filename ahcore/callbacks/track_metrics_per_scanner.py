@@ -7,7 +7,7 @@ from ahcore.utils.callbacks import AhCoreLogger
 from ahcore.utils.types import ScannerVendors
 
 
-class TrackTileMetricsPerScanner(pl.Callback):
+class ScannerTileMetricsCallback(pl.Callback):
     """
     This callback is used to track several `TileMetric` from ahcore per scanner.
     The callback works on certain assumptions:
