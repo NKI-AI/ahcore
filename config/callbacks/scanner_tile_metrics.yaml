@@ -1,4 +1,4 @@
-track_metrics_per_scanner:
+scanner_tile_metrics_callback:
   _target_: ahcore.callbacks.scanner_tile_metrics_callback.ScannerTileMetricsCallback
   metrics:
     - _target_: ahcore.metrics.DiceMetric
