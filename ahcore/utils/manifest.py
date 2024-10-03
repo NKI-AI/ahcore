@@ -6,29 +6,33 @@ See the documentation for more information and examples.
 from __future__ import annotations
 
 import functools
+import logging
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, Generator, Literal, Optional, Type, TypedDict, cast
+from typing import Any, Callable, Generator, Literal, Optional, Tuple, Type, TypedDict, cast
 
 from dlup import SlideImage
 from dlup.annotations import WsiAnnotations
-from dlup.backends import ImageBackend  # type: ignore  # pylint: disable=no-name-in-module
+from dlup.backends import ImageBackend as DLUPImageBackend
 from dlup.data.dataset import RegionFromWsiDatasetSample, TiledWsiDataset, TileSample
 from dlup.tiling import GridOrder, TilingMode
 from pydantic import BaseModel
-from sqlalchemy import create_engine
+from sqlalchemy import Column, create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql import exists
 
+from ahcore.backends import ImageBackend
 from ahcore.exceptions import RecordNotFoundError
 from ahcore.utils.data import DataDescription
 from ahcore.utils.database_models import (
     Base,
     CategoryEnum,
+    FeatureDescription,
     Image,
     ImageAnnotations,
+    ImageFeature,
     Manifest,
     Mask,
     Patient,
@@ -57,10 +61,28 @@ _AnnotationReaders: _AnnotationReadersDict = {
     "ASAP_XML": WsiAnnotations.from_asap_xml,
     "DARWIN_JSON": WsiAnnotations.from_darwin_json,
     "GEOJSON": WsiAnnotations.from_geojson,
-    "PYVIPS": functools.partial(SlideImage.from_file_path, backend=ImageBackend.PYVIPS),
-    "TIFFFILE": functools.partial(SlideImage.from_file_path, backend=ImageBackend.TIFFFILE),
-    "OPENSLIDE": functools.partial(SlideImage.from_file_path, backend=ImageBackend.OPENSLIDE),
+    "PYVIPS": functools.partial(SlideImage.from_file_path, backend=DLUPImageBackend.PYVIPS),
+    "TIFFFILE": functools.partial(
+        SlideImage.from_file_path,
+        backend=DLUPImageBackend.TIFFFILE,
+    ),
+    "OPENSLIDE": functools.partial(SlideImage.from_file_path, backend=DLUPImageBackend.OPENSLIDE),
 }
+
+
+class ImageInfoDict(TypedDict):
+    image_path: Optional[Path]
+    tile_size: Optional[Tuple[int, int]]
+    tile_overlap: Optional[Tuple[int, int]]
+    backend: Optional[ImageBackend]
+    mpp: Optional[float]
+    overwrite_mpp: Optional[float]
+    tile_mode: Optional[TilingMode]
+    output_tile_size: Optional[Tuple[int, int]]
+    mask: Optional[_AnnotationReturnTypes]
+    mask_threshold: Optional[float]
+    rois: Optional[Rois]
+    annotations: Optional[_AnnotationReturnTypes]
 
 
 def parse_annotations_from_record(
@@ -145,9 +167,102 @@ def get_labels_from_record(record: Image | Patient) -> list[tuple[str, str]] | N
     return _labels
 
 
-def _get_rois(mask: WsiAnnotations | None, data_description: DataDescription, stage: str) -> Optional[Rois]:
+def get_relevant_feature_info_from_record(
+    record: ImageFeature, data_description: DataDescription, feature_description: FeatureDescription
+) -> ImageInfoDict:
+    """Get the features from a record of type Image.
+
+    Parameters
+    ----------
+    record : Type[Image]
+        The record containing the features.
+
+    Returns
+    -------
+    tuple[Path, PositiveFloat, tuple[PositiveInt, PositiveInt],
+    tuple[PositiveInt, PositiveInt], TilingMode, ImageBackend, PositiveFloat]
+        The features of the image.
+    """
+    image_path = data_description.data_dir / record.filename
+    mpp = float(feature_description.mpp)
+    tile_size = (
+        int(record.num_tiles),
+        1,
+    )  # this would load all the features in one go --> can be extended to only load relevant tile level features
+    tile_overlap = (0, 0)
+
+    backend = ImageBackend[str(record.reader)].value
+    overwrite_mpp = float(feature_description.mpp)
+
+    output_dict: ImageInfoDict = {
+        "image_path": image_path,
+        "tile_size": tile_size,
+        "tile_overlap": tile_overlap,
+        "backend": backend,
+        "mpp": mpp,
+        "overwrite_mpp": overwrite_mpp,
+        "tile_mode": TilingMode.skip,
+        "output_tile_size": None,
+        "mask": None,
+        "mask_threshold": None,
+        "rois": None,
+        "annotations": None,
+    }
+
+    return output_dict
+
+
+def get_relevant_image_info_from_record(
+    image: Image, data_description: DataDescription, annotations_root: Path, stage: str
+) -> ImageInfoDict:
+    if stage == "fit":
+        grid_description = data_description.training_grid
+    else:
+        grid_description = data_description.inference_grid
+
+    if grid_description is None:
+        raise ValueError(f"Grid (for stage {stage}) is not defined in the data description.")
+
+    mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
+    assert isinstance(mask, WsiAnnotations) or (mask is None) or isinstance(mask, SlideImage)
+    mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
+    rois = _get_rois(mask, data_description, stage)
+
+    image_path = data_description.data_dir / image.filename
+    tile_size = grid_description.tile_size
+    tile_overlap = grid_description.tile_overlap
+    backend = DLUPImageBackend[str(image.reader)]
+    mpp = getattr(grid_description, "mpp", 1.0)
+    overwrite_mpp = float(image.mpp)
+    tile_mode = (
+        TilingMode(data_description.tiling_mode) if data_description.tiling_mode is not None else TilingMode.overflow
+    )
+    output_tile_size = getattr(grid_description, "output_tile_size", None)
+
+    output_dict: ImageInfoDict = {
+        "image_path": image_path,
+        "tile_size": tile_size,
+        "tile_overlap": tile_overlap,
+        "backend": backend,
+        "mpp": mpp,
+        "overwrite_mpp": overwrite_mpp,
+        "tile_mode": tile_mode,
+        "output_tile_size": output_tile_size,
+        "mask": mask,
+        "mask_threshold": mask_threshold,
+        "rois": rois,
+        "annotations": annotations,
+    }
+
+    return output_dict
+
+
+def _get_rois(mask: Optional[_AnnotationReturnTypes], data_description: DataDescription, stage: str) -> Optional[Rois]:
     if (mask is None) or (stage != "fit") or (not data_description.convert_mask_to_rois):
         return None
+
+    assert data_description.training_grid is not None
+    assert isinstance(mask, WsiAnnotations)  # this is necessary for the compute_rois to work
 
     tile_size = data_description.training_grid.tile_size
     tile_overlap = data_description.training_grid.tile_overlap
@@ -300,6 +415,43 @@ class DataManager:
         assert image is not None  # mypy
         return fetch_image_metadata(image)
 
+    def get_image_features_by_image_and_feature_version(
+        self, image_id: Column[int], feature_version: str | None
+    ) -> Tuple[ImageFeature | None, FeatureDescription]:
+        """
+        Fetch the features for an image based on its ID and feature version.
+
+        Parameters
+        ----------
+        image_id : int
+            The ID of the image.
+        feature_version : str
+            The version of the features.
+
+        Returns
+        -------
+        ImageFeature
+            The features of the image.
+        """
+        if feature_version is None:
+            raise ValueError("feature_version cannot be None")
+
+        feature_description = self._session.query(FeatureDescription).filter_by(version=feature_version).first()
+
+        if feature_description is None:
+            raise ValueError(f"Couldn't find feature description matching version {feature_version}")
+
+        image_feature = (
+            self._session.query(ImageFeature)
+            .filter_by(image_id=image_id, feature_description_id=feature_description.id)
+            .first()
+        )
+        if not image_feature:
+            logging.warning(f"No features found for image ID {image_id} and feature version {feature_version}")
+        # todo: make sure that this only allows to run one ImageFeature,
+        #  I think it should be good bc of the unique constraint
+        return image_feature, feature_description
+
     def __enter__(self) -> "DataManager":
         return self
 
@@ -319,6 +471,51 @@ class DataManager:
             self.__session = None
 
 
+def get_image_info(
+    db_manager: DataManager, data_description: DataDescription, image: Image, stage: str
+) -> ImageInfoDict:
+    # Initialize the output dictionary with all keys set to None
+    image_info: ImageInfoDict = {
+        "image_path": None,
+        "tile_size": None,
+        "tile_overlap": None,
+        "backend": None,
+        "mpp": None,
+        "overwrite_mpp": None,
+        "tile_mode": None,
+        "output_tile_size": None,
+        "mask": None,
+        "mask_threshold": None,
+        "rois": None,
+        "annotations": None,
+    }
+
+    annotations_root = data_description.annotations_dir
+
+    if data_description.feature_version is not None:
+        # if feature_version is defined we use features
+        # right now this selects all features, todo: add some argument tile_size to overwrite this
+
+        image_feature, feature_description = db_manager.get_image_features_by_image_and_feature_version(
+            image.id, data_description.feature_version
+        )
+
+        if image_feature is None:
+            # Directly return the initialized dictionary with None values
+            return image_info
+
+        # Update the dictionary with the actual values
+        image_info.update(get_relevant_feature_info_from_record(image_feature, data_description, feature_description))
+
+        return image_info
+
+    else:
+        # Update the dictionary with the actual values
+        image_info.update(get_relevant_image_info_from_record(image, data_description, annotations_root, stage))
+
+        return image_info
+
+
 def datasets_from_data_description(
     db_manager: DataManager,
     data_description: DataDescription,
@@ -327,49 +524,83 @@ def datasets_from_data_description(
 ) -> Generator[TiledWsiDataset, None, None]:
     logger.info(f"Reading manifest from {data_description.manifest_database_uri} for stage {stage}")
 
-    image_root = data_description.data_dir
-    annotations_root = data_description.annotations_dir
-
     assert isinstance(stage, str), "Stage should be a string."
-
-    if stage == "fit":
-        grid_description = data_description.training_grid
-    else:
-        grid_description = data_description.inference_grid
 
     patients = db_manager.get_records_by_split(
         manifest_name=data_description.manifest_name,
         split_version=data_description.split_version,
         split_category=stage,
     )
-    for patient in patients:
+
+    for patient_idx, patient in enumerate(patients):
         patient_labels = get_labels_from_record(patient)
 
         for image in patient.images:
-            mask, annotations = get_mask_and_annotations_from_record(annotations_root, image)
-            assert isinstance(mask, WsiAnnotations) or (mask is None)
             image_labels = get_labels_from_record(image)
             labels = None if patient_labels is image_labels is None else (patient_labels or []) + (image_labels or [])
-            rois = _get_rois(mask, data_description, stage)
-            mask_threshold = 0.0 if stage != "fit" else data_description.mask_threshold
+
+            image_info = get_image_info(db_manager, data_description, image, stage)
+
+            image_path = image_info["image_path"]
+
+            if image_path is None:
+                # if no feature is found...
+                continue
+
+            mpp = image_info["mpp"]
+            tile_size = image_info["tile_size"]
+            tile_overlap = image_info["tile_overlap"]
+            backend = image_info["backend"]
+            overwrite_mpp = image_info["overwrite_mpp"]
+            tile_mode = image_info["tile_mode"]
+            output_tile_size = image_info["output_tile_size"]
+            mask = image_info["mask"]
+            mask_threshold = image_info["mask_threshold"]
+            rois = image_info["rois"]
+            annotations = image_info["annotations"]
+
+            assert isinstance(image_path, Path)
+            assert isinstance(mpp, float)
+            assert (
+                isinstance(tile_size, tuple)
+                and len(tile_size) == 2
+                and all(isinstance(i, int) for i in tile_size)  # pylint: disable=not-an-iterable
+            )
+            assert (
+                isinstance(tile_overlap, tuple)
+                and len(tile_overlap) == 2
+                and all(isinstance(i, int) for i in tile_overlap)  # pylint: disable=not-an-iterable
+            )
+            assert backend is not None
+            assert isinstance(overwrite_mpp, float) or overwrite_mpp is None
+            assert isinstance(tile_mode, TilingMode)
+            assert (
+                isinstance(output_tile_size, tuple)
+                and len(output_tile_size) == 2
+                and all(isinstance(i, int) for i in output_tile_size)  # pylint: disable=not-an-iterable
+                or (output_tile_size is None)
+            )
+            assert isinstance(mask, WsiAnnotations) or (mask is None) or isinstance(mask, SlideImage)
+            assert isinstance(mask_threshold, float) or mask_threshold is None
+            assert isinstance(annotations, WsiAnnotations) or (annotations is None)
 
             dataset = TiledWsiDataset.from_standard_tiling(
-                path=image_root / image.filename,
-                mpp=grid_description.mpp,
-                tile_size=grid_description.tile_size,
-                tile_overlap=grid_description.tile_overlap,
-                tile_mode=TilingMode.overflow,
+                path=image_path,
+                mpp=mpp,
+                tile_size=tile_size,
+                tile_overlap=tile_overlap,
                 grid_order=GridOrder.C,
+                tile_mode=tile_mode,
                 crop=False,
                 mask=mask,
                 mask_threshold=mask_threshold,
-                output_tile_size=getattr(grid_description, "output_tile_size", None),
+                output_tile_size=output_tile_size,
                 rois=rois if rois is not None else None,
                 annotations=annotations if stage != "predict" else None,
                 labels=labels,  # type: ignore
                 transform=transform,
-                backend=ImageBackend[str(image.reader)],
-                overwrite_mpp=(image.mpp, image.mpp),
+                backend=backend,  # type: ignore
+                overwrite_mpp=(overwrite_mpp, overwrite_mpp),
                 limit_bounds=True,
                 apply_color_profile=data_description.apply_color_profile,
                 internal_handler="vips",

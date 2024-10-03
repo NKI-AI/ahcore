@@ -25,7 +25,9 @@ logger = get_logger(__name__)
 
 
 class PreTransformTaskFactory:
-    def __init__(self, transforms: list[PreTransformCallable]):
+    def __init__(
+        self, transforms: list[PreTransformCallable], data_description: DataDescription, requires_target: bool
+    ) -> None:
         """
         Pre-transforms are transforms that are applied to the samples directly originating from the dataset.
         These transforms are typically the same for the specific tasks (e.g., segmentation,
@@ -40,10 +42,7 @@ class PreTransformTaskFactory:
             List of transforms to be used.
         """
         # These are always finally added.
-        transforms += [
-            ImageToTensor(),
-            AllowCollate(),
-        ]
+        transforms += [ImageToTensor(), AllowCollate(), SetTarget()]
         self._transforms = transforms
 
     @classmethod
@@ -73,7 +72,7 @@ class PreTransformTaskFactory:
         """
         transforms: list[PreTransformCallable] = []
         if not requires_target:
-            return cls(transforms)
+            return cls(transforms, data_description, requires_target)
 
         if data_description.index_map is None:
             raise ConfigurationError("`index_map` is required for segmentation models when the target is required.")
@@ -90,23 +89,47 @@ class PreTransformTaskFactory:
         if not multiclass:
             transforms.append(OneHotEncodeMask(index_map=data_description.index_map))
 
-        return cls(transforms)
+        return cls(transforms, data_description, requires_target)
 
     @classmethod
     def for_wsi_classification(
         cls, data_description: DataDescription, requires_target: bool = True
     ) -> PreTransformTaskFactory:
+        """
+        Pre-transforms for whole-slide classification tasks.
+        If the target is required these transforms are applied as follows:
+        - Features from a 1000 tiles are randomly sampled.
+        - The labels are selected from the data description.
+
+        Parameters
+        ----------
+        data_description : DataDescription
+        requires_target : bool
+
+        Returns
+        -------
+        PreTransformTaskFactory
+            The `PreTransformTaskFactory` initialized for whole-slide classification tasks.
+        """
         transforms: list[PreTransformCallable] = []
+
+        transforms.append(SampleNFeatures(n=1000))
+
         if not requires_target:
-            return cls(transforms)
+            return cls(transforms, data_description, requires_target)
 
         index_map = data_description.index_map
         if index_map is None:
             raise ConfigurationError("`index_map` is required for classification models when the target is required.")
 
+        label_keys = data_description.label_keys
+
+        if label_keys is not None:
+            transforms.append(SelectSpecificLabels(keys=label_keys))
+
         transforms.append(LabelToClassIndex(index_map=index_map))
 
-        return cls(transforms)
+        return cls(transforms, data_description, requires_target)
 
     def __call__(self, data: DlupDatasetSample) -> DlupDatasetSample:
         for transform in self._transforms:
@@ -115,6 +138,45 @@ class PreTransformTaskFactory:
 
     def __repr__(self) -> str:
         return f"PreTransformTaskFactory(transforms={self._transforms})"
+
+
+class SampleNFeatures:
+    """Sample N features from the image. Sampling is done with replacement if there are not enough tiles.
+    Parameters
+    ----------
+    n : int
+        Number of features to sample.
+    """
+
+    def __init__(self, n: int = 1000) -> None:
+        self.n = n
+        logger.warning(
+            f"Sampling {n} features from the image. Sampling WITH replacement is done if there are not enough tiles."
+        )
+
+    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
+        features = sample["image"]
+
+        # Get the dimensions of the image
+        h = features.height  # Height
+        w = features.width  # Width
+
+        if h != 1:
+            raise ValueError(f"Expected features to have a width dimension of 1, got {h}.")
+
+        n_random_indices = (
+            np.random.choice(w, self.n, replace=False) if w > self.n else np.random.choice(w, self.n, replace=True)
+        )
+
+        # Extract the selected columns (indices) from the image
+        # Create a new image from the selected indices
+        # todo: this can probably be done without a for-loop quicker
+        selected_columns = [features.crop(idx, 0, 1, h) for idx in n_random_indices]
+
+        # Combine the selected columns back into a single image
+        sample["image"] = pyvips.Image.arrayjoin(selected_columns, across=1)
+
+        return sample
 
 
 class LabelToClassIndex:
@@ -137,6 +199,26 @@ class LabelToClassIndex:
             label_name: self._index_map[label_value] for label_name, label_value in sample["labels"].items()
         }
 
+        return sample
+
+
+class SelectSpecificLabels:
+    """Removes labels that are not in the list of keys.
+    Parameters
+    ----------
+    keys : list[str] | str
+        List of keys to retain.
+    """
+
+    def __init__(self, keys: list[str] | str):
+        if isinstance(keys, str):
+            keys = [keys]
+        self._keys = keys
+
+    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
+        sample["labels"] = {
+            label_key: label_value for label_key, label_value in sample["labels"].items() if label_key in self._keys
+        }
         return sample
 
 
@@ -210,6 +292,25 @@ class AllowCollate:
         return output
 
 
+class SetTarget:
+    def __call__(self, sample: DlupDatasetSample) -> DlupDatasetSample:
+        if "annotations_data" in sample and "mask" in sample["annotation_data"] and "labels" in sample.keys():
+            sample["target"] = (sample["annotation_data"]["mask"], sample["labels"])
+        elif "annotations_data" in sample and "mask" in sample["annotation_data"]:
+            sample["target"] = sample["annotation_data"]["mask"]
+        elif "labels" in sample.keys():
+            if len(sample["labels"].keys()) == 1:
+                # if there is only one label, then we just set this without retaining the key
+                # this makes it compatible with standard loss functions
+                sample["labels"] = next(iter(sample["labels"].values()))  # todo: make this nice
+            sample["target"] = sample["labels"]
+        else:
+            # logging.warning("No target set")  # this can be done only for training and validation???
+            pass
+
+        return sample
+
+
 class ImageToTensor:
     """
     Transform to translate the output of a dlup dataset to data_description supported by AhCore
@@ -218,14 +319,33 @@ class ImageToTensor:
     def __call__(self, sample: DlupDatasetSample) -> dict[str, DlupDatasetSample]:
         tile: pyvips.Image = sample["image"]
         # Flatten the image to remove the alpha channel, using white as the background color
-        tile_ = tile.flatten(background=[255, 255, 255])
+        using_features = False
+
+        if tile.bands > 4:
+            # assuming that more than four bands/channels means that we are handling features
+            using_features = True
+            tile_ = tile
+        else:
+            tile_ = tile.flatten(background=[255, 255, 255])  # todo: check if this doesn't mess up features
 
         # Convert VIPS image to a numpy array then to a torch tensor
         np_image = tile_.numpy()
-        sample["image"] = torch.from_numpy(np_image).permute(2, 0, 1).float()
+        if using_features:
+            # n_tiles x 1 x feature_dim --> n_tiles x feature_dim
+            sample["image"] = torch.from_numpy(np_image).squeeze(1).float()
+        else:
+            # h x w x c --> c x h x w
+            sample["image"] = torch.from_numpy(np_image).permute(2, 0, 1).float()
 
         if sample["image"].sum() == 0:
             raise RuntimeError(f"Empty tile for {sample['path']} at {sample['coordinates']}")
+
+        if "labels" in sample.keys() and sample["labels"] is not None:
+            for key, value in sample["labels"].items():
+                if isinstance(value, float) or isinstance(value, int):
+                    sample["labels"][key] = torch.tensor(value, dtype=torch.float32)
+                    if sample["labels"][key].dim() == 0:
+                        sample["labels"][key] = sample["labels"][key].unsqueeze(0)
 
         # annotation_data is added by the ConvertPolygonToMask transform.
         if "annotation_data" not in sample:
@@ -236,7 +356,7 @@ class ImageToTensor:
             if len(mask.shape) == 2:
                 # Mask is not one-hot encoded
                 mask = mask[np.newaxis, ...]
-            sample["target"] = torch.from_numpy(mask).float()
+            sample["annotation_data"]["mask"] = torch.from_numpy(mask).float()
 
         if "roi" in sample["annotation_data"] and sample["annotation_data"]["roi"] is not None:
             roi = sample["annotation_data"]["roi"]

@@ -36,9 +36,11 @@ class AhCoreLightningModule(pl.LightningModule):
         "grid_index",
     ]
 
+    _model: nn.Module | BaseAhcoreJitModel
+
     def __init__(
         self,
-        model: nn.Module | BaseAhcoreJitModel,
+        model: nn.Module | BaseAhcoreJitModel | functools.partial[nn.Module],
         optimizer: torch.optim.optimizer.Optimizer,  # noqa
         data_description: DataDescription,
         loss: nn.Module | None = None,
@@ -66,6 +68,8 @@ class AhCoreLightningModule(pl.LightningModule):
             except AttributeError:
                 raise AttributeError("num_classes must be specified in data_description")
             self._model = model(out_channels=self._num_classes)
+        elif isinstance(model, nn.Module):
+            self._model = model
         else:
             raise TypeError(f"The class of models: {model.__class__} is not supported on ahcore")
         self._augmentations = augmentations

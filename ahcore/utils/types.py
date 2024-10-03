@@ -28,7 +28,7 @@ NonNegativeInt = Annotated[int, AfterValidator(is_non_negative)]
 NonNegativeFloat = Annotated[float, AfterValidator(is_non_negative)]
 BoundingBoxType = tuple[tuple[int, int], tuple[int, int]]
 Rois = list[BoundingBoxType]
-GenericNumberArray = npt.NDArray[np.int_ | np.float_]
+GenericNumberArray = npt.NDArray[np.int_ | np.float_ | np.float64 | np.float32]
 
 DlupDatasetSample = dict[str, Any]
 _DlupDataset = Dataset[DlupDatasetSample]
@@ -86,3 +86,11 @@ class ViTEmbedMode(str, Enum):
     CONCAT_MEAN = "embed_concat_mean"
     CONCAT = "embed_concat"
     # Extend as necessary
+
+
+class DataFormat(str, Enum):
+    """Data format for the writer."""
+
+    FEATURE = "feature"
+    IMAGE = "image"
+    COMPRESSED_IMAGE = "compressed_image"

@@ -26,7 +26,7 @@ from dlup.tiling import Grid, GridOrder, TilingMode
 
 import ahcore
 from ahcore.utils.io import get_git_hash, get_logger
-from ahcore.utils.types import GenericNumberArray, InferencePrecision
+from ahcore.utils.types import DataFormat, GenericNumberArray, InferencePrecision
 
 logger = get_logger(__name__)
 
@@ -80,13 +80,14 @@ class Writer(abc.ABC):
         tile_size: tuple[int, int],
         tile_overlap: tuple[int, int],
         num_samples: int,
-        is_compressed_image: bool = False,
+        data_format: DataFormat = DataFormat.IMAGE,
         color_profile: bytes | None = None,
         progress: Optional[Any] = None,
         extra_metadata: Optional[dict[str, Any]] = None,
         precision: InferencePrecision | None = None,
         grid: Grid | None = None,
     ) -> None:
+        # todo: better documentation for this, can basically set everything it is almost independent from slide image
         self._grid = grid
         self._filename: Path = filename
         self._size: tuple[int, int] = size
@@ -94,7 +95,7 @@ class Writer(abc.ABC):
         self._tile_size: tuple[int, int] = tile_size
         self._tile_overlap: tuple[int, int] = tile_overlap
         self._num_samples: int = num_samples
-        self._is_compressed_image: bool = is_compressed_image
+        self._data_format = data_format
         self._color_profile: bytes | None = color_profile
         self._extra_metadata = extra_metadata
         self._precision = precision
@@ -162,7 +163,7 @@ class Writer(abc.ABC):
             yield tile
 
     def get_writer_metadata(self, first_batch: GenericNumberArray) -> WriterMetadata:
-        if self._is_compressed_image:
+        if self._data_format == DataFormat.COMPRESSED_IMAGE:
             if self._precision is not None:
                 raise ValueError("Precision cannot be set when writing compressed images.")
             # We need to read the first batch as it is a compressed PIL image
@@ -221,7 +222,7 @@ class Writer(abc.ABC):
             "mode": writer_metadata.mode,
             "format": writer_metadata.format,
             "dtype": writer_metadata.dtype,
-            "is_binary": self._is_compressed_image,
+            "data_format": self._data_format.value,
             "grid_offset": writer_metadata.grid_offset,
             "precision": self._precision.value if self._precision else str(InferencePrecision.FP32),
             "multiplier": (
@@ -293,7 +294,7 @@ class Writer(abc.ABC):
                     batch_size = batch.shape[0]
                     coordinates_dataset[self._current_index : self._current_index + batch_size] = coordinates
 
-                    if self._is_compressed_image:
+                    if self._data_format == DataFormat.COMPRESSED_IMAGE:
                         # When the batch has variable lengths, we need to insert each sample separately
                         for sample in batch:
                             self.insert_data(sample[np.newaxis, ...])
@@ -328,6 +329,10 @@ class Writer(abc.ABC):
 
         self.set_grid()
         assert self._grid
+
+        if self._grid.order != GridOrder.C:
+            raise ValueError(f"Grid order should be C, other orderings are not supported. Got {self._grid.order}")
+
         num_tiles = len(self._grid)
 
         self._tile_indices = self.create_dataset(
@@ -338,7 +343,26 @@ class Writer(abc.ABC):
             compression="gzip",
         )
 
-        if not self._is_compressed_image:
+        if self._data_format == DataFormat.FEATURE:
+            shape = first_batch.shape[1:]
+            self._data = self.create_dataset(
+                file,
+                "data",
+                shape=(self._num_samples,) + shape,
+                dtype=first_batch.dtype,
+                compression="gzip",
+                chunks=(self._num_samples,) + shape,  # this should be the fastest as we are loading
+                # all features everytime
+            )
+        elif self._data_format == DataFormat.COMPRESSED_IMAGE:
+            self._data = self.create_variable_length_dataset(
+                file,
+                name="data",
+                shape=(self._num_samples,),
+                chunks=(1,),
+                compression="gzip",
+            )
+        else:  # data_format == DataFormat.IMAGE
             shape = first_batch.shape[1:]
             self._data = self.create_dataset(
                 file,
@@ -347,14 +371,6 @@ class Writer(abc.ABC):
                 dtype=first_batch.dtype,
                 compression="gzip",
                 chunks=(1,) + shape,
-            )
-        else:
-            self._data = self.create_variable_length_dataset(
-                file,
-                name="data",
-                shape=(self._num_samples,),
-                chunks=(1,),
-                compression="gzip",
             )
 
         if self._color_profile:
@@ -433,15 +449,13 @@ class ZarrFileImageWriter(Writer):
 
     def insert_data(self, batch: GenericNumberArray) -> None:
         """Insert a batch into a Zarr dataset."""
-        if not batch.shape[0] == 1 and self._is_compressed_image:
+        if not batch.shape[0] == 1 and self._data_format == DataFormat.COMPRESSED_IMAGE:
             raise ValueError(f"Batch should have a single element when writing zarr. Got batch shape {batch.shape}.")
 
-        if self._is_compressed_image:
+        if self._data_format == DataFormat.COMPRESSED_IMAGE:
             self._data[self._current_index] = batch.reshape(-1)
         else:
-            self._data[self._current_index : self._current_index + batch.shape[0]] = (
-                batch.flatten() if self._is_compressed_image else batch
-            )
+            self._data[self._current_index : self._current_index + batch.shape[0]] = batch
 
     def write_metadata(self, metadata: dict[str, Any], file: Any) -> None:
         """Write metadata to Zarr group attributes."""
@@ -477,11 +491,11 @@ class H5FileImageWriter(Writer):
 
     def insert_data(self, batch: GenericNumberArray) -> None:
         """Insert a batch into a H5 dataset."""
-        if not batch.shape[0] == 1 and self._is_compressed_image:
+        if not batch.shape[0] == 1 and self._data_format == DataFormat.COMPRESSED_IMAGE:
             raise ValueError(f"Batch should have a single element when writing h5. Got batch shape {batch.shape}.")
         batch_size = batch.shape[0]
         self._data[self._current_index : self._current_index + batch_size] = (
-            batch.flatten() if self._is_compressed_image else batch
+            batch.flatten() if self._data_format == DataFormat.COMPRESSED_IMAGE else batch
         )
 
     def create_dataset(

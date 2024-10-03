@@ -67,7 +67,7 @@ class LossFactory(nn.Module):
         if class_proportions is not None:
             _class_weights = 1 / class_proportions
             _class_weights[_class_weights.isnan()] = 0.0
-            _class_weights = _class_weights / _class_weights.max()
+            _class_weights = _class_weights / _class_weights.max()  # todo: check, shouldn't this be .sum?
             self._class_weights = _class_weights
         else:
             self._class_weights = None
@@ -141,11 +141,27 @@ def cross_entropy(
     else:
         roi_sum = torch.tensor([np.prod(tuple(input.shape)[2:])]).to(input.device)
 
+    if input.dim() != target.dim():
+        raise ValueError(f"Dimension do not match for input and target. Got {input.dim()} and {target.dim()}")
+
+    if input.dim() == 2 and target.dim() == 2:
+        # handle cls task as an image of size 1x1
+        input = input.unsqueeze(-1).unsqueeze(-1)
+        target = target.unsqueeze(-1).unsqueeze(-1)
+
     if ignore_index is None:
         ignore_index = -100
 
     # compute cross_entropy pixel by pixel
-    if not multiclass:
+    if multiclass:
+        _cross_entropy = F.binary_cross_entropy_with_logits(
+            input,
+            target,
+            weight=None if weight is None else weight.to(input.device),
+            reduction="none",
+            pos_weight=None,
+        )
+    else:
         _cross_entropy = F.cross_entropy(
             input,
             target.argmax(dim=1),
@@ -153,14 +169,6 @@ def cross_entropy(
             weight=None if weight is None else weight.to(input.device),
             reduction="none",
             label_smoothing=label_smoothing,
-        )
-    else:
-        _cross_entropy = F.binary_cross_entropy_with_logits(
-            input,
-            target,
-            weight=None if weight is None else weight.to(input.device),
-            reduction="none",
-            pos_weight=None,
         )
 
     if limit is not None:

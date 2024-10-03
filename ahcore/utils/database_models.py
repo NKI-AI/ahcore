@@ -72,6 +72,7 @@ class Image(Base):
     annotations: Mapped[List["ImageAnnotations"]] = relationship("ImageAnnotations", back_populates="image")
     labels: Mapped[List["ImageLabels"]] = relationship("ImageLabels", back_populates="image")
     caches: Mapped[List["ImageCache"]] = relationship("ImageCache", back_populates="image")
+    features: Mapped[List["ImageFeature"]] = relationship("ImageFeature", back_populates="image")
 
 
 class ImageCache(Base):
@@ -112,7 +113,50 @@ class CacheDescription(Base):
     mask_threshold = Column(Float)
     grid_order = Column(String)
 
-    cache: Mapped["ImageCache"] = relationship("ImageCache", back_populates="description")
+    cache: Mapped[List["ImageCache"]] = relationship("ImageCache", back_populates="description")
+
+
+class ImageFeature(Base):
+    """Image feature table."""
+
+    __tablename__ = "image_feature"
+    id = Column(Integer, primary_key=True)
+    # pylint: disable=E1102
+    created = Column(DateTime(timezone=True), default=func.now())
+    last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+    filename = Column(String, unique=True, nullable=False)
+    reader = Column(String)
+    num_tiles = Column(Integer)
+    image_id = Column(Integer, ForeignKey("image.id"), nullable=False)
+    feature_description_id = Column(Integer, ForeignKey("feature_description.id"), nullable=False)
+
+    image: Mapped["Image"] = relationship("Image", back_populates="features")
+    feature_description: Mapped["FeatureDescription"] = relationship("FeatureDescription", back_populates="features")
+
+
+class FeatureDescription(Base):
+    """Feature description table."""
+
+    __tablename__ = "feature_description"
+
+    id = Column(Integer, primary_key=True)
+    # pylint: disable=E1102
+    created = Column(DateTime(timezone=True), default=func.now())
+    last_updated = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+
+    mpp = Column(Float)
+    tile_size_width = Column(Integer)
+    tile_size_height = Column(Integer)
+    tile_overlap_width = Column(Integer)
+    tile_overlap_height = Column(Integer)
+
+    # use this to select which features we want to use
+    version = Column(String, unique=True, nullable=False)
+
+    model_name = Column(String)
+    feature_dimension = Column(Integer)
+
+    features: Mapped[List["ImageFeature"]] = relationship("ImageFeature", back_populates="feature_description")
 
 
 class Mask(Base):
